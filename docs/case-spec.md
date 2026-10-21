@@ -53,3 +53,9 @@ coverage 从 `// @step S1` 和 `await businessAssertion('A1', ...)` 的实际行
 一律 `timeout 2h codex exec ... < /dev/null`。快照 ref 只在会话内使用，知识回写和 lint 拒绝它。
 
 AI 完成未知步骤后，用 `register --run ID --case CASE --file registration.json`，文件仅需 case_id/script；其 fixture、变更声明和 coverage 从 case-spec 与代码标记推导。交付包携带不含认证信息的 cases.json 投影，重新配置环境/登录即可消费同一 fixture。
+
+
+禁用态是已有的 `checks.op: disabled/enabled`，模板生成 `toBeDisabled/toBeEnabled`，同时支持原生和 aria-disabled。
+blocked / cannot save / 无法保存 / 置灰 / 不可用 等期望必须包含 disabled 检查。
+静态禁用态用 `verb: assert` 观察，不点击、不强制派发；保存中的初始提交可以先 click 再观察禁用。
+TC-0048 保留空字符串及纯空格，不把禁用态代替 Excel 要求的错误文案和弹窗状态。

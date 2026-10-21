@@ -103,6 +103,20 @@ def schema_errors(spec, source, env, data, pages):
         fail(isinstance(assertion.get('excel'), str) and assertion['excel'] in expectation_quotes(source), 'assertion must quote an exact Excel expectation cell or line verbatim')
         checks = assertion.get('checks')
         fail(isinstance(checks, list) and bool(checks), 'assertion needs nonempty checks')
+        # A blocked action is an observation, never an actionable click. Keep the
+        # original Excel clauses (including error messages) alongside this check.
+        quote = assertion.get('excel', '')
+        blocked = bool(re.search(r'blocked|cannot save|无法保存|不能保存|不可保存|不可用|置灰|禁用|被拦截', quote, re.I))
+        attached = next((s for s in spec['steps'] if isinstance(s, dict) and s.get('id') == assertion.get('after')), {})
+        blocked = blocked or bool(re.search(r'为空|空白|仅空格|empty', spec.get('intent', ''), re.I) and re.search(r'被拦截|blocked|无法保存|不能保存', spec.get('intent', ''), re.I) and attached.get('verb') == 'click' and re.search(r'save|submit|保存|提交', str(attached.get('target')), re.I))
+        if blocked and isinstance(checks, list):
+            fail(any(isinstance(c, dict) and c.get('op') == 'disabled' for c in checks),
+                 'blocked/cannot-save expectation requires a disabled-state assertion')
+            fail(attached.get('verb') != 'click' or bool(re.search(r'保存中|处理中|processing', quote, re.I)), 'blocked action must be observed, not clicked')
+        if isinstance(checks, list) and not re.search(r'保存中|处理中|processing', quote, re.I):
+            fail(not any(isinstance(c, dict) and c.get('op') == 'disabled' and c.get('target') == attached.get('target')
+                         for c in checks) or attached.get('verb') != 'click',
+                 'cannot click a target whose expected state is disabled')
         for check in checks if isinstance(checks, list) else []:
             if not isinstance(check, dict):
                 errors.append('check must be a mapping'); continue
@@ -121,6 +135,22 @@ def schema_errors(spec, source, env, data, pages):
     for step in spec['steps']:
         if isinstance(step, dict) and step.get('verb') == 'close':
             fail(any(a.get('after') == step.get('id') and any(c.get('op') == 'hidden' for c in a.get('checks', [])) for a in spec['assertions'] if isinstance(a, dict)), 'close step requires its own hidden assertion')
+    disabled_targets = set()
+    for step in spec['steps']:
+        if not isinstance(step, dict):
+            continue
+        if step.get('verb') == 'click':
+            fail(step.get('target') not in disabled_targets, 'cannot click a previously asserted disabled target')
+        if step.get('verb') in {'fill', 'select', 'check', 'uncheck', 'press', 'open'}:
+            disabled_targets.clear()  # Input/navigation may legitimately change actionability.
+        for a in spec['assertions']:
+            if not isinstance(a, dict) or a.get('after') != step.get('id'):
+                continue
+            for c in a.get('checks', []) if isinstance(a.get('checks'), list) else []:
+                if isinstance(c, dict) and c.get('op') == 'disabled':
+                    disabled_targets.add(c.get('target'))
+                elif isinstance(c, dict) and c.get('op') == 'enabled':
+                    disabled_targets.discard(c.get('target'))
     fail(not has_snapshot_ref(spec), 'snapshot refs cannot be persisted in case-spec')
     return errors, sorted(unknown)
 
@@ -263,13 +293,13 @@ def lint(base, m, case_ids=None, record=True):
             if not row['errors']:
                 spec = read_yaml(spec_path(base, case))
                 case['precondition_items'] = spec['required_env']
-                if not case.get('registration') or case.get('daily_spec'):
+                if not case.get('registration'):
                     case['stage'] = 'spec'
                 if spec['automatable']['status'] == 'manual':
                     case.update(stage='finished', work_status='finished', result='not_suitable', classification={'reason': spec['automatable']['reason']})
         from .preconditions import sync_preconditions, QUESTION_KEY
         sync_preconditions(base, m)
-        if business:
+        if business and m.get('interaction_mode') != 'once':
             owners = sorted({c for ids in business.values() for c in ids})
             q = m['questions'].get(QUESTION_KEY)
             if not q:
@@ -293,7 +323,7 @@ def lint(base, m, case_ids=None, record=True):
 def generate(base, m, cid):
     require(not m.get('active_batch'), 'Cannot generate during an active batch')
     result = lint(base, m, [cid])
-    require(result['valid'], 'case-spec lint failed', result)
+    require(not result['errors'] and not result['cases'][cid]['errors'], 'case-spec lint failed', result)
     case = m['cases'][cid]; spec = read_yaml(spec_path(base, case)); _, catalog, pages = catalogs()
     scopes = set(spec['mutation_scope'])
     for key in spec['data_prep']:
@@ -374,7 +404,7 @@ def register_script(base, m, cid, script_path):
     case = m['cases'][cid]
     spec = read_yaml(spec_path(base, case))
     result = lint(base, m, [cid])
-    require(result['valid'], 'case-spec lint failed', result)
+    require(not result['errors'] and not result['cases'][cid]['errors'], 'case-spec lint failed', result)
     require(not any(cid in item['case_ids'] for item in result['explore']), 'Resolve unknown targets before registration')
     require(not spec['questions'], 'Resolve business questions before registration')
     env, catalog, pages = catalogs()

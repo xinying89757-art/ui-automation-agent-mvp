@@ -8,9 +8,9 @@ Data: {"llms.enabled": true, "llms.source": "custom"}
 ## Steps
 
 - S1: fill txt.content = ''
-- S2: click txt.save
+- S2: assert txt.save
 - S3: fill txt.content = '  \n  '
-- S4: click txt.save
+- S4: assert txt.save
 - S5: fill txt.content = 'x'
 
 ## Excel expectations

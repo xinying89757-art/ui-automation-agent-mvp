@@ -138,6 +138,22 @@ class CaseSpecTests(unittest.TestCase):
             self.assertEqual(body, (base / first['script']).read_bytes())
             self.assertNotIn('registration', case)
 
+    def test_unrelated_invalid_contract_does_not_block_independent_generation(self):
+        import yaml
+        with tempfile.TemporaryDirectory() as temp:
+            base = Path(temp); cases = {}
+            for cid in ('T1', 'T2'):
+                folder = base / 'cases' / cid; folder.mkdir(parents=True)
+                common.atomic_write(folder / 'source.json', dict(self.source, case_id=cid))
+                spec = copy.deepcopy(self.spec); spec['case_id'] = cid
+                spec['steps'][0]['target'] = '?unknown'
+                if cid == 'T2': spec['steps'][0]['verb'] = 'invalid'
+                (folder / 'case-spec.yaml').write_text(yaml.safe_dump(spec, allow_unicode=True))
+                cases[cid] = {'case_id': cid, 'source': f'cases/{cid}/source.json', 'source_hash': cid,
+                              'stage': 'spec', 'work_status': 'pending', 'result': None}
+            result = specs.generate(base, {'cases': cases, 'questions': {}, 'history': []}, 'T1')
+            self.assertIn('S1 ?unknown', result['todos'])
+
     def test_known_template_registers_fixture_and_ai_registration_derives_coverage(self):
         import yaml
         with tempfile.TemporaryDirectory() as temp:

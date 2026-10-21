@@ -8,6 +8,7 @@ import type { Page, BrowserContext } from '@playwright/test';
 import { loadConfig, runtimeRoot } from './environment.mjs';
 import { authenticatedSession, openSiteArea } from './auth.mjs';
 import { cancelDialog } from '../flows/llms-txt.mjs';
+import { redactedDialogScreenshot } from './review-screenshot.mjs';
 
 export { expect };
 
@@ -111,6 +112,19 @@ export const test = base.extend<{ caseContext: CaseContext; lifecycle: void; adm
       }
       await use();
     } finally {
+      if (info.status !== info.expectedStatus && info.errors.some(error => /UIA_BUSINESS_FAILURE/u.test(error.message ?? '')) &&
+          !info.attachments.some(attachment => attachment.name === 'uia-redacted-dialog')) {
+        const directory = path.join(process.env.UIA_RESULTS_DIR ?? info.outputDir, 'review-screenshots');
+        fs.mkdirSync(directory, { recursive: true });
+        for (const candidate of caseContext.browser.contexts().flatMap(context => context.pages())) {
+          const destination = path.join(directory, `${caseContext.caseId}.redacted.png`);
+          const proof = await redactedDialogScreenshot(candidate, destination).catch(() => null);
+          if (proof?.redacted) {
+            await info.attach('uia-redacted-dialog', { path: destination, contentType: 'image/png' });
+            break;
+          }
+        }
+      }
       try {
         await hooks.cleanup(caseContext, state ?? caseContext.fixtureState);
         cleanupVerified = await hooks.verifyCleanup(caseContext, state ?? caseContext.fixtureState);

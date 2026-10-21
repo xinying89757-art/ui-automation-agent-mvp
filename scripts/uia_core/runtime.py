@@ -103,6 +103,11 @@ def ensure_stopped(base, batch):
 
 def case_needs_public(base, case):
     registration = case.get("registration") or {}
+    if case.get("case_spec"):
+        from .common import read_yaml
+        spec = read_yaml(inside(base, case['case_spec']))
+        if 'public_frontend' in spec.get('required_env', []):
+            return True
     if registration.get("needs_public"):
         return True
     script = registration.get("script")
@@ -348,6 +353,12 @@ def consume_batch(base, m, exit_code=None):
                    "duration_ms": row.get("duration_ms", 0), "errors": row.get("errors", []),
                    "attachments": row.get("attachments", []),
                    "assertions": row.get("assertions", []), "failure_stage": row.get("failure_stage")}
+        shot = next((a.get('path') for a in row.get('attachments', []) if a.get('name') == 'uia-redacted-dialog'), None)
+        if shot:
+            from .secrets import unsafe_artifact
+            shot_path = inside(base, shot)
+            if shot_path.is_file() and not unsafe_artifact(shot_path):
+                attempt['redacted_screenshot'] = str(shot_path.relative_to(base))
         prior = c["attempts"][-1] if c["attempts"] else None
         c["attempts"].append(attempt)
         if attempt["executed"] and not m.get("first_result_at"):

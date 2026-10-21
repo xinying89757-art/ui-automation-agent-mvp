@@ -1,5 +1,6 @@
 import { test as lifecycleTest, expect, businessAssertion } from './test.js';
 import path from 'node:path';
+import { redactedDialogScreenshot } from './review-screenshot.mjs';
 import { loadConfig, runtimeRoot } from './environment.mjs';
 import { cancelDialog } from '../flows/llms-txt.mjs';
 
@@ -20,7 +21,17 @@ export const test = lifecycleTest.extend({
     }
     const page = await siteSession.openArea(start === 'content-admin' ? '内容管理' : '编辑网站');
     try { await use(page); }
-    finally { await cancelDialog(page); }
+    finally {
+      if (info.status !== info.expectedStatus && info.errors.some(error => /UIA_BUSINESS_FAILURE/u.test(error.message ?? ''))) {
+        const fs = await import('node:fs');
+        const directory = path.join(process.env.UIA_RESULTS_DIR ?? info.outputDir, 'review-screenshots');
+        fs.mkdirSync(directory, { recursive: true });
+        const destination = path.join(directory, `${id}.redacted.png`);
+        const proof = await redactedDialogScreenshot(page, destination).catch(() => null);
+        if (proof?.redacted) await info.attach('uia-redacted-dialog', { path: destination, contentType: 'image/png' });
+      }
+      await cancelDialog(page);
+    }
   },
 });
 export { expect, businessAssertion };

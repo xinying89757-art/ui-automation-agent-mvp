@@ -21,7 +21,7 @@ def assertion_signature(source):
         values = [value for _quote, value in STRING_LITERAL.findall(argument)]
         matchers.append((method, values))
     return {"labels": sorted(label for _quote, label in labels),
-            "matchers": sorted((method, values) for method, values in matchers)}
+            "matchers": sorted([method, values] for method, values in matchers)}
 
 
 def locator_wait_only(before, after):
@@ -103,7 +103,11 @@ def calculate(base, m, final_report_at=None):
     return {
         "spec_lint_first_pass": {"passed": first_passed, "automatable": len(first_lints),
                                  "rate": first_passed / len(first_lints) if first_lints else None},
-        "unplanned_interventions": int(m.get("unplanned_interventions", 0)),
+        "unplanned_interventions": sum(x.get('kind') == 'session_turn' and x.get('category') == '计划外' for x in m.get('interaction_events', [])),
+        "session_turns": sum(x.get('kind') == 'session_turn' for x in m.get('interaction_events', [])),
+        "checklist_answers": sum(x.get('kind') == 'checklist_answer' for x in m.get('interaction_events', [])),
+        "checklist_questions": m.get('checklist_question_count', 0),
+        "mid_run_questions": sum(x.get('kind') == 'mid_run_question' for x in m.get('interaction_events', [])),
         "import_to_first_result_seconds": elapsed(imported_at, first_at) if imported_at and first_at else None,
         "import_to_final_report_seconds": elapsed(imported_at, review_at) if imported_at and review_at else None,
         "script_coverage": {"scripted": len(scripted), "executed": len(executed), "eligible": len(eligible),

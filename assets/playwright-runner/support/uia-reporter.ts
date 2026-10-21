@@ -35,6 +35,7 @@ export default class UiaReporter implements Reporter {
     return scrubText(text);
   }
   private keepAttachment(attachment: { name?: string; path?: string }): boolean {
+    if (attachment.name === 'uia-redacted-dialog' && attachment.path && !unsafeArtifact(attachment.path)) return true;
     if (!attachment.path || unsafeArtifact(attachment.path) || unsafeArtifact(attachment.name ?? '')) return false;
     return !['screenshot', 'trace', 'error-context', 'video'].includes(attachment.name ?? '');
   }
@@ -98,6 +99,6 @@ function dropUnsafe(dir: string): void {
       dropUnsafe(full);
       continue;
     }
-    if (unsafeArtifact(entry.name)) fs.rmSync(full, { force: true });
+    if (unsafeArtifact(full)) fs.rmSync(full, { force: true });
   }
 }

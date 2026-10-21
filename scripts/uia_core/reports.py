@@ -14,6 +14,33 @@ from .secrets import drop_unsafe_artifacts, scrub_text, unsafe_attachment
 from . import metrics as run_metrics
 
 
+STATUS_ZH = {"passed": "通过", "business_failure": "业务失败", "automation_failure": "自动化失败",
+             "environment_blocked": "环境阻断", "product_confirmation": "待业务确认", "not_suitable": "不适合自动化",
+             "interrupted": "已中断", "stable": "已稳定", "unstable": "未稳定", "candidate": "待复验",
+             "not_run": "未执行", "pending": "待处理", "runnable": "可执行", "running": "执行中",
+             "waiting_human": "等待前置", "finished": "已完成", "open": "待回答", "answered": "已回答",
+             "closed": "已关闭", "deferred": "待异步审核", "active": "进行中", "delivery_pending": "待交付",
+             "completed": "已完成", "waiting": "等待前置"}
+
+
+def zh(value):
+    return STATUS_ZH.get(value, value) if value is not None else "未执行"
+
+
+def opening(m, metrics, review):
+    from collections import Counter
+    counts = Counter(zh(c.get('result')) if c.get('work_status') != 'waiting_human' else '等待前置' for c in m['cases'].values())
+    conclusion = '本次共 ' + str(len(m['cases'])) + ' 条：' + '，'.join(str(n) + ' 条' + label for label, n in counts.items()) + '。'
+    waiting = [cid + '：' + c.get('classification', {}).get('reason', '见审核单') for cid, c in m['cases'].items() if c.get('work_status') == 'waiting_human']
+    needs = waiting + ([f"异步审核单 {len(review['items'])} 项；断言建议默认不应用。"] if review['items'] else [])
+    metrics_text = (f"清单问题 {metrics['checklist_questions']}，清单回答 {metrics['checklist_answers']}，中途提问 {metrics['mid_run_questions']}，"
+                    f"计划外人工介入 {metrics['unplanned_interventions']}，会话轮次 {metrics['session_turns']}；"
+                    f"脚本实际执行覆盖率 {metrics['script_coverage']['ratio']:.1%}；"
+                    f"越权 {metrics['scope_violations']}，泄露 {metrics['leak_hits']}，未审核断言变更 {metrics['unreviewed_assertion_changes']}。")
+    return [{'title': '结论', 'text': conclusion}, {'title': '需要你处理', 'text': '\n'.join(needs) or '无。'},
+            {'title': '流程指标', 'text': metrics_text}]
+
+
 def waiting_seconds(m):
     entries = [q for q in m["questions"].values()]
     entries += [prior for q in m["questions"].values() for prior in q.get("previous_answers", []) if prior.get("created_at")]
@@ -32,6 +59,8 @@ def brief_error(attempt, cfg=None):
 
 
 def make_report(base, m):
+    from .experience import review as build_review
+    review = build_review(base, m)
     removed = drop_unsafe_artifacts(base / "batches")
     out = base / "reports"
     out.mkdir(parents=True, exist_ok=True)
@@ -44,6 +73,9 @@ def make_report(base, m):
         records.append({k: c.get(k) for k in ("case_id", "original_id", "title", "module", "priority",
                        "sheet", "rows", "stage", "work_status", "result", "stability", "pass_streak",
                        "flow_ids", "fixture_ids", "repair_rounds", "attempts", "feedback", "classification", "case_spec", "spec_first_lint", "spec_lint")})
+        records[-1]['result_label'] = zh(c.get('result'))
+        records[-1]['work_status_label'] = zh(c.get('work_status'))
+        records[-1]['stability_label'] = zh(c.get('stability'))
         records[-1]["script"] = (c.get("registration") or {}).get("script")
         attempt = c["attempts"][-1] if c.get("attempts") else None
         classification = c.get("classification") or {}
@@ -55,12 +87,15 @@ def make_report(base, m):
         elif not records[-1]["reason"] and attempt:
             records[-1]["reason"] = brief_error(attempt, m["config"])
         records[-1]["reason"] = scrub_text(records[-1]["reason"], m["config"])
-        records[-1]["media"] = []
+        records[-1]["media"] = ['../' + a['redacted_screenshot'] for a in c.get('attempts', []) if a.get('redacted_screenshot')]
     m["final_report_at"] = now()
     m["leak_hits"] = run_metrics.leak_scan(base, m["config"])
     flow_metrics = run_metrics.calculate(base, m, m["final_report_at"])
     atomic_write(base / "metrics.json", flow_metrics)
     atomic_write(out / "metrics.json", flow_metrics)
+    blocks = opening(m, flow_metrics, review)
+    opening_md = "\n\n".join("## " + b['title'] + "\n\n" + b['text'] for b in blocks) + "\n"
+    (out / 'summary.md').write_text(opening_md, encoding='utf-8')
     s = summary(m)
     metrics = {"elapsed_seconds": elapsed(m["created_at"]), "human_wait_seconds": waiting_seconds(m),
                "first_result_seconds": elapsed(m["created_at"], m["first_result_at"]) if m.get("first_result_at") else None,
@@ -74,7 +109,7 @@ def make_report(base, m):
     questions = [{k: q.get(k) for k in ("id", "kind", "subject", "prompt", "case_ids", "status", "attempted")}
                  for q in m["questions"].values()]
     payload = {"schema_version": "uia-results.v1", "run_id": m["run_id"], "generated_at": now(),
-               "summary": s, "metrics": metrics, "flow_metrics": flow_metrics, "source": m["sources"], "cases": records,
+               "opening": blocks, "summary": s, "metrics": metrics, "flow_metrics": flow_metrics, "source": m["sources"], "cases": records,
                "questions": questions, "unresolved_sheets": [x for src in m["sources"] for x in src.get("unresolved_sheets", [])],
                "source_update_required": m.get("source_update_required", False), "delivery_complete": False}
     diff = {"schema_version": "uia-asset-review.v1", "writeback": "not_applied", "cases": []}
@@ -86,12 +121,16 @@ def make_report(base, m):
     atomic_write(out / "asset-review.json", diff)
     atomic_write(out / "results.json", payload)
     wb = Workbook()
-    sheet = wb.active
+    overview = wb.active
+    overview.title = "报告开头"
+    for block in blocks:
+        overview.append([block['title'], block['text']])
+    sheet = wb.create_sheet("逐条结果")
     sheet.title = "逐条结果"
     sheet.append(["用例ID", "原始ID", "工作表", "源行号", "标题", "优先级", "进度", "结果", "稳定性", "连续成功", "脚本", "执行次数", "最近证据", "原因"])
     for r in records:
         sheet.append([r["case_id"], r["original_id"], r["sheet"], ",".join(map(str, r["rows"])),
-                      r["title"], r["priority"], r["work_status"], r["result"], r["stability"], r["pass_streak"],
+                      r["title"], r["priority"], zh(r["work_status"]), zh(r["result"]), zh(r["stability"]), r["pass_streak"],
                       r["script"], len(r["attempts"]), r["attempts"][-1]["evidence"] if r["attempts"] else "", r.get("reason", "")])
     stats = wb.create_sheet("汇总")
     stats.append(["指标", "值"])
@@ -100,7 +139,7 @@ def make_report(base, m):
     qs = wb.create_sheet("人工问题")
     qs.append(["问题ID", "类型", "问题", "影响用例", "状态", "已尝试"])
     for q in questions:
-        qs.append([q["id"], q["kind"], q["prompt"], ", ".join(q["case_ids"]), q["status"], "\n".join(q["attempted"])])
+        qs.append([q["id"], q["kind"], q["prompt"], ", ".join(q["case_ids"]), zh(q["status"]), "\n".join(q["attempted"])])
     for ws in wb:
         ws.freeze_panes = "A2"
         ws.auto_filter.ref = ws.dimensions
@@ -126,7 +165,7 @@ def make_report(base, m):
         source = escape(r["sheet"]) + ":" + escape(",".join(map(str, r["rows"])))
         shots = " ".join('<a href="' + escape(ref) + '">截图</a>' for ref in r.get("media") or [])
         rows.append("<tr>" + "".join("<td>" + x + "</td>" for x in [escape(r["case_id"]), source, escape(r["title"]),
-                    escape(r["work_status"]), escape(r["result"]), escape(r["stability"]), str(r["pass_streak"]),
+                    escape(zh(r["work_status"])), escape(zh(r["result"])), escape(zh(r["stability"])), str(r["pass_streak"]),
                     link(r["script"]), link(r["attempts"][-1]["evidence"] if r["attempts"] else None),
                     escape(r.get("reason", "")) + (" " + shots if shots else "")]) + "</tr>")
     body = """<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width">
@@ -134,10 +173,11 @@ def make_report(base, m):
 table{border-collapse:collapse;width:100%;background:white}th,td{padding:10px;text-align:left;border:1px solid #dbe4eb;vertical-align:top}
 th{background:#23415a;color:white}a{color:#0069a3}pre{white-space:pre-wrap}section{overflow:auto}input{padding:10px;min-width:260px;margin:12px 0}</style>
 <h1>UI 自动化结果</h1>"""
+    body += ''.join('<h2>' + escape(b['title']) + '</h2><p>' + escape(b['text']).replace('\n', '<br>') + '</p>' for b in blocks)
     passes = m["config"]["execution"].get("stability_passes", 2)
     standard = "每日交付：同版本一次成功即可。" if passes == 1 else "夜间回归：同一版本独立运行两次成功。"
     body += "<p>运行：" + escape(m["run_id"]) + "；源用例总数：" + str(s["total"]) + "。稳定标准：" + standard + "</p>"
-    body += "<p>失败截图、trace 和页面快照不进入报告或脚本包。本轮已清除快照文件 " + str(removed) + " 个。</p>"
+    body += "<p>仅保留白名单控件文字的脱敏弹窗截图可进入报告；原始截图、trace 和页面快照不进入报告或脚本包。本轮已清除快照文件 " + str(removed) + " 个。</p>"
     body += "<p>执行覆盖率：{:.1%}；已执行用例通过率：{:.1%}；全部用例稳定率：{:.1%}。</p>".format(s["execution_coverage"], s["pass_rate"], s["stability_rate"])
     body += '<p><a href="results.json">JSON</a> · <a href="results.xlsx">Excel</a> · <a href="scripts.zip">脚本工程</a> · <a href="asset-review.json">资产回写候选</a></p>'
     body += '<label>筛选 <input id="filter" placeholder="用例 ID、标题或状态"></label><section><table><thead><tr>'

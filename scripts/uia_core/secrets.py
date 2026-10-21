@@ -36,6 +36,8 @@ def scrub_text(value, cfg=None):
 
 
 def unsafe_artifact(path: Path) -> bool:
+    if path.parent.name == "review-screenshots" and re.fullmatch(r"[\w.-]+\.redacted\.png", path.name):
+        return False
     if path.name in UNSAFE_NAMES or path.suffix.lower() in UNSAFE_SUFFIXES:
         return True
     return any(part in UNSAFE_DIRS for part in path.parts)

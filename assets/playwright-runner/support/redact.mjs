@@ -16,6 +16,7 @@ export function scrubText(value) {
 }
 
 export function unsafeArtifact(name) {
+  if (/(?:^|[\\/])review-screenshots[\\/][\w.-]+\.redacted\.png$/u.test(String(name))) return false;
   const base = String(name).split(/[\\/]/u).pop();
   if (['error-context.md', 'trace.zip', 'playwright-results.json'].includes(base)) return true;
   return /\.(png|jpe?g|webp|webm)$/iu.test(base);

@@ -27,6 +27,15 @@ def parser():
     setup.add_argument("--account")
     setup.add_argument("--credentials-file")
     setup.add_argument("--password-env")
+    profile = commands.add_parser("profile")
+    profile.add_argument("action", choices=["set"])
+    profile.add_argument("--profile", required=True)
+    profile.add_argument("--site")
+    profile.add_argument("--mutation-allowed", action="store_true")
+    profile.add_argument("--read-only", action="store_true")
+    profile.add_argument("--scope", nargs="*")
+    profile.add_argument("--stability-passes", type=int, choices=[1, 2])
+    profile.add_argument("--run")
     login = commands.add_parser("login")
     source = login.add_mutually_exclusive_group(required=True)
     source.add_argument("--profile")
@@ -43,7 +52,7 @@ def parser():
     for name in ("import", "status", "next", "bind", "advance", "match", "scaffold", "register", "preflight",
                  "question", "answer", "explore", "run-batch", "record-run", "recover", "repair", "classify",
                  "feedback", "resolve-fixture", "replay-demo", "report", "validate",
-                 "bind-specs", "absorb-locators", "heal-review"):
+                 "bind-specs", "absorb-locators", "heal-review", "preconditions", "wait"):
         cmd = commands.add_parser(name)
         cmd.add_argument("--run", required=name != "validate")
         if name == "import":
@@ -63,7 +72,7 @@ def parser():
         if name in {"preflight", "explore", "repair", "resolve-fixture", "replay-demo"}:
             cmd.add_argument("--evidence", required=True)
         if name == "question":
-            cmd.add_argument("--kind", choices=["login", "environment", "product", "demo", "column_mapping"], required=True)
+            cmd.add_argument("--kind", choices=["login", "environment", "product", "demo", "column_mapping", "preconditions"], required=True)
             cmd.add_argument("--subject", required=True)
             cmd.add_argument("--prompt", required=True)
             cmd.add_argument("--cases", nargs="*", default=[])
@@ -151,7 +160,8 @@ def dispatch(args, path, m):
         return {"case_id": args.case, "result": args.result}
     if cmd == "feedback":
         c = m["cases"][args.case]
-        require(c.get("result") == "passed" and c.get("stability") == "stable", "Feedback requires the two real successful runs")
+        require(c.get("result") == "passed" and c.get("stability") == "stable",
+                "Feedback requires the configured number of clean passes")
         review = read_json(args.file)
         require(review.get("case_id") == args.case and isinstance(review.get("items"), list), "Invalid feedback review")
         allowed = {"UPDATE_UI_KNOWLEDGE", "UPDATE_EXISTING_ASSET", "NEW_ASSET_CANDIDATE", "DO_NOT_PERSIST"}
@@ -198,6 +208,9 @@ def dispatch(args, path, m):
         return {"question_id": q["id"], "replay": "verified"}
     if cmd == "bind-specs":
         return workflow.bind_specs(base, m)
+    if cmd == "preconditions":
+        from .preconditions import sync_preconditions
+        return sync_preconditions(base, m)
     if cmd == "absorb-locators":
         return workflow.absorb_locators(base, m)
     if cmd == "heal-review":
@@ -218,6 +231,22 @@ def execute(args):
         return {"environments": profiles.presets()}
     if args.command == "setup":
         return profiles.setup(args.profile, args.environment, args.site, args.account, args.credentials_file, args.password_env)
+    if args.command == "profile":
+        require(not (args.mutation_allowed and args.read_only), "Choose either --mutation-allowed or --read-only")
+        allowed = True if args.mutation_allowed else False if args.read_only else None
+        result = profiles.update_profile(args.profile, args.site, allowed, args.scope, args.stability_passes)
+        if not args.run:
+            return result
+        with locked_run(args.run) as (path, m):
+            workflow.refresh(path.parent, m)
+            save(path, m)
+            result["run"] = {"site": m["config"].get("site"), "public": m["config"].get("targets", {}).get("public"),
+                             "mutation": m["config"].get("mutation"),
+                             "stability_passes": m["config"]["execution"]["stability_passes"],
+                             "preflight": (m.get("preflight") or {}).get("status")}
+        return result
+    if args.command == "wait":
+        return runtime.wait_for_batch(args.run)
     if args.command == "login":
         from .common import config
         if not args.run:

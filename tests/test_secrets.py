@@ -15,6 +15,9 @@ class SecretScrubTest(unittest.TestCase):
             "PIN码：ABC12",
             "person@example.com",
             "13800138000",
+            "uin=100860001",
+            "[QQ](https://wpa.qq.com/msgrd?v=3&uin=100860001): 100860001",
+            "tel:+86-13800138000",
             "token=abc.def",
             "@playwright/test",
         ])
@@ -23,6 +26,9 @@ class SecretScrubTest(unittest.TestCase):
         self.assertNotIn("ABC12", cleaned)
         self.assertNotIn("person@example.com", cleaned)
         self.assertNotIn("13800138000", cleaned)
+        self.assertNotIn("100860001", cleaned)
+        self.assertIn("[QQ](https://wpa.qq.com/msgrd?v=3&uin=[REDACTED])", cleaned)
+        self.assertNotIn("tel:+86", cleaned)
         self.assertNotIn("token=abc.def", cleaned)
         self.assertIn("@playwright/test", cleaned)
         self.assertIn("[REDACTED]", cleaned)

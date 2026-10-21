@@ -15,6 +15,9 @@ QUERY_SECRET = re.compile(r"(?i)(authorization|token|access_token|password)=[^&\
 EMAIL = re.compile(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}")
 PIN = re.compile(r"(PIN码[:：]\s*)\S+")
 PHONE = re.compile(r"(?<!\d)1[3-9]\d{9}(?!\d)")
+QQ_UIN = re.compile(r"(?i)(uin=)\d+")
+QQ_TAIL = re.compile(r"(\[QQ\]\([^)\n]*\)):\s*\d+")
+TEL = re.compile(r"(?i)tel:\+?[\d-]{6,}")
 ANSI = re.compile(r"\x1b\[[0-9;]*m")
 
 
@@ -24,7 +27,10 @@ def scrub_text(value, cfg=None):
     text = QUERY_SECRET.sub(r"\1=[REDACTED]", text)
     text = EMAIL.sub("[email]", text)
     text = PIN.sub(r"\1[REDACTED]", text)
+    text = TEL.sub("tel:[REDACTED]", text)
     text = PHONE.sub("[phone]", text)
+    text = QQ_UIN.sub(r"\1[REDACTED]", text)
+    text = QQ_TAIL.sub(r"\1", text)
     text = ANSI.sub("", text)
     return text
 

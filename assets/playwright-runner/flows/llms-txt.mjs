@@ -82,27 +82,36 @@ async function candidates(page, scope) {
   }, scope);
 }
 
+function visibleLocator(page, selector) {
+  return page.locator(selector).locator('visible=true').first();
+}
+
 export async function locate(page, key) {
   const entry = memory().entries[key];
   if (!entry) throw new Error('UIA_LOCATOR_MISS ' + key);
-  for (const selector of chain(entry)) {
-    const locator = page.locator(selector).first();
-    if (await visible(locator)) {
-      note(key, selector, 'selector', null, await describe(locator));
-      return { locator, via: 'selector', selector };
+  const deadline = Date.now() + 8000;
+  while (Date.now() <= deadline) {
+    for (const selector of chain(entry)) {
+      const locator = visibleLocator(page, selector);
+      if (await visible(locator)) {
+        note(key, selector, 'selector', null, await describe(locator));
+        return { locator, via: 'selector', selector };
+      }
     }
-  }
-  if (entry.role && entry.name) {
-    const locator = page.getByRole(entry.role, { name: entry.name, exact: true }).first();
-    if (await visible(locator)) {
-      const selector = `role=${entry.role}[name=${entry.name}]`;
-      note(key, selector, 'role', null, await describe(locator));
-      return { locator, via: 'role', selector };
+    if (entry.role && entry.name) {
+      const locator = page.getByRole(entry.role, { name: entry.name, exact: true }).first();
+      if (await visible(locator)) {
+        const selector = `role=${entry.role}[name=${entry.name}]`;
+        note(key, selector, 'role', null, await describe(locator));
+        return { locator, via: 'role', selector };
+      }
     }
+    if (Date.now() >= deadline) break;
+    await page.waitForTimeout(250);
   }
   const choice = bestCandidate(await candidates(page, entry.scope || 'body'), entry);
   if (!choice) throw new Error('UIA_LOCATOR_MISS ' + key);
-  const locator = page.locator(choice.selector).first();
+  const locator = visibleLocator(page, choice.selector);
   await locator.waitFor({ state: 'visible', timeout: 5000 });
   note(key, choice.selector, 'fingerprint', choice.score, await describe(locator));
   return { locator, via: 'fingerprint', selector: choice.selector, score: choice.score };
@@ -164,8 +173,13 @@ export async function openSettings(page) {
   }, null, { timeout: 30000 });
   const open = page.locator('li.backstage-siteTool-setting.backstage-siteTool-on');
   if (!(await visible(open))) {
-    await (await locate(page, 'settings.inner')).locator.click();
-    await open.waitFor({ state: 'visible', timeout: 20000 });
+    const gear = (await locate(page, 'settings.inner')).locator;
+    await gear.click({ timeout: 10000 });
+    const shown = await open.waitFor({ state: 'visible', timeout: 8000 }).then(() => true).catch(() => false);
+    if (!shown) {
+      await gear.click({ timeout: 10000 });
+      await open.waitFor({ state: 'visible', timeout: 15000 });
+    }
   }
   await locate(page, 'settings.open');
 }
@@ -178,11 +192,22 @@ export async function openLlms(page) {
     await feature.waitFor({ state: 'visible', timeout: 20000 });
   }
   await dismissNotices(page);
+  const dialog = page.locator('#backstage-dialog-customizeFile');
+  await waitIdle(page);
   await locate(page, 'dialog');
-  return page.locator('#backstage-dialog-customizeFile');
+  const llmsTab = dialog.locator('a.customize-file-tab', { hasText: 'llms.txt' }).first();
+  const alreadyOn = await llmsTab.evaluate(el => el.classList.contains('on')).catch(() => false);
+  if (!alreadyOn && await visible(llmsTab)) await llmsTab.click({ timeout: 5000 });
+  const overview = dialog.locator('input.llms-overview').locator('visible=true');
+  if (!(await visible(overview))) {
+    const system = dialog.locator('label.llms-source-system').locator('visible=true').first();
+    if (await visible(system)) await system.click({ timeout: 5000 });
+    await overview.waitFor({ state: 'visible', timeout: 15000 });
+  }
+  return dialog;
 }
 
-async function waitIdle(page) {
+export async function waitIdle(page) {
   await page.waitForFunction(() => {
     const nodes = [...document.querySelectorAll('#backstage-dialog-customizeFile, #backstage-dialog-viewCustomizeFile')];
     return nodes.every(dialog => dialog.getAttribute('data-llms-busy') !== 'saving');
@@ -205,44 +230,55 @@ export function publicLlmsUrl(targets) {
   return url.href;
 }
 
-export async function waitForPublic(request, targets, predicate) {
-  const budgetMs = 45_000;
-  const started = Date.now();
-  let status = 0;
-  while (Date.now() - started < budgetMs) {
-    let response;
-    try {
-      response = await request.get(publicLlmsUrl(targets), {
-        headers: { 'cache-control': 'no-cache', pragma: 'no-cache' }, timeout: 8_000,
-      });
-    } catch {
-      if (Date.now() - started >= budgetMs) break;
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      continue;
-    }
-    status = response.status();
-    if (response.ok()) {
-      const body = await response.text();
-      if (predicate(body)) return;
-    } else if (Date.now() - started >= budgetMs - 2000) {
-      throw new Error('UIA_ENVIRONMENT_BLOCKED: public file HTTP ' + status);
-    }
-    await new Promise(resolve => setTimeout(resolve, 2000));
+/** Public files are cached for about an hour. Record a cache-bust attempt; do not poll. */
+export async function noteDeferredPublic(request, targets, note) {
+  const record = { at: new Date().toISOString(), cache: 'deferred', note: String(note || '') };
+  try {
+    const bust = new URL(publicLlmsUrl(targets));
+    bust.searchParams.set('uia_bust', String(Date.now()));
+    const response = await request.get(bust.href, { timeout: 8000 });
+    record.bust_status = response.status();
+    record.bust_bypassed = response.ok();
+  } catch {
+    record.bust_status = 0;
+    record.bust_bypassed = false;
   }
-  if (status >= 400) throw new Error('UIA_ENVIRONMENT_BLOCKED: public file HTTP ' + status);
-  throw new Error('UIA_BUSINESS_FAILURE [public-file]: public file did not match the expected structure');
+  const dir = process.env.UIA_RESULTS_DIR;
+  if (dir) {
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, 'deferred-public.json');
+    let rows = [];
+    try { rows = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { rows = []; }
+    if (!Array.isArray(rows)) rows = [];
+    rows.push(record);
+    fs.writeFileSync(file, JSON.stringify(rows, null, 2));
+  }
+  return record;
+}
+
+export async function readOverview(page) {
+  await openLlms(page);
+  return (await locate(page, 'overview')).locator.inputValue();
+}
+
+export async function writeOverview(page, value) {
+  await openLlms(page);
+  const input = (await locate(page, 'overview')).locator;
+  if ((await input.inputValue()) === value) {
+    await cancelDialog(page);
+    return false;
+  }
+  await input.fill(value);
+  await (await locate(page, 'save')).locator.click();
+  await page.getByText('llms.txt 配置已保存').waitFor({ timeout: 20000 }).catch(() => {});
+  await page.locator('#backstage-dialog-customizeFile').waitFor({ state: 'hidden', timeout: 15000 }).catch(async () => {
+    await cancelDialog(page);
+  });
+  return true;
 }
 
 export async function clearOverview(page) {
-  await openLlms(page);
-  const input = (await locate(page, 'overview')).locator;
-  if ((await input.inputValue()).trim()) {
-    await input.fill('');
-    const pending = page.getByText('llms.txt 配置已保存').waitFor({ timeout: 20000 }).catch(() => {});
-    await (await locate(page, 'save')).locator.click();
-    await pending;
-  }
-  await cancelDialog(page);
+  await writeOverview(page, '');
 }
 
 export async function markedDisabled(locator) {

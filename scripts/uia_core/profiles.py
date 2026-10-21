@@ -6,8 +6,11 @@ import getpass
 import hashlib
 import json
 import os
+import socket
 import subprocess
 import sys
+import urllib.error
+import urllib.request
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -22,13 +25,51 @@ def presets():
     return read_json(runtime_root() / "environments.json")
 
 
+def _skip_probe(host):
+    host = host.lower().rstrip(".")
+    return host == "localhost" or host.endswith((".test", ".invalid", ".example", ".localhost"))
+
+
+def _origin_status(scheme, host):
+    request = urllib.request.Request(scheme + "://" + host + "/", method="GET", headers={"User-Agent": "uia-scheme-probe"})
+    try:
+        with urllib.request.urlopen(request, timeout=8) as response:
+            return response.status
+    except urllib.error.HTTPError as exc:
+        return exc.code
+    except Exception:
+        return None
+
+
+def detect_scheme(host, fallback):
+    """Pick http or https for a bare domain. Offline and reserved names keep the environment scheme."""
+    host = host.lower().rstrip(".")
+    if fallback not in {"http", "https"}:
+        fallback = "https"
+    if _skip_probe(host):
+        return fallback
+    try:
+        socket.getaddrinfo(host, 80, type=socket.SOCK_STREAM)
+    except OSError:
+        return fallback
+    http_status, https_status = _origin_status("http", host), _origin_status("https", host)
+    ok = lambda code: isinstance(code, int) and code < 400
+    if ok(http_status) and not ok(https_status):
+        return "http"
+    if ok(https_status) and not ok(http_status):
+        return "https"
+    return fallback
+
+
 def site_url(value, scheme="https"):
     value = value.strip()
-    parsed = urlsplit(value if "://" in value else scheme + "://" + value)
+    explicit = "://" in value
+    parsed = urlsplit(value if explicit else scheme + "://" + value)
     require(parsed.scheme in {"http", "https"} and parsed.hostname and not parsed.username and not parsed.password,
             "Provide an HTTP(S) website domain without credentials")
     require(parsed.path in {"", "/"} and not parsed.query and not parsed.fragment, "Provide the website domain without a page path")
-    return parsed.scheme + "://" + parsed.netloc.lower().rstrip(".")
+    chosen = parsed.scheme if explicit else detect_scheme(parsed.hostname, scheme if scheme in {"http", "https"} else "https")
+    return chosen + "://" + parsed.netloc.lower().rstrip(".")
 
 
 def profile_path(name):
@@ -87,6 +128,36 @@ def setup(name, environment, site, account=None, credentials_file=None, password
     return {"profile": name, "config": str(destination), "environment": environment,
             "entry_url": entry["entry_url"], "site": url, "account_alias": name,
             "next": "login", "status": "configured_not_verified"}
+
+
+def update_profile(name, site=None, mutation_allowed=None, scope=None, stability_passes=None):
+    """Change site URL and mutation scope in the private profile. Does not print credentials."""
+    destination = profile_path(name)
+    require(destination.is_file(), "Profile does not exist; run setup first")
+    require(site or mutation_allowed is not None or scope is not None or stability_passes is not None,
+            "Provide a site, mutation scope, or stability_passes")
+    cfg = read_json(destination)
+    environment = cfg.get("environment")
+    environment_id = environment.get("id") if isinstance(environment, dict) else environment
+    require(environment_id in presets(), "Profile environment is invalid")
+    if site:
+        fallback = urlsplit(presets()[environment_id]["entry_url"]).scheme
+        url = site_url(site, fallback)
+        cfg["site"] = url
+        cfg.setdefault("targets", {})["public"] = url
+    mutation = cfg.setdefault("mutation", {"allowed": False, "scope": []})
+    if mutation_allowed is not None:
+        mutation["allowed"] = bool(mutation_allowed)
+    if scope is not None:
+        require(all(isinstance(item, str) and item.strip() for item in scope), "Mutation scopes must be non-empty strings")
+        mutation["scope"] = list(scope)
+    if stability_passes is not None:
+        require(stability_passes in {1, 2}, "stability_passes must be 1 for a daily deliverable or 2 for nightly regression")
+        cfg.setdefault("execution", {})["stability_passes"] = stability_passes
+    atomic_write(destination, cfg)
+    return {"profile": name, "config": str(destination), "site": cfg.get("site"),
+            "public": cfg.get("targets", {}).get("public"), "mutation": mutation,
+            "stability_passes": cfg.get("execution", {}).get("stability_passes", 2)}
 
 
 def input_to_stderr(prompt):

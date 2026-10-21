@@ -50,7 +50,8 @@ owner marker 准备独有数据，验证起点后才执行业务操作；无论�
 
 稳定版本指纹包含 spec、静态本地导入、显式动态依赖、fixture、运行器配置、
 相关数据规则、Intent 与复用计划。编辑后重新计数，原始尝试及代码快照继续保留。
-不能通过 Playwright retry、复用上一次页面状态或导入历史 PASS 凑够两次成功。
+每日交付把 `stability_passes` 设为 1。夜间回归设为 2，不能用重试、同一批里的页面复用
+或历史 PASS 凑够第二次。一批内部可以复用编辑器会话，那只减少打开编辑器的时间。
 
 业务断言通过 `businessAssertion` 标识，失败保留为 business_failure。准备、定位、
 等待或生成错误为 automation_failure，保存诊断后最多两轮修复。修复不修改业务期望。

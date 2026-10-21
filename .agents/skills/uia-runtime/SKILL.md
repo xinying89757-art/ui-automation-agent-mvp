@@ -1,6 +1,6 @@
 ---
 name: uia-runtime
-description: 在本项目按复用计划预检、探索并生成运行 Playwright，管理数据清理、有限修复和同版本两次独立成功判定。
+description: 在本项目按复用计划预检、探索并生成运行 Playwright，管理数据清理、有限修复，以及每日一次交付或夜间两次回归。
 ---
 
 # Runtime executor
@@ -17,6 +17,10 @@ Playwright dependency. Keep the process session alive across tool interactions.
 
 - Read [environment/login](../../../docs/environments-and-login.md) for profile-based runs.
   Run `login --run` before exploration/execution; `--check-only` cannot satisfy preflight.
+  Admin and editor reachability are required. A public front-end failure is recorded on
+  `targets.public` and blocks only cases whose spec calls `waitForPublic`. Do not mark
+  the rest of the workbook blocked, and do not replace the redacted browser error with
+  a generic failure.
   Use the bundled environment, network and auth modules. Gray requires the local PAC
   and observed `X-Via: Ld-Gray`; never replace failed gray routing with direct production.
   Do not copy proxy addresses, historical credentials or site IDs into business specs.
@@ -55,10 +59,17 @@ Playwright dependency. Keep the process session alive across tool interactions.
 ## Run, repair, resume
 
 - Install declared dependencies and the required browser only when executing an authorized
-  workflow. Call `run-batch` for selected ready cases; default worker count is one,
-  Playwright retries are disabled. The command saves receipts, code snapshots and results.
-- After first PASS, the case remains runnable. Call `next` and run it again with fresh
-  setup/context. Stable means two consecutive successes of identical relevant versions.
+  workflow. Call `run-batch` for every runnable case before escalating. Default worker
+  count is one. One editor session is reused inside the batch; cases only reset the dialog.
+  Playwright retries are disabled. The command saves receipts, a `heartbeat.json`, code
+  snapshots and results, then absorbs passing locator hits.
+- Wait with `python3 scripts/uia.py wait --run RUN`. It blocks on the heartbeat file.
+  Do not decide that a batch died because a PID is invisible. Do not poll `status` in a
+  loop for minutes, and do not classify the whole workbook as blocked in the first few
+  minutes.
+- `execution.stability_passes` 1 means the first clean pass is the daily deliverable
+  (`stable`). Nightly regression sets it to 2 and needs a second independent batch.
+  Do not relabel a single pass as stable when the run is configured for 2.
 - A business expectation mismatch is a `business_failure`; preserve it. Locator/timing/
   generation failures may use `repair` after a saved diagnosis and successful cleanup,
   at most two repair rounds. Re-register changed scripts and restart the success count.
@@ -67,8 +78,14 @@ Playwright dependency. Keep the process session alive across tool interactions.
 - If interrupted, inspect `next`/`status`. `recover` consumes a completed batch report;
   `recover --abandon --evidence` preserves interruption evidence. Never abandon a still
   running process; verify it stopped first. Mutating interrupted cases require cleanup.
-- While `next` returns `monitor`, inspect `status` batch progress and send concise
-  updates. Reporter output is partial until its complete flag is true; do not import it early.
+- While `next` returns `monitor`, run `wait` and send concise updates. Reporter output
+  is partial until its complete flag is true; do not import it early.
+- Run every case `next` marks runnable before asking a human. A public-file cache,
+  a slow editor, or cases waiting on a precondition are not a reason to stop the run.
+  Data preconditions (FAQ count, categories, navigation, homepage meta, site short name,
+  quick contact, social widgets) are prepared and restored by the fixture. Human-only
+  preconditions stay `waiting_human` until the one checklist is answered; do not classify
+  them `not_suitable`.
 
 Output: real case results/evidence, registered scripts, reusable local flows and remaining
 gaps. Return to the orchestrator after each batch. Do not silently mark unexecuted cases

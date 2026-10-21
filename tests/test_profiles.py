@@ -108,6 +108,54 @@ class ProfilesTest(unittest.TestCase):
         common.atomic_write(cfg['auth']['storage_state'], {'cookies': [], 'origins': []})
         common.atomic_write(evidence, proof)
         self.assertEqual(runtime.preflight(base, m, 'proof.json')['status'], 'passed')
+        proof['targets']['public'].update(reachable=False, target_visible=False, error='net::ERR_CONNECTION_REFUSED offline-password')
+        common.atomic_write(evidence, proof)
+        optional = runtime.preflight(base, m, 'proof.json')
+        self.assertEqual(optional['status'], 'passed')
+        self.assertFalse(optional['capabilities']['public_frontend'])
+        self.assertNotIn('offline-password', json.dumps(optional))
+
+    def test_explicit_http_wins_and_profile_set_updates_scope(self):
+        explicit = profiles.setup('http-site', 'production', 'http://en.example.test', credentials_file=self.creds)
+        self.assertEqual(explicit['site'], 'http://en.example.test')
+        self.assertNotIn('offline-password', json.dumps(explicit))
+        bare = profiles.setup('bare-prod', 'production', 'en.example.test', credentials_file=self.creds)
+        self.assertEqual(bare['site'], 'https://en.example.test')
+        updated = profiles.update_profile('http-site', mutation_allowed=True, scope=['llms.txt'], stability_passes=1)
+        self.assertEqual(updated['mutation'], {'allowed': True, 'scope': ['llms.txt']})
+        self.assertEqual(updated['stability_passes'], 1)
+        self.assertNotIn('offline-password', json.dumps(updated))
+        cfg = common.config(updated['config'])
+        self.assertEqual(cfg['targets']['public'], 'http://en.example.test')
+        self.assertEqual(cfg['execution']['stability_passes'], 1)
+
+    def test_human_preconditions_wait_instead_of_not_suitable(self):
+        from uia_core.preconditions import sync_preconditions
+        base = self.root / 'pre'
+        folder = base / 'cases/TC-0002'
+        folder.mkdir(parents=True)
+        common.atomic_write(folder / 'source.json', {
+            'title': '无网站设置权限的账号不显示入口',
+            'preconditions': '账号不具备当前站点的网站设置操作权限，已进入3.0编辑器。'})
+        passed = base / 'cases/TC-0001'
+        passed.mkdir()
+        common.atomic_write(passed / 'source.json', {'title': '设置面板', 'preconditions': '已登录'})
+        m = {'history': [], 'questions': {}, 'cases': {
+            'TC-0002': {'case_id': 'TC-0002', 'source': 'cases/TC-0002/source.json', 'title': '无权限',
+                        'result': 'not_suitable', 'work_status': 'finished', 'stage': 'finished',
+                        'attempts': [], 'stability': 'not_run'},
+            'TC-0001': {'case_id': 'TC-0001', 'source': 'cases/TC-0001/source.json', 'title': '设置面板',
+                        'result': 'passed', 'work_status': 'finished', 'stage': 'finished',
+                        'attempts': [{'result': 'passed'}], 'stability': 'stable'}}}
+        queued = sync_preconditions(base, m)
+        self.assertEqual(m['cases']['TC-0002']['result'], None)
+        self.assertEqual(m['cases']['TC-0002']['work_status'], 'waiting_human')
+        self.assertNotEqual(m['cases']['TC-0002'].get('result'), 'not_suitable')
+        self.assertEqual(m['cases']['TC-0001']['result'], 'passed')
+        self.assertIn('TC-0002', queued['cases'])
+        workflow.answer(m, queued['question_id'], {'available': [], 'unavailable': ['no_settings_permission']}, base)
+        self.assertEqual(m['cases']['TC-0002']['work_status'], 'waiting_human')
+        self.assertIsNone(m['cases']['TC-0002']['result'])
 
     def test_login_blocker_is_scoped_and_successful_answer_restores_work(self):
         cfg_path = self.setup_profile()['config']

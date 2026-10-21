@@ -26,6 +26,7 @@ export default defineConfig({
     storageState: cfg.auth?.provider === 'leadong' ? undefined : cfg.auth?.storage_state ?? process.env.UI_STORAGE_STATE,
     launchOptions: networkLaunch,
     ...contextOptions(cfg),
+    actionTimeout: 20_000,
     screenshot: 'off',
     trace: 'off',
     video: 'off',

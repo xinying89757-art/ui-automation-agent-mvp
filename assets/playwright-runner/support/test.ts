@@ -7,6 +7,7 @@ import type { CaseContext, FixtureHooks } from './contracts.js';
 import type { Page, BrowserContext } from '@playwright/test';
 import { loadConfig, runtimeRoot } from './environment.mjs';
 import { authenticatedSession, openSiteArea } from './auth.mjs';
+import { cancelDialog } from '../flows/llms-txt.mjs';
 
 export { expect };
 
@@ -24,8 +25,33 @@ function dataRules(value: unknown): unknown {
   return value;
 }
 
-export const test = base.extend<{ caseContext: CaseContext; lifecycle: void; adminPage: Page; adminContext: BrowserContext }>({
-  caseContext: async ({ browser, context, page }, use, info) => {
+type SiteSession = {
+  openArea(area?: '内容管理' | '编辑网站'): Promise<Page>;
+};
+
+export const test = base.extend<{ caseContext: CaseContext; lifecycle: void; adminPage: Page; adminContext: BrowserContext }, { siteSession: SiteSession }>({
+  siteSession: [async ({ browser }, use) => {
+    const cfg = loadConfig();
+    const session = await authenticatedSession(browser, cfg, { allowLogin: false });
+    let editor: Page | undefined;
+    const openArea = async (area?: '内容管理' | '编辑网站'): Promise<Page> => {
+      if (!area) return session.page;
+      if (area === '编辑网站' && editor && !editor.isClosed()) {
+        await cancelDialog(editor).catch(() => {});
+        return editor;
+      }
+      const opened = await openSiteArea(session.page, cfg, area);
+      if (area === '编辑网站') editor = opened;
+      return opened;
+    };
+    try {
+      await use({ openArea });
+    } finally {
+      if (editor && !editor.isClosed()) await cancelDialog(editor).catch(() => {});
+      await session.context.close();
+    }
+  }, { scope: 'worker' }],
+  caseContext: async ({ siteSession, browser, context, page }, use, info) => {
     const caseId = /^\[([^\]]+)\]/u.exec(info.title)?.[1];
     if (!caseId) throw new Error('UIA_ENVIRONMENT_BLOCKED: test title must start with [case_id]');
     const cfg = loadConfig();
@@ -36,11 +62,9 @@ export const test = base.extend<{ caseContext: CaseContext; lifecycle: void; adm
     const batchId = process.env.UIA_BATCH_ID ?? `manual-${Date.now()}`;
     process.env.UIA_CASE_ID = caseId;
     info.annotations.push({ type: 'uia_case', description: caseId });
-    let session: Awaited<ReturnType<typeof authenticatedSession>> | undefined;
     const openAdmin = async (area?: '内容管理' | '编辑网站'): Promise<Page> => {
       try {
-        session ??= await authenticatedSession(browser, cfg, { allowLogin: false });
-        return area ? await openSiteArea(session.page, cfg, area) : session.page;
+        return await siteSession.openArea(area);
       } catch (error) {
         const code = (error as { code?: string }).code;
         const blocked = new Set(['AUTH_REQUIRED', 'CAPTCHA_REQUIRED', 'LOGIN_FAILED', 'LOGIN_FORM_MISSING', 'CREDENTIALS_REQUIRED', 'ENVIRONMENT_UNREACHABLE', 'ENVIRONMENT_MISMATCH', 'ENVIRONMENT_HTTP_ERROR', 'GRAY_NOT_CONFIRMED', 'INVALID_CREDENTIALS', 'SITE_NOT_ACCESSIBLE', 'SITE_PERMISSION_DENIED', 'SITE_PERMISSION_UNVERIFIED', 'SITE_AMBIGUOUS', 'ACCOUNT_CHANGED', 'MANUAL_LOGIN_TIMEOUT']);
@@ -48,10 +72,8 @@ export const test = base.extend<{ caseContext: CaseContext; lifecycle: void; adm
         throw error;
       }
     };
-    try {
-      await use({ caseId, batchId, ownerMarker: `uia-${batchId}-${caseId}`,
-        targets: cfg.targets ?? {}, dataRules: dataRules(rules) as Record<string, unknown>, browser, context, page, openAdmin });
-    } finally { await session?.context.close(); }
+    await use({ caseId, batchId, ownerMarker: `uia-${batchId}-${caseId}`,
+      targets: cfg.targets ?? {}, dataRules: dataRules(rules) as Record<string, unknown>, browser, context, page, openAdmin });
   },
   adminPage: async ({ caseContext }, use) => { await use(await caseContext.openAdmin()); },
   adminContext: async ({ adminPage }, use) => { await use(adminPage.context()); },

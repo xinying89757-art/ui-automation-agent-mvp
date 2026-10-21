@@ -175,10 +175,11 @@ def run_errors(base, m):
         if c["work_status"] == "finished" and c.get("result") not in RESULTS:
             errors.append(cid + ": finished without a classified result")
         if c.get("stability") == "stable":
-            passes = c.get("attempts", [])[-2:]
-            if len(passes) != 2 or any(a.get("result") != "passed" or not a.get("cleanup_verified") for a in passes):
-                errors.append(cid + ": stable without two clean passing attempts")
-            elif len({a.get("version") for a in passes}) != 1 or len({a.get("batch_id") for a in passes}) != 2:
+            need = int(m["config"]["execution"].get("stability_passes") or 2)
+            passes = c.get("attempts", [])[-need:]
+            if len(passes) != need or any(a.get("result") != "passed" or not a.get("cleanup_verified") for a in passes):
+                errors.append(cid + ": stable without the configured clean passing attempts")
+            elif len({a.get("version") for a in passes}) != 1 or len({a.get("batch_id") for a in passes}) != need:
                 errors.append(cid + ": stability attempts are not independent and identical in version")
         for attempt in c.get("attempts", []):
             evidence = inside(base, attempt.get("evidence", "__missing__"))

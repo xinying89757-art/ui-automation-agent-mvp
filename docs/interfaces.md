@@ -20,7 +20,20 @@ python3 scripts/uia.py login --run REQ-001
 ```
 
 `setup` 的密码隐藏输入，或显式使用 `--credentials-file` / `--password-env`；不接受密码参数。
+裸域名会探测 HTTP/HTTPS；写明协议则保持该协议。`profile set` 修改已有配置的站点、变更范围和稳定性次数，不手改 JSON：
+
+```bash
+python3 scripts/uia.py profile set --profile my-prod --site http://en.example.test \
+  --mutation-allowed --scope llms.txt --stability-passes 1 --run REQ-001
+```
+
+`mutation.allowed: false` 且 `scope: []` 为只读。`scope` 中的名字是允许变更的功能；
+用例的 `mutation_scope` 必须是其中的子集。`llms.txt` 允许在该站点上增删改这一功能，并要求清理被验证。
+`stability_passes` 为 1 时，一次清理成功即交付；为 2 时需要夜间的第二批独立成功。
+
 `login` 的 `--profile`、`--config`、`--run` 三选一，可加 `--force`；`--run` 成功后保存环境/站点证据并接入 preflight。
+后台目标必须可达且已登录。公开站点失败只写入 `capabilities.public_frontend` 和脱敏后的原因，
+不阻断后台用例；只有脚本调用 `waitForPublic` 的用例会等待公开站点。
 命名环境的证据必须含当前环境 ID、实际初始地址、网络指纹及灰度标记，不可只沿用下方旧配置的 targets 示例。
 旧 `init --config` 接口继续兼容。配置格式仍为 `uia-config.v1`，新增 `environment`、`network`、`site` 及 `auth.provider/credentials_file/identity`。
 
@@ -143,7 +156,9 @@ python3 scripts/uia.py answer --run REQ-001 --question QUESTION_ID --file /path/
 python3 scripts/uia.py replay-demo --run REQ-001 --question QUESTION_ID --evidence evidence/demo-replay.json
 ```
 
-问题类型：login、environment、product、demo、column_mapping。
+问题类型：login、environment、product、demo、column_mapping、preconditions。
+`preconditions` 在导入时合并成一个问题。回答 `{"available":["item"],"unavailable":["item"]}`。
+unavailable 的用例保持等待，结果留空，不记为 not_suitable。
 `--key` 可显式提供缺口身份，默认按类型/subject/sheet 合并。人工回答用 JSON 值或对象，
 不要包含凭证值。demo 回答为 `{"script":"/path/to/recorded.spec.ts"}`，导入后仍需独立回放。
 回放证据含实际 `script_sha256`、`result: passed` 和 `cleanup_verified: true`。
@@ -152,6 +167,8 @@ python3 scripts/uia.py replay-demo --run REQ-001 --question QUESTION_ID --eviden
 
 ```bash
 python3 scripts/uia.py run-batch --run REQ-001 --cases TC-01 TC-02
+python3 scripts/uia.py wait --run REQ-001
+python3 scripts/uia.py preconditions --run REQ-001
 python3 scripts/uia.py next --run REQ-001
 python3 scripts/uia.py repair --run REQ-001 --case TC-01 --evidence evidence/diagnosis.json
 python3 scripts/uia.py recover --run REQ-001
@@ -160,8 +177,11 @@ python3 scripts/uia.py resolve-fixture --run REQ-001 --fixture products --eviden
 ```
 
 `run-batch` 是实际启动浏览器的入口。保存 active batch 后运行独立 Playwright 进程，
-运行结束自动读取专用 reporter 结果。`record-run` 可显式导入同一 active batch 的结果，
+并用 `runs/<id>/heartbeat.json` 每几秒写一次进度。`wait` 只读这个文件，不看 PID。
+运行结束自动读取专用 reporter 结果；有通过用例时自动吸收定位。`record-run` 可显式导入同一 active batch 的结果，
 不能导入未知批次或重复导入历史报告。脚本或依赖在执行期间变化不会计入成功。
+同一批复用一个编辑器会话。每日 `stability_passes: 1` 时，这一次成功就是交付；
+夜间任务设为 2，才需要另一批独立成功。公开文件缓存不作为当次断言。
 
 清理恢复证据包含 `fixture_id`、`cleanup_verified: true` 及实际观察记录。清理后还需
 回答相关问题，以保留人工/环境阻断的完整生命周期。只允许修复 automation_failure；

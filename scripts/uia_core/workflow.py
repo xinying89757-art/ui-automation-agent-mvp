@@ -74,6 +74,18 @@ def answer(m, qid, value, base):
     require(q["status"] == "open", "Question already answered")
     require(q["kind"] != "login" or not isinstance(value, dict) or
             not any(k in value for k in ("password", "token", "cookie")), "Answer with a login-state reference, not a secret")
+    if q["kind"] == "preconditions":
+        require(isinstance(value, dict) and set(value) <= {"available", "unavailable"},
+                "Answer with available and unavailable precondition ids")
+        for key in ("available", "unavailable"):
+            require(isinstance(value.get(key, []), list) and all(isinstance(item, str) for item in value.get(key, [])),
+                    "Precondition answer lists must be string arrays")
+        q.update(status="answered", answer=value, answered_at=now(), wait_seconds=elapsed(q["created_at"]))
+        from .preconditions import apply_precondition_answer
+        apply_precondition_answer(m, q)
+        event(m, "question_answered", question_id=qid)
+        waiting = [cid for cid in q["case_ids"] if m["cases"][cid]["work_status"] == "waiting_human"]
+        return {"question_id": qid, "next": "next", "waiting": waiting}
     if q["kind"] == "demo":
         require(isinstance(value, dict) and value.get("script"), "Demo answer requires a script path")
         src = Path(value["script"]).expanduser().resolve()
@@ -172,8 +184,10 @@ def import_excel(base, m, excel, mapping=None):
     m["source_update_required"] = False
     m["delivery"] = {}
     event(m, "excel_imported", **counts)
+    from .preconditions import sync_preconditions
+    preconditions = sync_preconditions(base, m)
     return {**counts, "total": len(new), "unresolved_sheets": sorted(incomplete_sheets),
-            "source_rows_preserved": True, "next": "next"}
+            "source_rows_preserved": True, "preconditions": preconditions, "next": "next"}
 
 
 def bind(m, case_ids, flow_ids, fixture_ids, isolated):
@@ -403,10 +417,12 @@ def refresh(base, m):
 
 def next_task(base, m):
     if m.get("active_batch"):
-        from .runtime import process_alive
+        from .runtime import batch_running
         active = m["active_batch"]
-        return {"action": "monitor" if process_alive(active.get("owner_pid")) else "recover",
-                "skill": "uia-runtime", "batch_id": active["id"], "report": active["report"]}
+        running = batch_running(base, active)
+        return {"action": "monitor" if running else "recover",
+                "skill": "uia-runtime", "batch_id": active["id"], "report": active["report"],
+                "wait": "python3 scripts/uia.py wait --run " + m["run_id"]}
     refresh(base, m)
     if m["sources"] and file_hash(m["sources"][0]["path"]) != m["sources"][0]["sha256"]:
         return {"action": "import", "reason": "source_workbook_changed", "source": m["sources"][0]["path"]}
@@ -570,11 +586,15 @@ def absorb_locators(base, m):
         for field in ("bbox", "ancestors", "tag"):
             if hit.get(field):
                 entry[field] = hit[field]
-        text = str(hit.get("text") or "").strip()
+        text = " ".join(str(hit.get("text") or "").split())
         if text:
             entry["observed_text"] = text[:80]
-            if "\n" not in text and len(text) <= 40 and not entry.get("name"):
+            current = str(entry.get("name") or "")
+            huge = ("\n" in current) or len(current) > 40
+            if len(text) <= 40 and (not current or huge):
                 entry["name"] = text
+            elif huge:
+                entry.pop("name", None)
         entry["via"] = hit.get("via")
         entry["updated_at"] = now()
         updated.append(key)

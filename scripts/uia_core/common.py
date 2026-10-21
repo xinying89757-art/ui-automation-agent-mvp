@@ -225,7 +225,8 @@ def config(path):
                     "Execution budgets must be positive numbers", key)
     for key in ("batch_size", "workers", "stability_passes", "repair_rounds", "strategies_per_gap", "timeout_ms"):
         require(isinstance(cfg["execution"][key], int), "Execution count must be an integer", key)
-    require(cfg["execution"]["stability_passes"] == 2, "This workflow requires exactly two independent passes")
+    require(cfg["execution"]["stability_passes"] in {1, 2},
+            "stability_passes must be 1 for a daily deliverable or 2 for nightly regression")
     state = cfg.get("auth", {}).get("storage_state")
     if state:
         cfg["auth"]["storage_state"] = str((p.parent / state).resolve())

@@ -43,12 +43,76 @@ def process_alive(pid):
         return False
 
 
+def heartbeat_path(base):
+    return Path(base) / "heartbeat.json"
+
+
+def read_heartbeat(base):
+    path = heartbeat_path(base)
+    if not path.is_file():
+        return None
+    try:
+        return read_json(path)
+    except (OSError, ValueError):
+        return None
+
+
+def write_heartbeat(base, batch, running):
+    completed = []
+    report = inside(base, batch["directory"]) / "case-results.json"
+    if report.is_file():
+        try:
+            payload = read_json(report)
+            completed = [{"case_id": row.get("case_id"), "result": row.get("result")}
+                         for row in payload.get("cases", []) if isinstance(row, dict)]
+        except (OSError, ValueError):
+            completed = []
+    body = {"batch_id": batch["id"], "updated_at": now(), "running": running,
+            "case_ids": list(batch.get("case_ids") or []), "completed": completed}
+    atomic_write(heartbeat_path(base), body)
+    atomic_write(inside(base, batch["directory"]) / "heartbeat.json", body)
+    return body
+
+
+def batch_running(base, batch):
+    """Heartbeat is the source of truth. A missing PID does not mean the batch died."""
+    if not batch:
+        return False
+    beat = read_heartbeat(base)
+    if beat and beat.get("batch_id") == batch.get("id"):
+        try:
+            age = elapsed(beat.get("updated_at"))
+        except (TypeError, ValueError):
+            age = None
+        if age is not None and beat.get("running") is True and age < 180:
+            return True
+        if age is not None and beat.get("running") is False and age < 30:
+            return True
+    if elapsed(batch.get("started_at") or now()) < 20 and process_alive(batch.get("owner_pid")):
+        return True
+    return False
+
+
 def ensure_stopped(base, batch):
     require(batch, "No active batch")
-    require(not process_alive(batch.get("owner_pid")), "The batch owner is still running; monitor instead of recovering")
+    require(not batch_running(base, batch), "The batch heartbeat is fresh; use wait instead of recovering")
     receipt = inside(base, batch["directory"]) / "process.json"
     if receipt.is_file():
         require(not process_alive(read_json(receipt).get("pid")), "The Playwright process is still running")
+
+
+def case_needs_public(base, case):
+    registration = case.get("registration") or {}
+    if registration.get("needs_public"):
+        return True
+    script = registration.get("script")
+    if not script:
+        return False
+    try:
+        body = inside(base, script).read_text(encoding="utf-8")
+    except OSError:
+        return False
+    return "waitForPublic(" in body
 
 
 def preflight(base, m, evidence):
@@ -70,13 +134,19 @@ def preflight(base, m, evidence):
             errors.append("Gray response marker is missing")
     if not targets:
         errors.append("Target URLs missing")
+    public_error = None
     for name, url in targets.items():
         observed = proof.get("targets", {}).get(name, {})
         if urlsplit(url).hostname.endswith(".invalid"):
             errors.append("Replace the example target: " + name)
+        if name == "public":
+            reachable = observed.get("url") == url and observed.get("reachable") is True and observed.get("target_visible") is True
+            if not reachable:
+                public_error = redact(str(observed.get("error") or "public frontend unreachable"), cfg)[:300]
+            continue
         if observed.get("url") != url or observed.get("reachable") is not True or observed.get("target_visible") is not True:
             errors.append("Target not verified in the current browser: " + name)
-        if name != "public" and observed.get("authenticated") is not True:
+        if observed.get("authenticated") is not True:
             errors.append("Authenticated target access not verified: " + name)
     for name in cfg.get("auth", {}).get("secret_env", []):
         if not os.environ.get(name):
@@ -85,10 +155,19 @@ def preflight(base, m, evidence):
     if auth and not Path(auth).is_file():
         errors.append("Storage state reference missing")
     status = "blocked" if errors else "passed"
+    public_ok = bool(targets.get("public")) and not public_error
     m["preflight"] = {"status": status, "checked_at": now(), "config_hash": m["config_hash"],
                       "auth_sha256": file_hash(auth) if auth else None,
                       "proxy_sha256": network_fingerprint(cfg),
-                      "evidence": evidence, "sha256": file_hash(proof_path), "errors": errors}
+                      "evidence": evidence, "sha256": file_hash(proof_path), "errors": errors,
+                      "capabilities": {"public_frontend": public_ok, "public_error": public_error}}
+    if status == "passed" and not public_ok and targets.get("public"):
+        affected = [cid for cid, c in m["cases"].items()
+                    if c["work_status"] != "finished" and case_needs_public(base, c)]
+        if affected:
+            question(m, "environment", "public-frontend",
+                     "Public front end is unreachable. Only cases that read the public site are waiting. " + (public_error or ""),
+                     affected, attempted=[public_error or "public frontend unreachable"], reopen=True)
     if errors:
         affected = [cid for cid, c in m["cases"].items() if c["work_status"] != "finished" and c["stage"] in {"discovery", "execution", "repair"}]
         question(m, "environment", "preflight", "Restore the listed environment prerequisites, then repeat browser preflight.",
@@ -113,9 +192,13 @@ def begin_batch(base, m, case_ids):
     require(cli.is_file(), "Install runner dependencies with npm ci before execution")
     require(all(cid in m["cases"] for cid in case_ids), "Unknown selected case ID")
     selected = [m["cases"][cid] for cid in case_ids]
+    caps = (m.get("preflight") or {}).get("capabilities") or {}
     for c in selected:
         require(c["work_status"] == "runnable", "Case is not runnable", c["case_id"])
         require(not set(c["fixture_ids"] or ["case:" + c["case_id"]]) & set(m["contaminated_fixtures"]), "Fixture requires verified recovery", c["case_id"])
+        if caps.get("public_frontend") is False and case_needs_public(base, c):
+            require(False, "This case reads the public site, which is unreachable",
+                    {"case_id": c["case_id"], "error": caps.get("public_error")})
         errors, _ = case_errors(base, c, m["config"], execution=True)
         require(not errors, "Execution gate failed", {"case_id": c["case_id"], "errors": errors})
     # Runtime bindings are a projection of the manifest, not a second mutable truth.
@@ -172,34 +255,49 @@ def begin_batch(base, m, case_ids):
 
 
 def execute_process(base, batch, cfg):
+    import threading
     directory = inside(base, batch["directory"])
     env = dict(os.environ, UIA_BATCH_ID=batch["id"], UIA_CONFIG=str(directory / "config.json"),
                UIA_RESULTS_DIR=str(directory), UIA_CONTAMINATION_DIR=str(base / "state/contaminated"))
-    with (directory / "process.log").open("w", encoding="utf-8") as log:
-        os.chmod(directory / "process.log", 0o600)
-        proc = subprocess.Popen(batch["command"], cwd=str(base / "runner"), env=env,
-                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                text=True, start_new_session=os.name != "nt")
-        atomic_write(directory / "process.json", {"pid": proc.pid, "batch_id": batch["id"], "started_at": now()})
-        try:
-            for line in proc.stdout:
-                log.write(redact(line, cfg))
-                log.flush()
-            return proc.wait()
-        except BaseException:
-            if os.name == "nt":
-                proc.terminate()
-            else:
-                os.killpg(proc.pid, signal.SIGTERM)
+    stop = threading.Event()
+
+    def pump():
+        write_heartbeat(base, batch, True)
+        while not stop.wait(5):
+            write_heartbeat(base, batch, True)
+
+    writer = threading.Thread(target=pump, name="uia-heartbeat", daemon=True)
+    writer.start()
+    try:
+        with (directory / "process.log").open("w", encoding="utf-8") as log:
+            os.chmod(directory / "process.log", 0o600)
+            proc = subprocess.Popen(batch["command"], cwd=str(base / "runner"), env=env,
+                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                    text=True, start_new_session=os.name != "nt")
+            atomic_write(directory / "process.json", {"pid": proc.pid, "batch_id": batch["id"], "started_at": now()})
             try:
-                proc.wait(timeout=10)
-            except subprocess.TimeoutExpired:
+                for line in proc.stdout:
+                    log.write(redact(line, cfg))
+                    log.flush()
+                return proc.wait()
+            except BaseException:
                 if os.name == "nt":
-                    proc.kill()
+                    proc.terminate()
                 else:
-                    os.killpg(proc.pid, signal.SIGKILL)
-                proc.wait()
-            raise
+                    os.killpg(proc.pid, signal.SIGTERM)
+                try:
+                    proc.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    if os.name == "nt":
+                        proc.kill()
+                    else:
+                        os.killpg(proc.pid, signal.SIGKILL)
+                    proc.wait()
+                raise
+    finally:
+        stop.set()
+        writer.join(timeout=1)
+        write_heartbeat(base, batch, False)
 
 
 def consume_batch(base, m, exit_code=None):
@@ -246,8 +344,9 @@ def consume_batch(base, m, exit_code=None):
             m["first_result_at"] = now()
         c["result"] = result
         if result == "passed":
+            need = int(m["config"]["execution"]["stability_passes"])
             c["pass_streak"] = (c["pass_streak"] + 1 if prior and prior["version"] == version and prior["result"] == "passed" else 1)
-            stable = c["pass_streak"] >= 2
+            stable = c["pass_streak"] >= need
             c.update(stability="stable" if stable else "candidate", work_status="finished" if stable else "runnable",
                      stage="feedback" if stable else "execution")
             if not m.get("first_pass_at"):
@@ -280,7 +379,12 @@ def consume_batch(base, m, exit_code=None):
     m["active_batch"] = None
     m["delivery"] = {}
     event(m, "batch_finished", batch_id=batch["id"])
-    return {"batch_id": batch["id"], "results": {cid: m["cases"][cid]["result"] for cid in batch["case_ids"]}, "next": "next"}
+    absorbed = None
+    if any(m["cases"][cid]["result"] == "passed" for cid in batch["case_ids"]):
+        from .workflow import absorb_locators
+        absorbed = absorb_locators(base, m)
+    return {"batch_id": batch["id"], "results": {cid: m["cases"][cid]["result"] for cid in batch["case_ids"]},
+            "locators": absorbed, "next": "next"}
 
 
 def abandon_batch(base, m, evidence):
@@ -319,3 +423,47 @@ def repair(base, m, cid, evidence):
     c.update(stage="discovery", work_status="pending", pass_streak=0, result=None, stability="unstable")
     event(m, "repair_started", case_id=cid, round=c["repair_rounds"], evidence=evidence)
     return {"case_id": cid, "repair_round": c["repair_rounds"], "next": "generate_and_register"}
+
+
+def wait_for_batch(run_id, stale_seconds=180):
+    """Block until the active batch finishes. Progress comes from heartbeat.json, never from PIDs."""
+    import sys
+    import time
+    from .common import load_run, summary
+    announced = None
+    started = time.monotonic()
+    while True:
+        _path, manifest = load_run(run_id)
+        base = _path.parent
+        active = manifest.get("active_batch")
+        beat = read_heartbeat(base)
+        if not active:
+            print("heartbeat idle", file=sys.stderr, flush=True)
+            return {"status": "idle", "summary": summary(manifest), "heartbeat": beat}
+        age = None
+        if beat and beat.get("batch_id") == active.get("id") and beat.get("updated_at"):
+            try:
+                age = elapsed(beat["updated_at"])
+            except (TypeError, ValueError):
+                age = None
+        completed = (beat or {}).get("completed") or []
+        signature = (len(completed), completed[-1].get("case_id") if completed else None)
+        if signature != announced:
+            announced = signature
+            last = (str(completed[-1].get("case_id")) + " " + str(completed[-1].get("result"))) if completed else "starting"
+            age_text = "n/a" if age is None else str(int(age)) + "s"
+            print("heartbeat batch={0} completed={1}/{2} last={3} age={4}".format(
+                str(active.get("id"))[:8], len(completed), len(active.get("case_ids") or []), last, age_text),
+                file=sys.stderr, flush=True)
+        if beat and beat.get("batch_id") == active.get("id") and beat.get("running") is False:
+            if age is not None and age < 60:
+                time.sleep(2)
+                continue
+            require(False, "Batch heartbeat says it stopped, but the run is still active. Inspect heartbeat.json before recover")
+        fresh = age is not None and age < stale_seconds
+        starting = beat is None and elapsed(active.get("started_at") or now()) < stale_seconds
+        if not fresh and not starting:
+            require(False, "Batch heartbeat is stale. Do not infer death from a missing PID; inspect heartbeat.json")
+        if time.monotonic() - started > 6 * 60 * 60:
+            require(False, "wait exceeded 6 hours")
+        time.sleep(5)

@@ -47,7 +47,9 @@ def make_report(base, m):
         attempt = c["attempts"][-1] if c.get("attempts") else None
         classification = c.get("classification") or {}
         records[-1]["reason"] = classification.get("reason", "") if isinstance(classification, dict) else ""
-        if attempt and attempt.get("executed") and c.get("result") in {"passed", "business_failure", "automation_failure", "interrupted"}:
+        if attempt and attempt.get("executed") and c.get("result") == "passed":
+            records[-1]["reason"] = brief_error(attempt, m["config"])
+        elif attempt and attempt.get("executed") and c.get("result") in {"business_failure", "automation_failure", "interrupted"}:
             records[-1]["reason"] = brief_error(attempt, m["config"]) or records[-1]["reason"]
         elif not records[-1]["reason"] and attempt:
             records[-1]["reason"] = brief_error(attempt, m["config"])
@@ -125,7 +127,9 @@ def make_report(base, m):
 table{border-collapse:collapse;width:100%;background:white}th,td{padding:10px;text-align:left;border:1px solid #dbe4eb;vertical-align:top}
 th{background:#23415a;color:white}a{color:#0069a3}pre{white-space:pre-wrap}section{overflow:auto}input{padding:10px;min-width:260px;margin:12px 0}</style>
 <h1>UI 自动化结果</h1>"""
-    body += "<p>运行：" + escape(m["run_id"]) + "；源用例总数：" + str(s["total"]) + "。稳定标准：同一版本独立运行两次成功。</p>"
+    passes = m["config"]["execution"].get("stability_passes", 2)
+    standard = "每日交付：同版本一次成功即可。" if passes == 1 else "夜间回归：同一版本独立运行两次成功。"
+    body += "<p>运行：" + escape(m["run_id"]) + "；源用例总数：" + str(s["total"]) + "。稳定标准：" + standard + "</p>"
     body += "<p>失败截图、trace 和页面快照不进入报告或脚本包。本轮已清除快照文件 " + str(removed) + " 个。</p>"
     body += "<p>执行覆盖率：{:.1%}；已执行用例通过率：{:.1%}；全部用例稳定率：{:.1%}。</p>".format(s["execution_coverage"], s["pass_rate"], s["stability_rate"])
     body += '<p><a href="results.json">JSON</a> · <a href="results.xlsx">Excel</a> · <a href="scripts.zip">脚本工程</a> · <a href="asset-review.json">资产回写候选</a></p>'

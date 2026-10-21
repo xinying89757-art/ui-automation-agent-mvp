@@ -46,7 +46,7 @@
         "height": 72
       },
       "via": "selector",
-      "updated_at": "2026-10-21T10:22:47.197488+00:00",
+      "updated_at": "2026-10-21T13:13:11.569024+00:00",
       "observed_text": "设置"
     },
     "settings.open": {
@@ -72,9 +72,9 @@
         "width": 75,
         "height": 73
       },
-      "observed_text": "设置\n\n网站设置\n \n\n你可以 设置浏览器图标， 禁止鼠标右键， 禁止拷贝， 设置防同行 功能， 对所有页面添加 Head标签、 Body标签， 管理网站备份，",
+      "observed_text": "设置 网站设置 你可以 设置浏览器图标， 禁止鼠标右键， 禁止拷贝， 设置防同行 功能， 对所有页面添加 Head标签、 Body标签， 管理网站备份，",
       "via": "selector",
-      "updated_at": "2026-10-21T10:22:47.197490+00:00"
+      "updated_at": "2026-10-21T13:13:11.569254+00:00"
     },
     "manageTxt": {
       "intent": "打开管理txt文件",
@@ -108,7 +108,7 @@
         "height": 40
       },
       "via": "selector",
-      "updated_at": "2026-10-21T10:22:47.197491+00:00",
+      "updated_at": "2026-10-21T13:13:11.569256+00:00",
       "observed_text": "管理txt文件"
     },
     "dialog": {
@@ -133,9 +133,9 @@
         "width": 720,
         "height": 860
       },
-      "observed_text": "管理txt文件\nllms.txt 自定义txt文件\nllms.txt 功能\n\n开启后系统将自动在网站根目录生成并持续更新 llms.txt 文件，帮助 AI 大",
+      "observed_text": "管理txt文件 llms.txt 自定义txt文件 llms.txt 功能 开启后系统将自动在网站根目录生成并持续更新 llms.txt 文件，帮助 AI 大",
       "via": "selector",
-      "updated_at": "2026-10-21T10:22:47.197493+00:00"
+      "updated_at": "2026-10-21T13:13:11.569258+00:00"
     },
     "tab.custom": {
       "intent": "切换到自定义txt文件页签",
@@ -165,7 +165,7 @@
         "#backstage-dialog-customizeFile"
       ],
       "via": "selector",
-      "updated_at": "2026-10-21T10:22:47.197438+00:00",
+      "updated_at": "2026-10-21T13:13:11.569082+00:00",
       "observed_text": "自定义txt文件"
     },
     "tab.llms": {
@@ -196,7 +196,7 @@
         "#backstage-dialog-customizeFile"
       ],
       "via": "selector",
-      "updated_at": "2026-10-21T10:22:47.197428+00:00",
+      "updated_at": "2026-10-21T13:13:11.569071+00:00",
       "observed_text": "llms.txt"
     },
     "source.system": {
@@ -229,7 +229,7 @@
         "div.llms-form"
       ],
       "via": "selector",
-      "updated_at": "2026-10-21T10:22:47.197473+00:00",
+      "updated_at": "2026-10-21T13:13:11.569260+00:00",
       "observed_text": "系统自动生成"
     },
     "source.custom": {
@@ -262,7 +262,7 @@
         "div.llms-form"
       ],
       "via": "selector",
-      "updated_at": "2026-10-21T10:22:47.197468+00:00",
+      "updated_at": "2026-10-21T13:13:11.569239+00:00",
       "observed_text": "自定义内容"
     },
     "overview": {
@@ -298,7 +298,7 @@
       ],
       "name": "为空则取首页 Meta Description",
       "via": "selector",
-      "updated_at": "2026-10-21T10:22:47.197483+00:00",
+      "updated_at": "2026-10-21T13:13:11.569262+00:00",
       "observed_text": "为空则取首页 Meta Description"
     },
     "addField": {
@@ -320,7 +320,7 @@
       "last_success": "a.llms-add-field",
       "bbox": {
         "x": 960,
-        "y": 512,
+        "y": 488,
         "width": 85,
         "height": 30
       },
@@ -331,7 +331,7 @@
         "div.llms-fields"
       ],
       "via": "selector",
-      "updated_at": "2026-10-21T10:22:47.197495+00:00",
+      "updated_at": "2026-10-21T13:13:11.569180+00:00",
       "observed_text": "+ 添加字段"
     },
     "extraName": {
@@ -430,7 +430,7 @@
       ],
       "name": "请输入完整的 llms.txt 文件内容",
       "via": "selector",
-      "updated_at": "2026-10-21T10:22:47.197471+00:00",
+      "updated_at": "2026-10-21T13:13:11.569214+00:00",
       "observed_text": "请输入完整的 llms.txt 文件内容"
     },
     "save": {
@@ -459,7 +459,7 @@
         "#backstage-dialog-customizeFile"
       ],
       "via": "selector",
-      "updated_at": "2026-10-21T10:22:47.197500+00:00",
+      "updated_at": "2026-10-21T13:13:11.569252+00:00",
       "observed_text": "保存"
     },
     "cancel": {
@@ -491,7 +491,7 @@
         "#backstage-dialog-customizeFile"
       ],
       "via": "selector",
-      "updated_at": "2026-10-21T10:22:47.197413+00:00",
+      "updated_at": "2026-10-21T13:13:11.569055+00:00",
       "observed_text": "取消"
     },
     "addNow": {
@@ -520,7 +520,7 @@
         "#backstage-dialog-customizeFile"
       ],
       "via": "selector",
-      "updated_at": "2026-10-21T10:22:47.197440+00:00",
+      "updated_at": "2026-10-21T13:13:11.569084+00:00",
       "observed_text": "立即添加"
     },
     "addFileDialog": {
@@ -571,7 +571,7 @@
         "div.backstage-dialog-innercont"
       ],
       "via": "selector",
-      "updated_at": "2026-10-21T10:22:47.197442+00:00"
+      "updated_at": "2026-10-21T13:13:11.569086+00:00"
     },
     "addFileContent": {
       "intent": "自定义txt文件内容",
@@ -602,7 +602,7 @@
         "div.backstage-dialog-innercont"
       ],
       "via": "selector",
-      "updated_at": "2026-10-21T10:22:47.197445+00:00"
+      "updated_at": "2026-10-21T13:13:11.569088+00:00"
     },
     "addFileSave": {
       "intent": "保存自定义txt文件",
@@ -631,7 +631,7 @@
       ],
       "observed_text": "保存",
       "via": "selector",
-      "updated_at": "2026-10-21T10:22:47.197447+00:00"
+      "updated_at": "2026-10-21T13:13:11.569090+00:00"
     },
     "rehearse.stale": {
       "intent": "演练：主定位器失效后按指纹找回管理txt文件",
@@ -656,5 +656,5 @@
       ]
     }
   },
-  "updated_at": "2026-10-21T10:22:47.197501+00:00"
+  "updated_at": "2026-10-21T13:13:11.569263+00:00"
 }

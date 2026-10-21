@@ -1,24 +1,24 @@
 ---
 name: uia-runtime
-description: 在本项目按复用计划预检、探索并生成运行 Playwright，管理数据清理、有限修复，以及每日一次交付或夜间两次回归。
+description: 在本项目按 case-spec 预检、探索并生成运行 Playwright，管理数据清理、有限修复，以及每日一次交付或夜间两次回归。
 ---
 
 # Runtime executor
 
 Read [workflow](../../../docs/workflow.md) and [interfaces](../../../docs/interfaces.md).
-Input: selected cases/flow, validated Intents/plans, environment configuration, and
+Input: selected cases/flow, validated case-specs (legacy Intents/plans remain readable), environment configuration, and
 saved runtime facts. Use available browser/Playwright tools to gather real UI evidence;
 the Python CLI manages state and subprocesses, not autonomous UI reasoning.
-If no browser connector exists, use the scaffold's self-contained JSON-line
-`support/explore.mjs` session described in its README. It uses the runner's locked
-Playwright dependency. Keep the process session alive across tool interactions.
+Use `uia.py snapshot --run RUN --node editor` for bounded redacted visible-only
+DOM evidence. Scope with `--frame '#backstage-innerpage'` or `--scope '#dialog'`;
+`--open-target llms` opens that known node first. Do not use explore.mjs in the default flow.
 
 ## Preflight and discovery
 
 - Read [environment/login](../../../docs/environments-and-login.md) for profile-based runs.
   Run `login --run` before exploration/execution; `--check-only` cannot satisfy preflight.
   Admin and editor reachability are required. A public front-end failure is recorded on
-  `targets.public` and blocks only cases whose spec calls `waitForPublic`. Do not mark
+  `targets.public` and blocks only cases whose case-spec requires public_frontend or whose script reads a public page. Do not mark
   the rest of the workbook blocked, and do not replace the redacted browser error with
   a generic failure.
   Use the bundled environment, network and auth modules. Gray requires the local PAC
@@ -38,7 +38,7 @@ Playwright dependency. Keep the process session alive across tool interactions.
 ## Generate and register
 
 - Use `scaffold` once; generate final tests under the standalone runner. Use its
-  `support/test` fixture, title each test `[case_id] title`, and wrap every core expectation
+  `support/fixtures` editor/seed fixture for case-spec scripts (legacy scripts retain support/test), title each test `[case_id] title`, and wrap every core expectation
   in `businessAssertion(assertionId, callback)`.
 - Implement real flow-specific fixture hooks: prepare, verify prepared, cleanup and
   verify cleanup, including partial-setup cleanup. Read-only fixtures verify prerequisites
@@ -47,14 +47,16 @@ Playwright dependency. Keep the process session alive across tool interactions.
   for visitor/password cases; never inherit an already-unlocked visitor session.
 - Parameterize public/admin URLs, proxy, credentials references and test data. Copy
   reusable code into local exported modules so the runner has no absolute external imports.
-- Keep default `page`/`context` unauthenticated. Use `adminPage`, `adminContext` or
-  `caseContext.openAdmin('内容管理'|'编辑网站')` for managed access. These consume verified
-  login state; refresh an expired session outside test traces via `login --run`.
-  The runner and exported package carry `environments.json`, `network/gray.pac` and
-  environment-check/login scripts. Do not introduce paths to the source workspace.
-- Save registration JSON with source-step/capability/assertion file+line coverage,
-  evidence, required gap resolutions, hooks, reuse IDs and dynamic dependencies.
-  Call `register`; failed gates return concrete problems to repair without weakening assertions.
+- New specs consume the editor page fixture automatically; keep separate visitor
+  contexts clean and refresh expired sessions outside test traces with login --run.
+- Use spec lint/gen. AI-written final scripts use register with only case_id/script;
+  coverage derives from // @step S1 and businessAssertion('A1'), never hand-filled lines.
+- Strip icon glyphs; scope dialog-internal locators and repeated accessible names.
+  Close steps require assertions. Snapshot refs must never enter knowledge/write-back.
+- Triage environment → session → data → locator/timing → business assertion. Only
+  locator/timing fixes may be automatic; assertion changes require explicit review.
+- Xinying authorizes test-site/account changes, saving and publishing; restore practical
+  baselines for repeatability. External Codex uses timeout 2h codex exec ... < /dev/null.
 
 ## Run, repair, resume
 

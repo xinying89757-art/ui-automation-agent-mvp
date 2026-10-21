@@ -1,6 +1,6 @@
 ---
 name: uia-orchestrator
-description: 在本项目接收 Excel UI 用例，自动衔接准备、资产匹配、浏览器探索和分批执行；支持查询、人工答复和断点恢复。
+description: 在本项目接收 Excel UI 用例，自动衔接 case-spec、浏览器探索和分批执行；支持查询、人工答复和断点恢复。
 ---
 
 # Excel UI automation orchestrator
@@ -21,16 +21,17 @@ do not invoke Claude Code `Task()` or assume a shell script can invoke the model
    next business flow in a concise progress update.
    For named environments read [environment and login setup](../../../docs/environments-and-login.md).
    Offer P (`p`), 灰度 (`gray`), 正式版 (`production`) when the environment is missing;
-   show the distinct initial URL, network mode, account alias and target website domain.
+   show the distinct initial URL, network mode and target website domain; never print account names.
    Use `setup` to save a private profile; passwords come from a hidden terminal prompt or
    a user-specified private file, never a command argument or question answer artifact.
    Do not migrate historical accounts. Pass the selected profile to `init --profile`.
 2. Call `init`, `import`, then `next`; for resume call `status` then `next`. Load only
    the selected case/flow artifacts, not the entire Excel and all Intents into context.
 3. Follow the action returned by `next`:
-   - `intent`: [uia-excel-prep](../uia-excel-prep/SKILL.md), which calls
-     [uia-automation-intent](../uia-automation-intent/SKILL.md).
-   - `matching`: [uia-asset-matcher](../uia-asset-matcher/SKILL.md).
+   - `spec`: [uia-case-spec](../uia-case-spec/SKILL.md). Write compact case-specs,
+     lint exact Excel expectations, generate templates and explore unknown targets only.
+   - Legacy runs may return `intent`/`matching`; preserve compatibility, but do not
+     use the old intent/reuse-plan/asset-matcher chain for new runs.
    - `preflight`, `discover`, `run-batch`, `repair`, `monitor`, `recover`:
      [uia-runtime](../uia-runtime/SKILL.md).
      Profile-based preflight uses `login --run`: it verifies the actual environment,
@@ -53,15 +54,9 @@ do not invoke Claude Code `Task()` or assume a shell script can invoke the model
 
 ## Responsibilities and waits
 
-The manifest is the only mutable run state. Intent and reuse-plan YAML remain their
-own semantic contracts; reports and question views are projections. Do not introduce
-the globally installed v5/v6 handoff or point-registry formats into this run.
-
-Use project-local skills and resources. Source-derived UI knowledge and asset mining
-are optional initialization/update work when sources are available, not prerequisites
-that must be repeated for every requirement. Their skills are
-[uia-ui-profile-builder](../uia-ui-profile-builder/SKILL.md) and
-[uia-automation-asset-miner](../uia-automation-asset-miner/SKILL.md).
+The manifest is the only mutable progress state. New cases use case-spec.v1;
+legacy Intent/reuse-plan and both YAML knowledge schemas stay readable. Profile
+building, asset mining and asset matching are retired from the default flow.
 
 Pause only for required login/access, missing environment/data, true business ambiguity,
 or a focused demonstration after bounded exploration. Deduplicate questions, reuse
@@ -84,3 +79,5 @@ Return result Excel, HTML, JSON, the standalone scripts archive, failure evidenc
 asset-review candidates. Source workbooks and historical `TC_PD_001` evidence are immutable.
 Long-term asset write-back is a consolidated review step after successful execution;
 new verified functions may be reused inside the current run immediately.
+
+Test-site editing, saving and publishing are authorized by Xinying. Restore practical baselines for repeatability. Every external invocation uses `timeout 2h codex exec ... < /dev/null`. Never persist snapshot refs.

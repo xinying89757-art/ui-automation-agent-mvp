@@ -1,0 +1,6 @@
+interface:
+  display_name: "UI 自动化资产匹配"
+  short_description: "Project-local Excel to UI automation stage and handoff"
+  default_prompt: "Use $uia-asset-matcher for this project automation workflow."
+policy:
+  allow_implicit_invocation: true

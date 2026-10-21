@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+node_modules/
+runs/
+.auth/
+.env
+*.local.yaml
+playwright-report/
+test-results/
+.DS_Store

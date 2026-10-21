@@ -1,0 +1,44 @@
+schema_version: 1
+profile_version: "1.1"
+runtime_required:
+  - id: runtime-order-table-portal-mount
+    name: Confirm table dropdown portal mount and clickable position
+    scope: component
+    applies_to:
+      - component-data-table
+    reason: "代码调用 overlay/portal API，但真实挂载节点、遮挡和指针可达性取决于浏览器环境"
+    verification_method: "在代表性数据和至少一个窄视口下进行浏览器检查"
+    acceptance_signal: "下拉可见、未被遮挡且可以接收指针操作"
+    priority: P0
+    resolves:
+      - knowledge_id: component-data-table
+        knowledge_type: component
+        fields: [runtime_mount, overlay_behavior, pointer_interaction]
+    knowledge_level: RUNTIME_REQUIRED
+    confidence: medium
+    source_state: present
+    evidence:
+      - key: "code:src/shared/ui/DataTable.tsx:dropdown-overlay"
+        kind: code
+        source_file: src/shared/ui/DataTable.tsx
+        symbol: dropdown-overlay
+        detail: "组件使用 overlay/portal 相关能力"
+    status: open
+  - id: runtime-order-loading-duration
+    name: Confirm loading duration and transition visibility
+    scope: page
+    applies_to:
+      - page-order-list
+    reason: "源码只能确认 loading 分支，不能确认真实网络延迟和用户可见时长"
+    verification_method: "使用代表性接口响应，在正常和慢网络下观察页面"
+    acceptance_signal: "loading 状态在数据返回前可见，完成后稳定消失且无残留遮罩"
+    priority: P1
+    resolves:
+      - knowledge_id: page-order-list
+        knowledge_type: page
+        fields: [loading_duration, transition_visibility]
+    knowledge_level: RUNTIME_REQUIRED
+    confidence: high
+    source_state: present
+    evidence: []
+    status: open

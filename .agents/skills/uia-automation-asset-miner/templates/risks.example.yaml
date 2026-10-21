@@ -1,0 +1,33 @@
+# 格式示例；不是当前项目的扫描结果。
+schema_version: 2.1
+risks:
+  - id: "risk-member-detail-source-duplicate"
+    kind: "duplicate_candidate"
+    duplicate_class: "SOURCE_DUPLICATE"
+    asset_ids: ["page-member-detail", "page-member-detail-runner-b"]
+    evidence: ["code:tests/runner-a/pages/MemberDetail.ts:MemberDetailPage", "code:tests/runner-b/pages/MemberDetail.ts:MemberDetailPage"]
+    impact: "不同 runner 目录存在来源副本，不能据此认定能力身份重复"
+    recommendation: "保留 canonical_source_path，人工确认差异后再迁移引用"
+    state: "open"
+    blocking: false
+    equivalence_scope: "same page-object source copied across runner directories"
+    canonical_candidate: null
+    canonical_source_path: "tests/pages/MemberDetail.ts"
+    related_asset_ids: ["page-member-detail-runner-b"]
+    why_not_auto_merge: "SOURCE_DUPLICATE 不是 ASSET_DUPLICATE，且 page object 与业务流程不能互相 canonical"
+    migration_recommendation: "把 runner 副本迁移到 canonical_source_path，保留 provenance"
+  - id: "risk-member-detail-asset-duplicate-review"
+    kind: "duplicate_candidate"
+    duplicate_class: "ASSET_DUPLICATE"
+    asset_ids: ["action-save-member", "action-save-member-copy"]
+    evidence: ["code:tests/actions/member.ts:saveMember", "code:tests/actions/memberCopy.ts:saveMember"]
+    impact: "相同 type 与 capability 可能重复定义保存会员动作"
+    recommendation: "人工确认输入输出后再选择 canonical candidate"
+    state: "needs_review"
+    blocking: false
+    equivalence_scope: "same business_action capability and semantic terms"
+    canonical_candidate: "action-save-member"
+    canonical_source_path: null
+    related_asset_ids: []
+    why_not_auto_merge: "需要确认调用契约和 verified usage 是否等价"
+    migration_recommendation: "确认后通过 migration-map 迁移 aliases，不直接删除来源"

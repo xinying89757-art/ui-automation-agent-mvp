@@ -1,0 +1,263 @@
+# 三种 V2.1 决策示例；不是当前项目的扫描结果。
+schema_version: 2.1
+assets:
+  # A. runtime-point-resolution：依赖和前置条件均已由代码/运行路径证明。
+  - id: "runtime-point-resolution"
+    aliases: []
+    type: "runtime_helper"
+    legacy_type: null
+    name: "解析测试点位并返回可断言值"
+    capability: "resolve registered point values for assertions"
+    description: "从已初始化的 point registry 按 key 解析测试点位，并返回断言可消费的值。"
+    business_terms:
+      zh: ["解析点位", "查询测试点", "断言点位"]
+      en: ["point resolution", "registered point", "assertion value"]
+    semantic_tags: ["点位", "断言", "registry", "runtime"]
+    match_keys: ["解析点位", "查询测试点", "resolvePoint", "point value"]
+    capability_group: "assertion_runtime"
+    scope: "system"
+    reuse_scope: "GLOBAL"
+    reuse_readiness: "DIRECT_REUSE"
+    stability: "HIGH"
+    selection_priority: "HIGH"
+    source_file: "tests/runtime/pointRuntime.ts"
+    symbol: "resolvePoint"
+    source_state: "present"
+    verification_status: "VERIFIED"
+    verification_confidence: "high"
+    quality_flags: []
+    inputs:
+      status: KNOWN
+      items: ["registered point key"]
+    outputs:
+      status: KNOWN
+      items: ["resolved point value"]
+    preconditions:
+      status: KNOWN
+      items: ["verified point registry is initialized"]
+    side_effects:
+      status: NONE
+      items: []
+    dependencies:
+      status: KNOWN
+      completeness: COMPLETE
+      items:
+        - asset_id: "fixture-point-registry"
+          required: true
+          reason: "runtime reads the registry injected by the fixture"
+          evidence_refs: ["code:tests/runtime/pointRuntime.ts:registry", "code:tests/fixtures/pointRegistry.ts:init"]
+    requires:
+      status: KNOWN
+      completeness: COMPLETE
+      items:
+        - kind: "registry"
+          name: "verified point registry"
+          required: true
+          reason: "point keys are resolved from the initialized registry"
+          evidence_refs: ["code:tests/fixtures/pointRegistry.ts:init"]
+    applicable_when:
+      status: KNOWN
+      items: ["an assertion needs a registered point value"]
+    not_applicable_when:
+      status: NONE
+      items: []
+    provenance:
+      task_id: null
+      origin_paths: ["tests/e2e/member.spec.ts", "tests/assertions/expectPoint.ts"]
+      discovered_from: ["import", "test_call", "fixture_initialization", "run_report"]
+    verified_usage:
+      level: "confirmed_pass"
+      test_refs: ["tests/e2e/member.spec.ts::checks member point"]
+      run_refs: ["test-results/report.json::checks member point"]
+      note: "当前源版本与通过报告关联"
+    evidence:
+      - key: "code:tests/runtime/pointRuntime.ts:resolvePoint"
+        kind: "code"
+        ref: "tests/runtime/pointRuntime.ts::resolvePoint"
+        detail: "按 key 从 registry 解析点位"
+        outcome: null
+        applicability: "current"
+      - key: "run_report:test-results/report.json:checks-member-point:run-001"
+        kind: "run_report"
+        ref: "test-results/report.json::checks member point"
+        detail: "当前源版本对应的用例通过"
+        outcome: "passed"
+        applicability: "current"
+    blocking_risks: []
+    non_blocking_risks: []
+    required_remediation_before_direct_reuse: []
+    duplicate_candidates: []
+    conflicts: []
+    compatibility:
+      legacy:
+        reusable: true
+        reuse_status: "REUSABLE"
+
+  # B. FRAGILE page object：来源副本风险和依赖边均未能完整确认。
+  - id: "page-member-detail"
+    aliases: ["page-member-detail-runner-a"]
+    type: "page_object"
+    legacy_type: "component"
+    name: "会员详情页面对象"
+    capability: "edit member owner and save detail form"
+    description: "封装会员详情页负责人编辑和表单保存操作；页面定位存在 runner 副本。"
+    business_terms:
+      zh: ["会员详情", "修改负责人", "保存详情"]
+      en: ["member detail", "edit owner", "save detail form"]
+    semantic_tags: ["会员详情", "负责人", "表单保存", "page object"]
+    match_keys: ["修改负责人", "保存会员详情", "edit owner", "save form"]
+    capability_group: "member_management"
+    scope: "page"
+    reuse_scope: "MODULE"
+    reuse_readiness: "ADAPT_BEFORE_REUSE"
+    stability: "LOW"
+    selection_priority: "MEDIUM"
+    source_file: "tests/runner-a/pages/MemberDetail.ts"
+    symbol: "MemberDetailPage"
+    source_state: "present"
+    verification_status: "PARTIALLY_VERIFIED"
+    verification_confidence: "medium"
+    quality_flags: ["FRAGILE"]
+    inputs:
+      status: KNOWN
+      items: ["member id", "owner value"]
+    outputs:
+      status: UNKNOWN
+      items: ["observed save result"]
+    preconditions:
+      status: UNKNOWN
+      items: ["member detail page is open"]
+    side_effects:
+      status: UNKNOWN
+      items: []
+    dependencies:
+      status: UNKNOWN
+      completeness: PARTIAL
+      items:
+        - asset_id: "runtime-auth-login-session"
+          required: true
+          reason: "one runner path invokes the authenticated fixture before opening the page"
+          evidence_refs: ["code:tests/runner-a/member.spec.ts:beforeEach"]
+    requires:
+      status: UNKNOWN
+      completeness: PARTIAL
+      items:
+        - kind: "page_state"
+          name: "member detail route"
+          required: true
+          reason: "the page object navigates to a member detail route"
+          evidence_refs: ["code:tests/runner-a/pages/MemberDetail.ts:goto"]
+    applicable_when:
+      status: KNOWN
+      items: ["the target member detail page uses the same DOM structure"]
+    not_applicable_when:
+      status: UNKNOWN
+      items: []
+    provenance:
+      task_id: null
+      origin_paths: ["tests/runner-a/pages/MemberDetail.ts", "tests/runner-b/pages/MemberDetail.ts"]
+      discovered_from: ["source_copy", "test_call", "partial_run_report"]
+    verified_usage:
+      level: "confirmed_pass"
+      test_refs: ["tests/runner-a/member.spec.ts::updates owner"]
+      run_refs: ["test-results/runner-a.json::updates owner"]
+      note: "仅 runner-a 路径有当前通过证据"
+    evidence:
+      - key: "code:tests/runner-a/pages/MemberDetail.ts:MemberDetailPage"
+        kind: "code"
+        ref: "tests/runner-a/pages/MemberDetail.ts::MemberDetailPage"
+        detail: "页面对象包含负责人编辑和保存操作"
+        outcome: null
+        applicability: "current"
+      - key: "code:tests/runner-b/pages/MemberDetail.ts:MemberDetailPage"
+        kind: "code"
+        ref: "tests/runner-b/pages/MemberDetail.ts::MemberDetailPage"
+        detail: "发现来源副本，未证明与 runner-a 完全等价"
+        outcome: null
+        applicability: "current"
+    blocking_risks: ["risk-member-detail-source-duplicate", "risk-member-detail-unknown-dependencies"]
+    non_blocking_risks: []
+    required_remediation_before_direct_reuse: ["确认两个 runner 副本的能力等价性", "补齐依赖和页面前置条件证据", "替换脆弱定位"]
+    duplicate_candidates: ["risk-member-detail-source-duplicate"]
+    conflicts: []
+    compatibility:
+      legacy:
+        reusable: null
+        reuse_status: "REUSABLE"
+
+  # C. 历史 flow：只有历史 completed 档案，不允许 canonical asset merge。
+  - id: "flow-historical-member-export"
+    aliases: ["flow-bug1004949-member-export"]
+    type: "business_flow"
+    legacy_type: "business_flow"
+    name: "历史会员导出流程"
+    capability: "export member records"
+    description: "历史测试档案中出现的会员导出步骤编排。"
+    business_terms:
+      zh: ["会员导出", "导出会员记录"]
+      en: ["member export", "export member records"]
+    semantic_tags: ["会员", "导出", "历史流程"]
+    match_keys: ["导出会员", "export member"]
+    capability_group: "member_management"
+    scope: "module"
+    reuse_scope: "FEATURE"
+    reuse_readiness: "REFERENCE_ONLY"
+    stability: "LOW"
+    selection_priority: "LOW"
+    source_file: "tests/archive/BUG1004949.spec.ts"
+    symbol: "export member records@42"
+    source_state: "present"
+    verification_status: "UNKNOWN"
+    verification_confidence: "low"
+    quality_flags: ["STALE_PATH"]
+    inputs:
+      status: UNKNOWN
+      items: []
+    outputs:
+      status: UNKNOWN
+      items: []
+    preconditions:
+      status: UNKNOWN
+      items: []
+    side_effects:
+      status: UNKNOWN
+      items: []
+    dependencies:
+      status: UNKNOWN
+      completeness: PARTIAL
+      items: []
+    requires:
+      status: UNKNOWN
+      completeness: PARTIAL
+      items: []
+    applicable_when:
+      status: UNKNOWN
+      items: []
+    not_applicable_when:
+      status: UNKNOWN
+      items: []
+    provenance:
+      task_id: "BUG1004949"
+      origin_paths: ["tests/archive/BUG1004949.spec.ts"]
+      discovered_from: ["historical_report"]
+    verified_usage:
+      level: "reported_pass"
+      test_refs: []
+      run_refs: ["archive/completed-run.yaml::BUG1004949"]
+      note: "历史 completed 档案不能证明当前实现可复用"
+    evidence:
+      - key: "user_report:archive/completed-run.yaml:BUG1004949"
+        kind: "user_report"
+        ref: "archive/completed-run.yaml::BUG1004949"
+        detail: "历史档案标记 completed，无当前 run 关联"
+        outcome: "passed"
+        applicability: "historical"
+    blocking_risks: ["risk-historical-flow-no-current-evidence"]
+    non_blocking_risks: []
+    required_remediation_before_direct_reuse: ["重新建立当前源版本的独立通过证据并确认输入输出和依赖"]
+    duplicate_candidates: []
+    conflicts: []
+    compatibility:
+      legacy:
+        reusable: null
+        reuse_status: "UNKNOWN"

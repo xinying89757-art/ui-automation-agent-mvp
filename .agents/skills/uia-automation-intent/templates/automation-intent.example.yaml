@@ -1,0 +1,387 @@
+schema_version: "1.0"
+
+# Regression example for TC_PD_001. The password is intentionally not present.
+intent:
+  id: "AI-PRODUCT-DETAIL-001"
+  lifecycle:
+    stage: PRE_RUNTIME
+    status: READY_FOR_MATCHING
+  case:
+    id: "TC_PD_001"
+    name: "带目录的自定义URL在密码保护下可通过验证并正常展示内容"
+    module: "产品详情"
+    source_refs:
+      - type: TEST_CASE
+        ref: "TC_PD_001"
+    priority: P0
+  eligibility:
+    status: ELIGIBLE
+    reasons:
+      - "后台配置和前台密码保护结果均可通过用户可见 UI 验证"
+    excluded_points: []
+  goal:
+    actor:
+      semantic_name: "产品管理员与访问者"
+    action:
+      semantic_name: "配置并访问"
+    object:
+      semantic_name: "带目录的产品详情页"
+    expected_business_result:
+      - "未验证密码时显示密码输入页且不显示产品内容"
+      - "输入正确密码验证后显示产品内容"
+  test_data:
+    variables:
+      - id: target_product
+        semantic_name: "目标产品"
+        type: STRING
+        required: true
+        value: null
+        source:
+          type: TEST_CASE
+          ref: "TC_PD_001"
+          description: "测试用例要求准备目标产品"
+        sensitivity: NORMAL
+      - id: custom_product_path
+        semantic_name: "产品自定义URL"
+        type: STRING
+        required: true
+        value: "/bug1004949/product.html"
+        source:
+          type: TEST_CASE
+          ref: "TC_PD_001"
+          description: "测试用例提供带目录的自定义URL"
+        sensitivity: NORMAL
+      - id: page_access_password
+        semantic_name: "页面权限密码"
+        type: STRING
+        required: true
+        value: null
+        source:
+          type: TEST_CASE
+          ref: "TC_PD_001"
+          description: "测试用例提供页面权限密码；具体值通过安全测试数据注入"
+        sensitivity: SECRET
+  preconditions:
+    - id: PRE-01
+      statement: "已准备目标产品"
+      knowledge_level: CONFIRMED
+      source_refs:
+        - type: TEST_CASE
+          ref: "TC_PD_001"
+    - id: PRE-02
+      statement: "已准备页面权限密码"
+      knowledge_level: CONFIRMED
+      source_refs:
+        - type: TEST_CASE
+          ref: "TC_PD_001"
+    - id: PRE-03
+      statement: "已准备新的前台浏览器无痕窗口，且未登录并未完成密码验证"
+      knowledge_level: CONFIRMED
+      source_refs:
+        - type: TEST_CASE
+          ref: "TC_PD_001"
+  ui_context:
+    entry:
+      semantic_path: ["产品", "产品管理", "目标产品编辑", "页面设置", "基础设置"]
+      knowledge_refs: [page-prod, component-module-navigation]
+    target_page:
+      semantic_name: "后台产品管理页"
+      knowledge_ref: page-prod
+      resolution_status: RESOLVED
+    target_region:
+      semantic_name: "产品列表与工具区"
+      knowledge_ref: prod-management
+      resolution_status: RESOLVED
+    related_components:
+      - semantic_name: "产品模块导航"
+        knowledge_ref: component-module-navigation
+        role: UI_SURFACE
+      - semantic_name: "产品URL编辑器"
+        knowledge_ref: component-product-url-editor
+        role: UI_SURFACE
+      - semantic_name: "密码访问控件"
+        knowledge_ref: component-password-access-control
+        role: UI_SURFACE
+      - semantic_name: "密码输入页"
+        knowledge_ref: component-password-gate
+        role: UI_SURFACE
+  steps:
+    - id: S1
+      intent: "进入产品管理并打开目标产品编辑页"
+      context:
+        page: {semantic_name: "后台产品管理页", knowledge_ref: page-prod}
+        region: {semantic_name: "产品列表与工具区", knowledge_ref: prod-management}
+      anchor:
+        primary: {semantic_name: "目标产品", value_ref: "${target_product}"}
+        secondary: []
+      target:
+        semantic_name: "产品管理入口"
+        expected_type: NAVIGATION_ENTRY
+        knowledge_ref: component-module-navigation
+      action: {type: OPEN, value_ref: null}
+      expected_transition:
+        - {type: PAGE_OR_REGION_VISIBLE, semantic_target: "目标产品编辑页"}
+      required_capability_refs: [CAP-01, CAP-02]
+      runtime_unknown_refs: [RU-01]
+      source_refs: [{type: TEST_CASE, ref: "TC_PD_001"}]
+    - id: S2
+      intent: "配置目标产品的带目录自定义URL并保存"
+      context:
+        page: {semantic_name: "后台产品管理页", knowledge_ref: page-prod}
+        region: {semantic_name: "产品URL设置", knowledge_ref: null}
+      anchor:
+        primary: {semantic_name: "产品URL设置"}
+        secondary: []
+      target:
+        semantic_name: "自定义URL选项与输入区域"
+        expected_type: FORM_CONTROL_GROUP
+        knowledge_ref: component-product-url-editor
+      action: {type: SAVE, value_ref: "${custom_product_path}"}
+      expected_transition:
+        - {type: CONFIGURATION_SAVED, semantic_target: "产品自定义URL"}
+      required_capability_refs: [CAP-03]
+      runtime_unknown_refs: [RU-02]
+      source_refs: [{type: TEST_CASE, ref: "TC_PD_001"}]
+    - id: S3
+      intent: "打开目标产品页面设置的基础设置"
+      context:
+        page: {semantic_name: "后台产品管理页", knowledge_ref: page-prod}
+        region: {semantic_name: "页面设置", knowledge_ref: null}
+      anchor:
+        primary: {semantic_name: "页面设置"}
+        secondary: []
+      target:
+        semantic_name: "基础设置页签"
+        expected_type: TAB_OR_PANEL
+        knowledge_ref: null
+      action: {type: OPEN, value_ref: null}
+      expected_transition:
+        - {type: REGION_VISIBLE, semantic_target: "访问权限区域"}
+      required_capability_refs: [CAP-04]
+      runtime_unknown_refs: [RU-03]
+      source_refs: [{type: TEST_CASE, ref: "TC_PD_001"}]
+    - id: S4
+      intent: "配置密码访问并保存页面权限"
+      context:
+        page: {semantic_name: "后台产品管理页", knowledge_ref: page-prod}
+        region: {semantic_name: "访问权限", knowledge_ref: null}
+      anchor:
+        primary: {semantic_name: "访问权限"}
+        secondary: []
+      target:
+        semantic_name: "密码访问控件"
+        expected_type: FORM_CONTROL_GROUP
+        knowledge_ref: component-password-access-control
+      action: {type: SAVE, value_ref: "${page_access_password}"}
+      expected_transition:
+        - {type: CONFIGURATION_SAVED, semantic_target: "页面密码访问"}
+      required_capability_refs: [CAP-05]
+      runtime_unknown_refs: [RU-04]
+      source_refs: [{type: TEST_CASE, ref: "TC_PD_001"}]
+    - id: S5
+      intent: "在无痕未登录窗口打开产品详情的带目录自定义URL"
+      context:
+        page: {semantic_name: "前台产品详情页", knowledge_ref: null}
+        region: {semantic_name: "产品访问入口", knowledge_ref: null}
+      anchor:
+        primary: {semantic_name: "产品自定义URL", value_ref: "${custom_product_path}"}
+        secondary: []
+      target:
+        semantic_name: "产品详情访问地址"
+        expected_type: URL_ENTRY
+        knowledge_ref: null
+      action: {type: OPEN, value_ref: "${custom_product_path}"}
+      expected_transition:
+        - {type: PAGE_OR_REGION_VISIBLE, semantic_target: "密码输入页"}
+      required_capability_refs: [CAP-06]
+      runtime_unknown_refs: [RU-05]
+      source_refs: [{type: TEST_CASE, ref: "TC_PD_001"}]
+    - id: S6
+      intent: "在密码输入页提交正确密码"
+      context:
+        page: {semantic_name: "前台产品详情页", knowledge_ref: null}
+        region: {semantic_name: "密码验证区域", knowledge_ref: null}
+      anchor:
+        primary: {semantic_name: "页面权限密码"}
+        secondary: []
+      target:
+        semantic_name: "密码输入与提交控件"
+        expected_type: FORM_CONTROL_GROUP
+        knowledge_ref: component-password-gate
+      action: {type: SUBMIT, value_ref: "${page_access_password}"}
+      expected_transition:
+        - {type: CONTENT_ACCESS_GRANTED, semantic_target: "产品内容"}
+      required_capability_refs: [CAP-08]
+      runtime_unknown_refs: [RU-06]
+      source_refs: [{type: TEST_CASE, ref: "TC_PD_001"}]
+    - id: S7
+      intent: "确认未验证时显示密码输入页且不显示产品内容"
+      context:
+        page: {semantic_name: "前台产品详情页", knowledge_ref: null}
+        region: {semantic_name: "密码访问状态", knowledge_ref: null}
+      anchor:
+        primary: {semantic_name: "密码输入页"}
+        secondary: []
+      target:
+        semantic_name: "密码输入页"
+        expected_type: PAGE_OR_REGION
+        knowledge_ref: component-password-gate
+      action: {type: ASSERT, value_ref: null}
+      expected_transition:
+        - {type: BUSINESS_RESULT_VISIBLE, semantic_target: "密码输入页可见且产品内容不可见"}
+      required_capability_refs: [CAP-07]
+      runtime_unknown_refs: []
+      source_refs: [{type: TEST_CASE, ref: "TC_PD_001"}]
+    - id: S8
+      intent: "确认正确密码验证后显示产品内容"
+      context:
+        page: {semantic_name: "前台产品详情页", knowledge_ref: null}
+        region: {semantic_name: "产品内容", knowledge_ref: null}
+      anchor:
+        primary: {semantic_name: "产品内容"}
+        secondary: []
+      target:
+        semantic_name: "产品详情内容"
+        expected_type: CONTENT_REGION
+        knowledge_ref: null
+      action: {type: ASSERT, value_ref: null}
+      expected_transition:
+        - {type: BUSINESS_RESULT_VISIBLE, semantic_target: "产品内容可见"}
+      required_capability_refs: [CAP-09]
+      runtime_unknown_refs: [RU-06]
+      source_refs: [{type: TEST_CASE, ref: "TC_PD_001"}]
+  required_capabilities:
+    - {id: CAP-01, capability: navigate_to_product_management, semantic_name: "进入产品管理", category: NAVIGATION, required: true, step_refs: [S1], preferred_asset_types: [business_action, page_object], ui_knowledge_refs: [page-prod, component-module-navigation]}
+    - {id: CAP-02, capability: open_target_product_editor, semantic_name: "打开目标产品编辑页", category: NAVIGATION, required: true, step_refs: [S1], preferred_asset_types: [business_action, page_object], ui_knowledge_refs: [page-prod, runtime-ajax-pagination-and-sort]}
+    - {id: CAP-03, capability: configure_product_custom_url, semantic_name: "配置并保存产品自定义URL", category: BUSINESS_ACTION, required: true, step_refs: [S2], preferred_asset_types: [business_action, page_object], ui_knowledge_refs: [page-prod, component-product-url-editor]}
+    - {id: CAP-04, capability: open_product_page_settings, semantic_name: "打开产品页面设置基础设置", category: NAVIGATION, required: true, step_refs: [S3], preferred_asset_types: [business_action, page_object], ui_knowledge_refs: [page-prod, component-page-settings-panel, component-popup-layer, runtime-popup-mount-and-obscuration]}
+    - {id: CAP-05, capability: configure_password_access, semantic_name: "配置并保存密码访问", category: BUSINESS_ACTION, required: true, step_refs: [S4], preferred_asset_types: [business_action, page_object], ui_knowledge_refs: [component-page-settings-panel, component-password-access-control]}
+    - {id: CAP-06, capability: open_product_custom_url_in_clean_browser, semantic_name: "在无痕未登录状态打开受保护产品URL", category: ENVIRONMENT, required: true, step_refs: [S5], preferred_asset_types: [environment_helper, business_action], ui_knowledge_refs: [page-prod, runtime-password-page-presentation]}
+    - {id: CAP-07, capability: assert_password_gate_state, semantic_name: "验证密码保护页状态", category: ASSERTION, required: true, step_refs: [S7], preferred_asset_types: [assertion, page_object], ui_knowledge_refs: [page-prod, component-password-gate]}
+    - {id: CAP-08, capability: complete_frontend_password_verification, semantic_name: "完成前台密码验证", category: AUTH, required: true, step_refs: [S6], preferred_asset_types: [auth, business_action], ui_knowledge_refs: [component-password-gate, runtime-password-verification-transition]}
+    - {id: CAP-09, capability: assert_product_detail_content_visible, semantic_name: "验证产品详情内容可见", category: ASSERTION, required: true, step_refs: [S8], preferred_asset_types: [assertion, page_object], ui_knowledge_refs: [page-prod]}
+  assertions:
+    - id: A-01
+      type: PAGE_STATE
+      target: {semantic_name: "密码输入页", knowledge_ref: component-password-gate}
+      expected: {semantic_name: "未验证时密码输入页可见"}
+      required_capability_ref: CAP-07
+      required: true
+      source_refs: [{type: TEST_CASE, ref: "TC_PD_001"}]
+    - id: A-02
+      type: VISIBILITY
+      target: {semantic_name: "产品内容", knowledge_ref: null}
+      expected: {value: false, semantic_name: "未验证时产品内容不可见"}
+      required_capability_ref: CAP-07
+      required: true
+      source_refs: [{type: TEST_CASE, ref: "TC_PD_001"}]
+    - id: A-03
+      type: VISIBILITY
+      target: {semantic_name: "产品内容", knowledge_ref: null}
+      expected: {value: true, semantic_name: "正确密码验证后产品内容可见"}
+      required_capability_ref: CAP-09
+      required: true
+      source_refs: [{type: TEST_CASE, ref: "TC_PD_001"}]
+  knowledge:
+    confirmed:
+      - {id: K-01, fact: "目标产品使用带目录的自定义URL", source_refs: [{type: TEST_CASE, ref: "TC_PD_001"}]}
+      - {id: K-02, fact: "页面访问权限使用密码保护", source_refs: [{type: TEST_CASE, ref: "TC_PD_001"}]}
+      - {id: K-03, fact: "正确密码验证后应显示产品内容", source_refs: [{type: TEST_CASE, ref: "TC_PD_001"}]}
+    inferred: []
+    ui_profile_refs:
+      pages: [page-prod]
+      components: [component-module-navigation, component-page-settings-panel, component-product-url-editor, component-password-access-control, component-password-gate, component-popup-layer]
+      interaction_rules: [rule-product-custom-url, rule-password-access]
+      permissions: [permission-product-page-settings]
+      runtime_refs: [runtime-navigation-controller-resolution, runtime-popup-mount-and-obscuration, runtime-custom-url-save-transition, runtime-page-settings-entry, runtime-password-page-presentation, runtime-password-verification-transition, runtime-ajax-pagination-and-sort]
+  runtime_unknowns:
+    - id: RU-01
+      question: "产品管理入口在真实页面中的导航呈现和入口解析方式是什么？"
+      category: PAGE_RESOLUTION
+      blocking: true
+      priority: P1
+      applies_to: {steps: [S1], capabilities: [CAP-01, CAP-02]}
+      source: {type: UI_PROFILE_RUNTIME_REQUIRED, ref: runtime-navigation-controller-resolution}
+      ui_runtime_ref: runtime-navigation-controller-resolution
+      preferred_resolution: UI_EXPLORATION
+      status: OPEN
+    - id: RU-02
+      question: "产品URL选择、输入和保存是否在同一表单区域完成，以及保存后的交互呈现方式是什么？"
+      category: INTERACTION_BEHAVIOR
+      blocking: true
+      priority: P1
+      applies_to: {steps: [S2], capabilities: [CAP-03]}
+      source: {type: UI_PROFILE_RUNTIME_REQUIRED, ref: runtime-custom-url-save-transition}
+      ui_runtime_ref: runtime-custom-url-save-transition
+      preferred_resolution: UI_EXPLORATION
+      status: OPEN
+    - id: RU-03
+      question: "用于打开页面设置的控件语义是什么，以及如何识别页面设置中的“基础设置”状态？"
+      category: OVERLAY_BEHAVIOR
+      blocking: true
+      priority: P1
+      applies_to: {steps: [S3], capabilities: [CAP-04]}
+      source: {type: TEST_CASE, ref: TC_PD_001}
+      ui_runtime_ref: null
+      preferred_resolution: UI_EXPLORATION
+      status: OPEN
+    - id: RU-04
+      question: "选择“密码访问”后，密码输入控件以什么 UI 类型呈现，其可编辑状态和交互方式如何识别？"
+      category: POST_ACTION_BEHAVIOR
+      blocking: true
+      priority: P1
+      applies_to: {steps: [S4], capabilities: [CAP-05]}
+      source: {type: TEST_CASE, ref: TC_PD_001}
+      ui_runtime_ref: null
+      preferred_resolution: UI_EXPLORATION
+      status: OPEN
+    - id: RU-05
+      question: "访问受保护URL时，密码保护状态在真实页面中以独立页面、当前页面替换、弹层还是其他方式呈现？"
+      category: PAGE_RESOLUTION
+      blocking: true
+      priority: P1
+      applies_to: {steps: [S5], capabilities: [CAP-06]}
+      source: {type: UI_PROFILE_RUNTIME_REQUIRED, ref: runtime-password-page-presentation}
+      ui_runtime_ref: runtime-password-page-presentation
+      preferred_resolution: UI_EXPLORATION
+      status: OPEN
+    - id: RU-06
+      question: "密码验证成功后是保持当前URL刷新内容、发生跳转，还是异步加载内容？"
+      category: POST_ACTION_BEHAVIOR
+      blocking: true
+      priority: P1
+      applies_to: {steps: [S6, S8], capabilities: [CAP-08, CAP-09]}
+      source: {type: UI_PROFILE_RUNTIME_REQUIRED, ref: runtime-password-verification-transition}
+      ui_runtime_ref: runtime-password-verification-transition
+      preferred_resolution: UI_EXPLORATION
+      status: OPEN
+  automation_constraints:
+    locator_policy:
+      prefer: [verified_semantic_asset, data_testid, role_and_accessible_name, label, semantic_relative_locator]
+      avoid: [nth, complex_xpath, dom_depth_css, dynamic_class]
+    timing_policy:
+      avoid: [fixed_sleep]
+      prefer: [visible_state, enabled_state, url_state, response_state, application_state]
+    behavior_policy:
+      - "不得修改业务预期以让自动化通过"
+      - "未确认的交互不得作为确定事实执行"
+      - "存在歧义时优先 Runtime Exploration"
+      - "产品行为与预期不一致时不得自动修改 Assertion"
+  validation:
+    ready_for_asset_matching: true
+    checks:
+      - {id: V-01, name: "业务断言与 Runtime Unknown 已分离", status: PASS}
+      - {id: V-02, name: "所有 UI Knowledge 引用均可解析", status: PASS}
+      - {id: V-03, name: "Capability 按可复用业务能力聚合", status: PASS}
+    blocking_issues: []
+    conflicts: []
+    warnings: []
+    reference_quality:
+      exact_refs:
+        count: 23
+      related_refs:
+        count: 36
+      unresolved_refs:
+        count: 18
+      suspected_overmatches:
+        count: 0

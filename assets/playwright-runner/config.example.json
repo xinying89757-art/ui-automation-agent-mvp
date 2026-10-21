@@ -1,0 +1,8 @@
+{
+  "targets": {"public": "https://test.example.invalid"},
+  "auth": {"storage_state": null, "secret_env": []},
+  "data_rules": {},
+  "proxy_env": "UI_PROXY",
+  "execution": {"workers": 1, "timeout_ms": 180000},
+  "mutation": {"allowed": false, "scope": []}
+}

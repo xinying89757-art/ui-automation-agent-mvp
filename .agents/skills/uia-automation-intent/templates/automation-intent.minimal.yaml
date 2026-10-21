@@ -1,0 +1,105 @@
+# Draft scaffold. Fill evidence-backed fields before setting ready_for_asset_matching: true.
+# If no ui-knowledge/ is supplied, keep every knowledge_ref/ui_runtime_ref null and keep
+# the explicit UI_KNOWLEDGE_NOT_AVAILABLE warning below. Never invent profile IDs.
+# Required Capabilities must use only canonical preferred_asset_types such as
+# business_action, assertion, environment_helper, page_object, and runtime_helper.
+schema_version: "1.0"
+
+intent:
+  id: "AI-REPLACE-ME"
+  lifecycle:
+    stage: PRE_RUNTIME
+    status: DRAFT
+  case:
+    id: "CASE-REPLACE-ME"
+    name: "待填写"
+    module: "待填写"
+    source_refs: []
+    priority: P1
+  eligibility:
+    status: PARTIALLY_ELIGIBLE
+    reasons: []
+    excluded_points: []
+  goal:
+    actor:
+      semantic_name: "待填写"
+    action:
+      semantic_name: "待填写"
+    object:
+      semantic_name: "待填写"
+    expected_business_result:
+      - "待填写业务结果"
+  test_data:
+    variables: []
+  preconditions: []
+  ui_context:
+    entry:
+      semantic_path: []
+      knowledge_refs: []
+    target_page:
+      semantic_name: "待填写"
+      knowledge_ref: null
+      resolution_status: UNRESOLVED
+    target_region:
+      semantic_name: "待填写"
+      knowledge_ref: null
+      resolution_status: UNRESOLVED
+    related_components: []
+  steps: []
+  required_capabilities: []
+  assertions: []
+  knowledge:
+    confirmed: []
+    inferred: []
+    ui_profile_refs:
+      pages: []
+      components: []
+      interaction_rules: []
+      permissions: []
+      runtime_refs: []
+  runtime_unknowns: []
+  automation_constraints:
+    locator_policy:
+      prefer:
+        - verified_semantic_asset
+        - data_testid
+        - role_and_accessible_name
+        - label
+        - semantic_relative_locator
+      avoid:
+        - nth
+        - complex_xpath
+        - dom_depth_css
+        - dynamic_class
+    timing_policy:
+      avoid:
+        - fixed_sleep
+      prefer:
+        - visible_state
+        - enabled_state
+        - url_state
+        - response_state
+        - application_state
+    behavior_policy:
+      - "不得修改业务预期以让自动化通过"
+      - "未确认的交互不得作为确定事实执行"
+      - "存在歧义时优先 Runtime Exploration"
+      - "低置信度目标不得通过猜测点击"
+      - "产品行为与预期不一致时不得自动修改 Assertion"
+  validation:
+    ready_for_asset_matching: false
+    checks: []
+    blocking_issues:
+      - "仍需补充业务目标、Step、Capability 和核心 Assertion"
+    conflicts: []
+    warnings:
+      - UI_KNOWLEDGE_NOT_AVAILABLE
+    reference_quality:
+      exact_refs:
+        count: 0
+      related_refs:
+        count: 0
+      unresolved_refs:
+        count: 2
+      suspected_overmatches:
+        count: 0

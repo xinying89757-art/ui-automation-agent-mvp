@@ -1,0 +1,27 @@
+# 格式示例；不是当前项目的扫描结果。不得复制 evidence。
+schema_version: 2.1
+entries:
+  - asset_id: "assertion-point-value"
+    dependencies:
+      status: KNOWN
+      completeness: COMPLETE
+      items:
+        - asset_id: "runtime-point-resolution"
+          required: true
+          reason: "assertion calls point runtime"
+    requires:
+      status: NONE
+      completeness: COMPLETE
+      items: []
+  - asset_id: "page-member-detail"
+    dependencies:
+      status: UNKNOWN
+      completeness: PARTIAL
+      items:
+        - asset_id: "runtime-auth-login-session"
+          required: true
+          reason: "one runner path invokes authenticated fixture"
+    requires:
+      status: UNKNOWN
+      completeness: PARTIAL
+      items: []

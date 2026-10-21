@@ -1,0 +1,24 @@
+schema_version: uia-config.v1
+# Copy to config/uia.local.yaml; paths are relative to this file.
+targets:
+  public: "https://test.example.invalid"
+  # admin: "https://admin.example.invalid"
+auth:
+  storage_state: null
+  # Persist names/references only. Values remain in the calling environment.
+  secret_env: []
+proxy_env: UI_PROXY
+source_roots: []
+data_rules: {}
+execution:
+  batch_size: 10
+  workers: 1
+  stability_passes: 2
+  repair_rounds: 2
+  exploration_minutes_per_flow: 10
+  strategies_per_gap: 2
+  timeout_ms: 180000
+  # A larger worker count also requires every selected case to declare isolation.
+mutation:
+  allowed: false
+  scope: []

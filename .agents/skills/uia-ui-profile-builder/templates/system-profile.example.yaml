@@ -1,0 +1,45 @@
+schema_version: 1
+profile_version: "1.1"
+profile_id: ui-profile-v1
+source_root: .
+scope:
+  included:
+    - package.json
+    - src/router
+    - src/pages
+    - src/components
+    - src/layouts
+  excluded:
+    - node_modules
+    - dist
+    - build
+    - coverage
+  priority_applied: [P0, P1]
+stack:
+  framework:
+    name: React
+    version_range: "^18"
+    knowledge_level: CODE_CONFIRMED
+    confidence: high
+    evidence:
+      - key: "package:package.json:react"
+        kind: package
+        source_file: package.json
+        symbol: react
+        detail: "框架依赖存在"
+  ui_library: []
+  router: []
+  state_management: []
+  form_library: []
+conventions:
+  test_id_attributes: []
+  route_naming: []
+  permission_naming: []
+infrastructure:
+  layouts: []
+  providers: []
+  notification: []
+  loading: []
+  portal: []
+  iframe: []
+conflicts: []

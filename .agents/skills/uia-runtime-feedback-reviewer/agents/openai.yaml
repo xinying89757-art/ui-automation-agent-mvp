@@ -1,0 +1,6 @@
+interface:
+  display_name: "uia-runtime-feedback-reviewer"
+  short_description: "Project-local UI automation workflow capability"
+  default_prompt: "Use $uia-runtime-feedback-reviewer for the current UI automation project."
+policy:
+  allow_implicit_invocation: true

@@ -1,0 +1,41 @@
+schema_version: 1
+profile_version: "1.1"
+components:
+  - id: component-data-table
+    name: DataTable
+    component_file: src/shared/ui/DataTable.tsx
+    kind: Table
+    role: UI_SURFACE
+    public: true
+    automation_relevance: HIGH
+    business_terms:
+      zh: [数据表格, 列表, 分页]
+      en: [data table, list, pagination]
+    reused_by_pages:
+      - page-order-list
+      - page-customer-list
+    props:
+      - name: columns
+        behavior: column definitions
+      - name: loading
+        behavior: renders loading state when true
+    events:
+      - onRowClick
+      - onChange
+    interaction_clues:
+      pagination: true
+      row_actions: true
+      searchable: false
+      async_options: false
+      multi_select: false
+      portal: unknown
+    knowledge_level: CODE_CONFIRMED
+    confidence: high
+    scope: component
+    source_state: present
+    evidence:
+      - key: "code:src/shared/ui/DataTable.tsx:DataTable"
+        kind: code
+        source_file: src/shared/ui/DataTable.tsx
+        symbol: DataTable
+        detail: "导出公共表格组件并声明 columns/loading/onRowClick 等接口"

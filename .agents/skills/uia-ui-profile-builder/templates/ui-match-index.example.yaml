@@ -1,0 +1,35 @@
+schema_version: 1
+profile_version: "1.1"
+matcher_priority:
+  - business_terms.zh
+  - name
+  - actions
+  - regions.business_terms.zh
+  - business_terms.en
+  - aliases
+entries:
+  - knowledge_id: page-order-list
+    type: page
+    name: 订单管理
+    business_terms:
+      zh: [订单, 订单管理, 订单列表]
+      en: [order, order management, order list]
+    route: /orders
+    actions: [新增, 编辑, 保存]
+    regions: [订单列表]
+    component_ids: [component-data-table]
+    permission_refs: []
+    runtime_refs: []
+    knowledge_level: CODE_CONFIRMED
+    confidence: high
+  - knowledge_id: component-data-table
+    type: component
+    role: UI_SURFACE
+    name: DataTable
+    business_terms:
+      zh: [数据表格, 列表, 分页]
+      en: [data table, list, pagination]
+    interaction_rule_refs: []
+    runtime_refs: [runtime-order-table-portal-mount]
+    knowledge_level: CODE_CONFIRMED
+    confidence: high

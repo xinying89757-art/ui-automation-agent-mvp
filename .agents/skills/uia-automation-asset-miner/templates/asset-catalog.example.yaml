@@ -1,0 +1,86 @@
+# 格式示例；不是当前项目的扫描结果。
+schema_version: 2.1
+scope:
+  project_root: "."
+  test_roots: ["tests/e2e"]
+  pass_evidence_roots: ["test-results/report.json"]
+counts:
+  total_assets: 3
+  reuse_readiness:
+    DIRECT_REUSE: 1
+    ADAPT_BEFORE_REUSE: 1
+    REFERENCE_ONLY: 1
+    DO_NOT_REUSE: 0
+  reuse_scope:
+    GLOBAL: 1
+    MODULE: 1
+    FEATURE: 1
+    CASE: 0
+  verification_status:
+    VERIFIED: 1
+    PARTIALLY_VERIFIED: 1
+    UNKNOWN: 1
+    FAILED: 0
+  verification_confidence:
+    high: 1
+    medium: 1
+    low: 1
+  stability:
+    HIGH: 1
+    MEDIUM: 0
+    LOW: 2
+  fragile_count: 1
+  duplicate_candidates: 1
+  migration_count: 1
+  assets_with_known_dependencies: 1
+  assets_with_unknown_dependencies: 2
+  assets_with_business_terms_zh: 3
+  assets_missing_business_terms_zh: 0
+  assets_with_unknown_inputs: 2
+  assets_with_unknown_outputs: 2
+  assets_with_unknown_preconditions: 2
+  duplicate_class:
+    ASSET_DUPLICATE: 0
+    SOURCE_DUPLICATE: 1
+  match_index_ready: 3
+  dependency_graph_ready: 1
+entries:
+  - asset_id: "runtime-point-resolution"
+    type: "runtime_helper"
+    file: "runtime-helpers.yaml"
+    name: "解析测试点位并返回可断言值"
+    capability: "resolve registered point values for assertions"
+    business_terms:
+      zh: ["解析点位", "查询测试点"]
+      en: ["point resolution"]
+    reuse_scope: "GLOBAL"
+    reuse_readiness: "DIRECT_REUSE"
+    stability: "HIGH"
+    source_file: "tests/runtime/pointRuntime.ts"
+  - asset_id: "page-member-detail"
+    type: "page_object"
+    file: "pages.yaml"
+    name: "会员详情页面对象"
+    capability: "edit member owner and save detail form"
+    business_terms:
+      zh: ["会员详情", "修改负责人"]
+      en: ["edit owner"]
+    reuse_scope: "MODULE"
+    reuse_readiness: "ADAPT_BEFORE_REUSE"
+    stability: "LOW"
+    source_file: "tests/runner-a/pages/MemberDetail.ts"
+  - asset_id: "flow-historical-member-export"
+    type: "business_flow"
+    file: "flows.yaml"
+    name: "历史会员导出流程"
+    capability: "export member records"
+    business_terms:
+      zh: ["会员导出"]
+      en: ["member export"]
+    reuse_scope: "FEATURE"
+    reuse_readiness: "REFERENCE_ONLY"
+    stability: "LOW"
+    source_file: "tests/archive/BUG1004949.spec.ts"
+bootstrap_summary:
+  top_reusable_capabilities: ["assertion_runtime: runtime-point-resolution"]
+  top_remediation_priorities: ["complete dependencies for page-member-detail", "review SOURCE_DUPLICATE"]

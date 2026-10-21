@@ -1,0 +1,9 @@
+# 格式示例；不是当前项目的扫描结果。
+schema_version: 2.1
+migrations:
+  - old_id: "auth-bug1004949-admin-session"
+    new_id: "auth-admin-storage-state-session"
+    status: "mapped"
+    reason: "稳定能力身份保留，历史 Bug 编号移入 provenance"
+    aliases_preserved: true
+    evidence_refs: ["code:tests/support/adminSession.ts:adminSession"]

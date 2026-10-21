@@ -1,0 +1,87 @@
+# 格式示例；不是当前项目的扫描结果。
+schema_version: 2.1
+assets:
+  - id: "page-member-detail"
+    aliases: ["page-member-detail-runner-a"]
+    type: "page_object"
+    legacy_type: "component"
+    name: "会员详情页面对象"
+    capability: "edit member owner and save detail form"
+    description: "封装会员详情页负责人编辑和表单保存操作。"
+    business_terms:
+      zh: ["会员详情", "修改负责人", "保存详情"]
+      en: ["member detail", "edit owner", "save detail form"]
+    semantic_tags: ["会员详情", "负责人", "表单保存", "page object"]
+    match_keys: ["修改负责人", "保存会员详情", "edit owner"]
+    capability_group: "member_management"
+    scope: "page"
+    reuse_scope: "MODULE"
+    reuse_readiness: "ADAPT_BEFORE_REUSE"
+    stability: "LOW"
+    selection_priority: "MEDIUM"
+    source_file: "tests/runner-a/pages/MemberDetail.ts"
+    symbol: "MemberDetailPage"
+    source_state: "present"
+    verification_status: "PARTIALLY_VERIFIED"
+    verification_confidence: "medium"
+    quality_flags: ["FRAGILE"]
+    inputs:
+      status: KNOWN
+      items: ["member id", "owner value"]
+    outputs:
+      status: UNKNOWN
+      items: ["observed save result"]
+    preconditions:
+      status: UNKNOWN
+      items: ["member detail page is open"]
+    side_effects:
+      status: UNKNOWN
+      items: []
+    dependencies:
+      status: UNKNOWN
+      completeness: PARTIAL
+      items:
+        - asset_id: "runtime-auth-login-session"
+          required: true
+          reason: "authenticated fixture is invoked before opening the page"
+          evidence_refs: ["code:tests/runner-a/member.spec.ts:beforeEach"]
+    requires:
+      status: UNKNOWN
+      completeness: PARTIAL
+      items:
+        - kind: "page_state"
+          name: "member detail route"
+          required: true
+          reason: "page object navigates to the member detail route"
+          evidence_refs: ["code:tests/runner-a/pages/MemberDetail.ts:goto"]
+    applicable_when:
+      status: KNOWN
+      items: ["the target page uses the same member detail DOM structure"]
+    not_applicable_when:
+      status: UNKNOWN
+      items: []
+    provenance:
+      task_id: null
+      origin_paths: ["tests/runner-a/pages/MemberDetail.ts", "tests/runner-b/pages/MemberDetail.ts"]
+      discovered_from: ["source_copy", "test_call", "partial_run_report"]
+    verified_usage:
+      level: "confirmed_pass"
+      test_refs: ["tests/runner-a/member.spec.ts::updates owner"]
+      run_refs: ["test-results/runner-a.json::updates owner"]
+      note: "仅 runner-a 路径有当前通过证据"
+    blocking_risks: ["risk-member-detail-source-duplicate", "risk-member-detail-unknown-dependencies"]
+    non_blocking_risks: []
+    required_remediation_before_direct_reuse: ["确认来源副本差异", "补齐依赖和前置条件证据", "替换脆弱定位"]
+    duplicate_candidates: ["risk-member-detail-source-duplicate"]
+    conflicts: []
+    compatibility:
+      legacy:
+        reusable: null
+        reuse_status: "REUSABLE"
+    evidence:
+      - key: "code:tests/runner-a/pages/MemberDetail.ts:MemberDetailPage"
+        kind: "code"
+        ref: "tests/runner-a/pages/MemberDetail.ts::MemberDetailPage"
+        detail: "定义会员详情页面对象"
+        outcome: null
+        applicability: "current"

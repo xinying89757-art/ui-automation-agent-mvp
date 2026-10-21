@@ -1,0 +1,46 @@
+# 格式示例；不是当前项目的扫描结果。不得复制完整 evidence。
+schema_version: 2.1
+matcher_priority:
+  - "name/business_terms.zh"
+  - "semantic_tags"
+  - "capability/match_keys"
+  - "aliases"
+entries:
+  - asset_id: "runtime-point-resolution"
+    type: "runtime_helper"
+    aliases: []
+    name: "解析测试点位并返回可断言值"
+    capability: "resolve registered point values for assertions"
+    business_terms:
+      zh: ["解析点位", "查询测试点", "断言点位"]
+      en: ["point resolution", "registered point"]
+    semantic_tags: ["点位", "断言", "registry", "runtime"]
+    match_keys: ["解析点位", "resolvePoint", "point value"]
+    capability_group: "assertion_runtime"
+    scope: "system"
+    reuse_scope: "GLOBAL"
+    reuse_readiness: "DIRECT_REUSE"
+    stability: "HIGH"
+    selection_priority: "HIGH"
+    source_file: "tests/runtime/pointRuntime.ts"
+    has_dependencies: true
+    dependency_count: 1
+  - asset_id: "page-member-detail"
+    type: "page_object"
+    aliases: ["page-member-detail-runner-a"]
+    name: "会员详情页面对象"
+    capability: "edit member owner and save detail form"
+    business_terms:
+      zh: ["会员详情", "修改负责人", "保存详情"]
+      en: ["member detail", "edit owner", "save detail form"]
+    semantic_tags: ["会员详情", "负责人", "表单保存"]
+    match_keys: ["修改负责人", "保存会员详情", "edit owner"]
+    capability_group: "member_management"
+    scope: "page"
+    reuse_scope: "MODULE"
+    reuse_readiness: "ADAPT_BEFORE_REUSE"
+    stability: "LOW"
+    selection_priority: "MEDIUM"
+    source_file: "tests/runner-a/pages/MemberDetail.ts"
+    has_dependencies: true
+    dependency_count: 1

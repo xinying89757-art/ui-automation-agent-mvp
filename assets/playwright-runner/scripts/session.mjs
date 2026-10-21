@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { checkEnvironment, contextOptions, loadConfig, launchOptions, resolveConfig, WorkflowError } from '../support/environment.mjs';
-import { authenticatedSession, privateWrite } from '../support/auth.mjs';
+import { authenticatedSession, privateWrite, snapshotSession } from '../support/auth.mjs';
 import { scrubText } from '../support/redact.mjs';
 
 function safeError(error, cfg) {
@@ -26,7 +26,8 @@ export async function runSession(cfg, browser, { checkOnly = false, force = fals
   }
   const session = await authenticatedSession(browser, cfg, { force, manual });
   try {
-    const targets = { admin: { url: cfg.targets.admin, reachable: true, target_visible: true, authenticated: true } };
+    const targets = { admin: { url: cfg.targets.admin, reachable: true, target_visible: true, authenticated: true,
+      selected_site: session.site?.host ?? null, selection: session.site?.kind ?? null } };
     if (cfg.targets.public) {
       const visitor = await browser.newContext(contextOptions(cfg));
       try {
@@ -56,7 +57,13 @@ export async function main(args = process.argv.slice(2)) {
     if (!cfg.environment) throw new WorkflowError('ENVIRONMENT_REQUIRED', '请选择 p、gray 或 production 环境');
     const { chromium } = await import('@playwright/test');
     browser = await chromium.launch(launchOptions(cfg, !args.includes('--headed') && !args.includes('--manual')));
-    const result = await runSession(cfg, browser, { checkOnly: args.includes('--check-only'), force: args.includes('--force'), manual: args.includes('--manual') });
+    const snapshotAt = args.indexOf('--snapshot');
+    const snapshotArea = snapshotAt >= 0 && args[snapshotAt + 1] && !args[snapshotAt + 1].startsWith('--')
+      ? args[snapshotAt + 1] : undefined;
+    const result = snapshotAt >= 0
+      ? { status: 'snapshot', structure: await snapshotSession(browser, cfg, {
+        area: snapshotArea, manual: args.includes('--manual') }) }
+      : await runSession(cfg, browser, { checkOnly: args.includes('--check-only'), force: args.includes('--force'), manual: args.includes('--manual') });
     if (option('--output')) privateWrite(path.resolve(option('--output')), result);
     console.log(JSON.stringify({ ok: true, ...result }));
   } catch (error) {

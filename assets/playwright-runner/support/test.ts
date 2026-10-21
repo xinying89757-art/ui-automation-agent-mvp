@@ -55,7 +55,8 @@ export const test = base.extend<{ caseContext: CaseContext; lifecycle: void; adm
     const caseId = /^\[([^\]]+)\]/u.exec(info.title)?.[1];
     if (!caseId) throw new Error('UIA_ENVIRONMENT_BLOCKED: test title must start with [case_id]');
     const cfg = loadConfig();
-    const binding = JSON.parse(fs.readFileSync(path.join(runtimeRoot, 'cases.json'), 'utf8'))[caseId];
+    const bindingFile = process.env.UIA_CASES_FILE ?? path.join(runtimeRoot, 'cases.json');
+    const binding = JSON.parse(fs.readFileSync(bindingFile, 'utf8'))[caseId];
     const rules = binding?.fixture_ids?.length
       ? Object.fromEntries(binding.fixture_ids.map((id: string) => [id, cfg.data_rules?.[id]]))
       : cfg.data_rules ?? {};
@@ -78,7 +79,8 @@ export const test = base.extend<{ caseContext: CaseContext; lifecycle: void; adm
   adminPage: async ({ caseContext }, use) => { await use(await caseContext.openAdmin()); },
   adminContext: async ({ adminPage }, use) => { await use(adminPage.context()); },
   lifecycle: [async ({ caseContext }, use, info) => {
-    const entries = JSON.parse(fs.readFileSync(path.join(runtimeRoot, 'cases.json'), 'utf8'));
+    const bindingFile = process.env.UIA_CASES_FILE ?? path.join(runtimeRoot, 'cases.json');
+    const entries = JSON.parse(fs.readFileSync(bindingFile, 'utf8'));
     const entry = entries[caseContext.caseId];
     if (!entry?.hooks) throw new Error('UIA_ENVIRONMENT_BLOCKED: registered fixture hooks missing');
     const fixtureIds: string[] = entry.fixture_ids?.length ? entry.fixture_ids : [`case:${caseContext.caseId}`];

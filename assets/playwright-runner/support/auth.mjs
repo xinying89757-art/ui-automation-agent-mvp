@@ -114,6 +114,21 @@ async function selectedDomain(page) {
 }
 export async function selectTargetSite(page, cfg) {
   if (!cfg.site) fail('SITE_REQUIRED', '请提供目标网站域名');
+  const targetHost = host(cfg.site);
+  // Slow accounts may render the shell before asynchronously loading site cards.
+  await page.waitForFunction(target => [...document.querySelectorAll('.contentShow a[href]')].some(link => {
+    try { return new URL(link.href).host.toLowerCase() === target; } catch { return false; }
+  }), targetHost, { timeout: 90000 }).catch(() => {});
+  const cardMatches = await page.locator('.contentShow').evaluateAll((cards, target) => cards.flatMap((card, cardIndex) => {
+    const domains = [...card.querySelectorAll('a[href]')].flatMap(link => {
+      try { return [new URL(link.href).host.toLowerCase().replace(/\.$/u, '')]; } catch { return []; }
+    });
+    return domains.filter(domain => domain === target).map(domain => ({ cardIndex, host: domain }));
+  }), targetHost);
+  // Validate the returned host as well as the card index before treating it as permission evidence.
+  const exactCards = [...new Set(cardMatches.filter(item => item?.host === targetHost).map(item => item.cardIndex))];
+  if (exactCards.length === 1) return { kind: 'card', host: targetHost, cardIndex: exactCards[0] };
+  if (exactCards.length > 1) fail('SITE_AMBIGUOUS', '发现多个同域名站点，请先确认目标记录', ['确认站点及语言版本', '暂停相关用例']);
   // The current cloud shell lists the site and “网页编辑” directly; the older site cards are absent.
   const editorEntry = page.getByText('网页编辑', { exact: true }).first();
   if (!(await visible(editorEntry))) {
@@ -158,7 +173,15 @@ export async function selectTargetSite(page, cfg) {
       if (candidates.some(item => item.host === cfg.site)) break;
     }
   }
-  const selected = chooseSite(candidates, cfg.site);
+  if (!candidates.some(item => item.host === targetHost)) {
+    const cards = await page.locator('.contentShow').evaluateAll(nodes => nodes.map((card, index) => ({
+      index, hosts: [...card.querySelectorAll('a[href]')].flatMap(link => { try { return [new URL(link.href).host]; } catch { return []; } })
+    })));
+    fail('SITE_NOT_ACCESSIBLE', '未找到目标网站，请核对当前账号可见站点', cards.map(card => ({
+      index: card.index, domains: (Array.isArray(card.hosts) ? card.hosts : []).map(value => { try { return host(value); } catch { return '[invalid-domain]'; } })
+    })));
+  }
+  const selected = chooseSite(candidates, targetHost);
   if (selected.kind === 'link') {
     const link = links.nth(selected.index);
     // A backend language switch is selected only inside its site menu.
@@ -232,8 +255,43 @@ export async function authenticatedSession(browser, cfg, { force = false, allowL
     const shellReady = page.locator('.contentShow, .wrap-webSite').first().waitFor({ state: 'visible', timeout: 25000 }).catch(() => {});
     const editorReady = page.getByText('网页编辑', { exact: true }).first().waitFor({ state: 'visible', timeout: 25000 }).catch(() => {});
     await Promise.race([shellReady, editorReady]);
-    const site = await selectTargetSite(page, cfg);
-    if (allowLogin) await saveSession(context, cfg);
+    let site;
+    try { site = await selectTargetSite(page, cfg); }
+    catch (error) {
+      if (error?.code !== 'SITE_NOT_ACCESSIBLE') throw error;
+      // One bounded retry handles delayed card hydration after shell readiness.
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      site = await selectTargetSite(page, cfg);
+    }
+    if (allowLogin && (!state || refreshed || force)) await saveSession(context, cfg);
     return { context, page, environment, site, reused: Boolean(state) && !refreshed, refreshed };
   } catch (error) { await context.close(); throw error; }
+}
+
+export async function snapshotSession(browser, cfg, { area, manual = false } = {}) {
+  const session = await authenticatedSession(browser, cfg, { allowLogin: true, manual });
+  try {
+    let page = session.page;
+    if (area) page = await openSiteArea(page, cfg, area);
+    await page.waitForLoadState('domcontentloaded').catch(() => {});
+    const structure = await page.evaluate(() => {
+      const describe = root => [...root.querySelectorAll('body, body *')].slice(0, 300).map(node => ({
+        tag: node.tagName.toLowerCase(), role: node.getAttribute('role'),
+        name: (node.getAttribute('aria-label') || node.getAttribute('title') || node.textContent || '').trim().replace(/\\s+/gu, ' ').slice(0, 120),
+        id: node.id || undefined, classes: typeof node.className === 'string' ? node.className.split(/\\s+/u).filter(Boolean).slice(0, 4) : []
+      }));
+      const frame = document.querySelector('#backstage-innerpage');
+      let frameStructure = [];
+      try { if (frame?.contentDocument) frameStructure = describe(frame.contentDocument); } catch { /* cross-origin frame omitted */ }
+      return { url: location.origin + location.pathname, title: document.title, nodes: describe(document),
+        iframe: frame ? { id: frame.id, same_origin: Boolean(frame.contentDocument), nodes: frameStructure } : null };
+    });
+    const { scrubText } = await import('./redact.mjs');
+    let safe = scrubText(JSON.stringify(structure));
+    const privateValues = credentials(cfg);
+    for (const value of Object.values(privateValues)) {
+      if (typeof value === 'string' && value) safe = safe.split(value).join('[REDACTED]');
+    }
+    return JSON.parse(safe);
+  } finally { await session.context.close(); }
 }

@@ -3,7 +3,7 @@ import path from 'node:path';
 import { loadConfig, runtimeRoot } from '../support/environment.mjs';
 import { bestCandidate } from '../support/heal.mjs';
 
-const memoryPath = () => path.join(runtimeRoot, 'knowledge/llms-txt.json');
+const memoryPath = () => process.env.UIA_KNOWLEDGE_FILE || path.join(runtimeRoot, 'knowledge/llms-txt.json');
 export function memory() {
   return JSON.parse(fs.readFileSync(memoryPath(), 'utf8'));
 }

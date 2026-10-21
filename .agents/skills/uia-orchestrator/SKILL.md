@@ -13,6 +13,24 @@ The project root is three parents above this folder. Run CLI commands there usin
 API-backed agent server. Read and follow stage skills in the current conversation;
 do not invoke Claude Code `Task()` or assume a shell script can invoke the model.
 
+## One-command daily entry
+
+For go runs, this section supersedes the legacy human-question routing below.
+Use `python3 scripts/uia.py go <xlsx> --profile <p> --cases TC-0004,TC-0016`.
+The CLI resumes a matching run, checks the environment, binds existing scripts first,
+queues missing case-spec tasks and writes checklist.md with A/B/C blocks in Chinese.
+Finish missing case-spec tasks before presenting the checklist; its draft is not a question.
+Present the final checklist once; record `uia.py answer --run R "A ...，B 同意，C ..."`.
+Explicit answers persist in environment memory; zero unknown answers means zero questions.
+Do not ask during execution. Suspend newly gated cases and write review.md instead.
+Keep source expectations; assertion-change proposals default to not applied.
+Record every incoming user turn once using `session-turn --run R --id <stable-id>
+--kind 发起|答清单|审核单|看报告|计划外`. Agent CLI calls are not human turns.
+A recording request after bounded exploration must include a codegen command,
+starting page, operations and completion signal; reuse private authenticated state,
+never record login/password or export auth state. Unexplored targets stay agent tasks.
+Report begins with 结论 / 需要你处理 / 流程指标; all visible statuses use Chinese.
+
 ## Start, resume, and route
 
 1. For a new request, use the supplied Excel and target configuration. Reuse a matching

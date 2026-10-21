@@ -19,6 +19,12 @@ rather than hardcoding case branches. Unsupported data handlers remain TODO.
 Use named targets from assets/playwright-runner/knowledge/page-map.yaml; unknowns are
 ?name. No selectors in case-spec. Steps use open/click/fill/hover/select/check/uncheck/
 press/upload/wait/close/assert, each with its own target and unique S-number.
+Use checks op disabled/enabled for blocked/available controls (native and aria-disabled).
+Blocked / cannot save / 无法保存 / 置灰 expectations require a disabled check and an
+assert observation step, never click a disabled control. Preserve every Excel error
+message and dialog clause; missing errors remain business failures. Do not force-click.
+For save-in-progress transitions, the initial click may precede a disabled assertion.
+
 Assertions have A-number, after S-number, exact imported expectation cell/line in excel,
 and nonempty checks. Preserve numbering, punctuation, all business clauses and blank
 negative inputs. Never replace public-file expectations with editor-value assertions.

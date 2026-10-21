@@ -13,6 +13,22 @@
 
 ## 在 Codex 中使用
 
+一行提测模板（也见 [独立模板](docs/test-request-template.md)）：
+
+> 提测：`/path/to/cases.xlsx`，profile `my-prod`，只跑 `TC-0004,TC-0016`；使用 uia-orchestrator 执行 go，答清单后自动继续，中途问题进审核单。
+
+```bash
+.venv/bin/python scripts/uia.py go /path/to/cases.xlsx --profile my-prod --cases TC-0004,TC-0016
+.venv/bin/python scripts/uia.py answer --run GO-xxx "A 都有，B 同意，C 无歧义"
+# 同一命令恢复；环境记忆覆盖全部问题时直接运行，不再提问。
+.venv/bin/python scripts/uia.py go /path/to/cases.xlsx --profile my-prod --cases TC-0004,TC-0016
+```
+
+`go` 不调用模型。陌生工作簿先返回 case-spec 任务，Codex 完成后再发唯一清单。
+清单分 A 环境、B 修改范围、C 业务歧义；缺少条件只挂起关联用例。
+显式答案按环境、站点、账号身份和网络的哈希保存在私有环境记忆中，不代替真实预检。
+运行中新增需求写 `review.md`，不打断；断言提案默认不应用。
+
 在本目录打开 Codex，用自然语言描述：
 
 > 使用 $uia-orchestrator，把 `/path/to/需求测试用例.xlsx` 转成 UI 自动化。

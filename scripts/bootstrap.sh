@@ -12,5 +12,5 @@ python3 -m venv .venv
 .venv/bin/python -m pip install --upgrade pip
 .venv/bin/python -m pip install -r requirements.txt
 npm --prefix assets/playwright-runner ci
-npm --prefix assets/playwright-runner exec -- playwright install chromium
+node assets/playwright-runner/node_modules/@playwright/test/cli.js install chromium
 echo "Ready. Run: source .venv/bin/activate"

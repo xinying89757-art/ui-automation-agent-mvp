@@ -30,6 +30,12 @@ python3 scripts/uia.py profile set --profile my-prod --site http://en.example.te
 `mutation.allowed: false` 且 `scope: []` 为只读。`scope` 中的名字是允许变更的功能；
 用例的 `mutation_scope` 必须是其中的子集。`llms.txt` 允许在该站点上增删改这一功能，并要求清理被验证。
 `stability_passes` 为 1 时，一次清理成功即交付；为 2 时需要夜间的第二批独立成功。
+站点和范围只在 `init` 前的清单阶段修改；运行中 CLI 会拒绝并记录范围变更。专用测试站点如允许
+编辑器内任意数据，需显式记录批准人与恢复要求：
+
+```bash
+python3 scripts/uia.py profile set --profile my-prod --mutation-allowed --scope '*' --editor-data-restorable
+```
 
 `login` 的 `--profile`、`--config`、`--run` 三选一，可加 `--force`；`--run` 成功后保存环境/站点证据并接入 preflight。
 后台目标必须可达且已登录。公开站点失败只写入 `capabilities.public_frontend` 和脱敏后的原因，
@@ -40,10 +46,15 @@ python3 scripts/uia.py profile set --profile my-prod --site http://en.example.te
 ```bash
 python3 scripts/uia.py init --run-id REQ-001 --config config/uia.local.yaml
 python3 scripts/uia.py import --run REQ-001 --excel /path/to/cases.xlsx
+python3 scripts/uia.py bind-specs --run REQ-001
 python3 scripts/uia.py status --run REQ-001
 python3 scripts/uia.py next --run REQ-001
 python3 scripts/uia.py bind --run REQ-001 --cases TC-01 TC-02 --flows product-create --fixtures products
 ```
+
+导入响应会提示先运行 `bind-specs`，索引 `tests/*.spec.ts` 并优先回放已有脚本。页面探索使用
+`python3 scripts/uia.py snapshot --run REQ-001 --node page|content-admin|editor`：登录、打开目标页面、
+输出脱敏 DOM 结构（含同源 `#backstage-innerpage`）后退出。禁止原始 page/body、cookie 或 storage dump。
 
 `--isolated` 只用于已证明数据隔离的用例；多 worker 另需 registration 的
 `isolation_evidence`。默认单 worker。

@@ -34,6 +34,16 @@ the project root, never from a particular user's global skill installation.
   waiting. Prepare differing site data in the editor, then restore the snapshot.
 - Keep credentials in environment variables/protected local auth state. Do not include
   secrets in source assets, manifests, questions or delivery packages.
+- Never print raw `page`, `body`, cookies, local/session storage or browser storage-state
+  dumps. Use `python3 scripts/uia.py snapshot --run <id> --node page|content-admin|editor`
+  for a bounded, redacted DOM/accessibility view (including same-origin
+  `#backstage-innerpage`). Do not use `explore.mjs` in the default flow.
+- After import, run `uia.py bind-specs` to index existing `tests/*.spec.ts` first; then
+  preflight and execute runnable cases before generating new specs.
+- Each run links to `assets/playwright-runner`; shared runtime fixes belong in that
+  working tree. Run-specific bindings stay under `runs/<id>/state/`.
+- Daily runs default to `stability_passes: 1`. Locator and wait-only repairs do not
+  reset delivery stability; assertion changes remain unreviewed until explicitly reviewed.
 - Named environments and their entry URLs/proxy rules are public project resources.
   Read `docs/environments-and-login.md`: profiles and credential/state files stay in
   private `.auth/`; use the shared login/network modules for preflight and generated tests.

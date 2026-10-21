@@ -103,12 +103,21 @@ python3 scripts/uia.py scaffold --run REQ-001
 # 为 runner 安装依赖和浏览器后执行；登录成功后记录真实环境预检证据。
 python3 scripts/uia.py login --run REQ-001
 python3 scripts/uia.py import --run REQ-001 --excel /path/to/cases.xlsx
+# The import response asks you to bind existing specs before creating new ones.
+python3 scripts/uia.py bind-specs --run REQ-001
 python3 scripts/uia.py preconditions --run REQ-001
 python3 scripts/uia.py next --run REQ-001
 python3 scripts/uia.py run-batch --run REQ-001 --cases TC-0001
 python3 scripts/uia.py wait --run REQ-001
 python3 scripts/uia.py status --run REQ-001
 ```
+
+Use `python3 scripts/uia.py snapshot --run REQ-001 --node editor` for one-shot,
+redacted page exploration. Each run links directly to `assets/playwright-runner`; its
+bindings remain in run-local state. The report writes `metrics.json` at the run root and
+shows it in the HTML/JSON report. Set broad editor mutation permission before `init` with
+`profile set --mutation-allowed --scope '*' --editor-data-restorable`; every changed
+record must have a verified restoration hook.
 
 后续阶段的完整接口见 [接口说明](docs/interfaces.md)，阶段执行约定见 [工作流](docs/workflow.md)。
 

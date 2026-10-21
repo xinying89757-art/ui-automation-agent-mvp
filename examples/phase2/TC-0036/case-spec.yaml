@@ -1,0 +1,29 @@
+schema_version: case-spec.v1
+case_id: TC-0036
+intent: 保存配置后无需发布即可立即更新公开文件
+automatable: {status: needs-env, reason: 需词表指定的环境}
+required_env:
+- public_frontend
+data_prep:
+  llms.enabled: true
+  llms.source: system
+mutation_scope:
+- llms.txt
+start_page: editor
+steps:
+- {id: S1, verb: fill, target: txt.overview, value: phase2-immediate-public-overview}
+- {id: S2, verb: click, target: txt.save}
+- {id: S3, verb: open, target: '?public.llms'}
+assertions:
+- id: A1
+  after: S2
+  excel: 1. 页面显示“llms.txt 配置已保存”并关闭弹窗。
+  checks:
+  - {target: txt.saved, op: text, value: llms.txt 配置已保存}
+  - {target: txt.dialog, op: hidden}
+- id: A2
+  after: S3
+  excel: 2. 公开文件立即显示新的网站概述。
+  checks:
+  - {target: '?public.llms.overview', op: text, value: phase2-immediate-public-overview}
+questions: []

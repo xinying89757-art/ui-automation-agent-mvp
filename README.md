@@ -1,6 +1,6 @@
 # Excel UI Automation for Codex
 
-在 Codex 中提供 Excel 测试用例和环境信息，由项目技能组织意图准备、资产匹配、
+在 Codex 中提供 Excel 测试用例和环境信息，由项目技能组织case-spec 编写、确定性生成、
 页面探索、分批执行、有限修复和稳定性验证，交付可以独立运行的 Playwright 工程。
 
 **当前状态：正式版后台已用 llms.txt 用例真实跑通。** 后台和编辑器预检必须通过；
@@ -9,7 +9,7 @@
 
 公开仓库包含工作流实现、通用模板、三环境默认入口与代理配置、完整灰度 PAC 和检查脚本。本地产品资料 `ui-knowledge/`、
 `automation-assets/` 与 `cases/TC_PD_001/` 含环境地址和产品专属信息，仅保留在原机器上，
-没有上传。使用时请导入自己的用例并建立对应的 UI Knowledge 和 Automation Assets。
+没有上传。使用时导入自己的用例并维护页面地图与数据目录；历史 UI Knowledge/Automation Assets 可选复用。
 
 ## 在 Codex 中使用
 
@@ -63,25 +63,24 @@ python3 scripts/uia.py profile set --profile my-prod --site http://en.example.te
 Codex 首次执行（需要网络安装浏览器缓存，并把提示词从标准输入关掉）：
 
 ```bash
-codex exec -m gpt-6-luna -c model_reasoning_effort=high -s workspace-write \
+timeout 2h codex exec -m gpt-6-luna -c model_reasoning_effort=high -s workspace-write \
   -c sandbox_workspace_write.network_access=true --add-dir ~/.cache --add-dir ~/.npm \
   "使用 uia-orchestrator，把用例跑完。先跑所有能跑的，再问我真正的阻断。" < /dev/null
 ```
 
 ## 流程与人工交互
 
-Excel → 来源保留与业务分组 → 每条 Intent → 资产匹配 → 真实浏览器预检与探索 →
-就绪用例分批运行 → 同版本第二次独立运行 → 反馈候选与结果交付。
+Excel → 保留原文 → 先绑定/执行现有脚本 → case-spec → lint → 模板生成 →
+仅探索未知目标 → 分批运行 → 按 stability_passes 交付。见 [case-spec 契约](docs/case-spec.md)。
 
 - 导入时根据用例原文生成一份前置条件清单，只问人一次。缺权限账号、4.0 编辑器、
   全新站点、多语言/简体/小语种、根目录已有 llms.txt、未迁移站点未满足时继续等待，
   不记成 not_suitable。FAQ 条数、分类、导航、首页 Meta、网站简称、快速联系、社媒
   由夹具自己快照、设置并恢复。
 - 默认每批最多 10 条。同一批复用一个编辑器会话，用例之间只收起弹窗。
-- 公开 llms.txt 有大约一小时缓存。断言以重新打开编辑器读到的值为准；
-  公开文件只做延后记录，并试一次带查询参数的请求，参数若不能绕过缓存就不作为失败。
+- Excel 要求公开文件更新时须实际读取公开文件；前台不可达则等待环境，不能改成编辑器值断言。
 - 每日 `stability_passes: 1`，一次清理成功就是交付。夜间回归改为 `2`。
-- 通过的批次会自动把定位写回知识库。元素名只保留短文本，不用面板整段 innerText。
+- 通过的批次把定位记入 run-local 知识；长期写回需审核。元素名只保留短文本，不用面板整段 innerText。
 - 登录、环境/数据缺失和业务歧义进入问题队列。先把能跑的用例跑完，再集中提问。
 
 等待一批执行时用心跳文件，不要靠 PID：
@@ -105,6 +104,8 @@ python3 scripts/uia.py login --run REQ-001
 python3 scripts/uia.py import --run REQ-001 --excel /path/to/cases.xlsx
 # The import response asks you to bind existing specs before creating new ones.
 python3 scripts/uia.py bind-specs --run REQ-001
+python3 scripts/uia.py spec lint --run REQ-001
+python3 scripts/uia.py spec gen --run REQ-001 --cases TC-0004
 python3 scripts/uia.py preconditions --run REQ-001
 python3 scripts/uia.py next --run REQ-001
 python3 scripts/uia.py run-batch --run REQ-001 --cases TC-0001
@@ -159,3 +160,7 @@ python3 scripts/uia.py validate --run REQ-001
 
 重点覆盖不同 Excel 布局、跨工作表重名 ID、负向空值、公共流程复用、问题答复与恢复、
 中断恢复、数据清理失败隔离，以及代码修改后成功计数重置。
+
+新用例默认走 case-spec；旧 intent/reuse-plan、asset-matcher/profile-builder/asset-miner 文件保留兼容。Xinying 已授权配置测试站自由修改、保存、发布；实际可行时恢复数据。
+
+用例规格技能位于 [uia-case-spec](.agents/skills/uia-case-spec/SKILL.md)。

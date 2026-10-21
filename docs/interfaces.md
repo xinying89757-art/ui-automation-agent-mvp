@@ -82,79 +82,22 @@ python3 scripts/uia.py bind --run REQ-001 --cases TC-01 TC-02 --flows product-cr
 业务内容指纹与位置分离。manifest 的规范 case ID 用于目录和 test 标题，原始 ID
 始终保留。跨工作表重复 ID 加来源后缀，缺失 ID 按来源内容生成并保存映射。
 
-## Intent 与复用计划
+## case-spec 与生成
 
-每条用例在 `runs/<run-id>/cases/<case-id>/` 保存原有 v1.0 格式：
-`automation-intent.yaml` 和 `reuse-plan.slim.yaml`。
-
-```bash
-python3 scripts/uia.py advance --run REQ-001 --case TC-01 --stage matching
-python3 scripts/uia.py match --run REQ-001 --case TC-01
-# Codex 查看候选、真实来源与依赖，编辑精简计划并确认每项 decision。
-python3 scripts/uia.py advance --run REQ-001 --case TC-01 --stage discovery
-```
-
-候选检索只产生草案，`selection_confirmed` 默认为 false。每项计划保留 `ref`、
-`capability`、`decision`、`runtime_unknowns`、`next_action`，可增加 `candidates`。
-选择复用资产时增加 `asset`。Codex 语义审查后设置 `selection_confirmed: true`。
-
-DIRECT_REUSE 还需 `verification`，包含 `exported: true`、实际 `signature`、当前
-`source_sha256`、`target_fingerprint` 与当前 `evidence` 文件引用。target fingerprint
-是配置 `targets` 字典按键排序的 JSON 的 SHA256（项目 `digest` 函数）。来源、依赖、
-前提或风险不完整时保留适配/发现决策；不能将历史 snippets 当作当前可导入函数。
-
-## 预检、生成、注册
+格式见 [case-spec 契约](case-spec.md)。旧 advance/match/register 只保留历史兼容，
+新代码不手填覆盖行号。
 
 ```bash
-python3 scripts/uia.py scaffold --run REQ-001
-python3 scripts/uia.py preflight --run REQ-001 --evidence evidence/preflight.json
-python3 scripts/uia.py register --run REQ-001 --case TC-01 --file /path/to/registration.json
+python3 scripts/uia.py spec lint --run REQ-001 --cases TC-0004
+python3 scripts/uia.py spec gen --run REQ-001 --cases TC-0004
+python3 scripts/uia.py spec render --run REQ-001 --cases TC-0004
+python3 scripts/uia.py snapshot --run REQ-001 --node editor --frame '#backstage-innerpage'
+python3 scripts/uia.py snapshot --run REQ-001 --node editor --open-target llms --scope '#backstage-dialog-customizeFile'
 ```
 
-preflight 证据由真实浏览器观察产生，以下仅为字段示例，不是测试事实：
-
-```json
-{
-  "targets": {
-    "public": {"url": "https://actual-test-host", "reachable": true, "target_visible": true},
-    "admin": {"url": "https://actual-admin-host", "reachable": true, "target_visible": true, "authenticated": true}
-  },
-  "observation": "说明真实访问和目标站点可见性的证据来源"
-}
-```
-
-registration 字段示例；ID 必须换成真实 Intent ID，行号必须指向实际实现：
-
-```json
-{
-  "case_id": "TC-01",
-  "script": "runner/tests/TC-01.spec.ts",
-  "fixture": {
-    "hooks": "fixtures/products.ts",
-    "mutates": true,
-    "mutation_scope": ["products.create", "products.delete"]
-  },
-  "dependencies": ["flows/products.ts"],
-  "reused_assets": ["existing-asset-id"],
-  "evidence": ["evidence/product-flow.json"],
-  "runtime_resolutions": {
-    "RU-01": {"status": "resolved", "evidence": ["evidence/product-flow.json"]}
-  },
-  "coverage": {
-    "steps": {"S1": {"file": "tests/TC-01.spec.ts", "line": 10}},
-    "capabilities": {"CAP-01": {"file": "flows/products.ts", "line": 12}},
-    "assertions": {"A-01": {"file": "tests/TC-01.spec.ts", "line": 24}}
-  }
-}
-```
-
-准备阶段的每个步骤、能力和断言必须有注册覆盖。所有 blocking runtime unknown
-必须有 resolution 证据。静态检查验证引用和存在性，Codex 仍负责语义核对。
-显式列出不能由静态相对 import 发现的动态依赖；禁止依赖本机目录中的业务实现。
-
-生成 spec 使用 `support/test` 导出的 test/expect；每个源用例恰好一个测试，标题以
-`[case_id] ` 开始。所有核心断言使用 `businessAssertion` 包装。fixture 模块默认导出
-`FixtureHooks`，四个方法均提供真实逻辑。配置数据规则保留环境变量引用，具体值在执行时读取。
+快照过滤隐藏节点、图标字符和敏感信息，并报告重复 role/name。lint 聚合未知目标及业务问题，
+每条断言须引用 Excel 原始期望行/单元格。生成器输出统一 fixture、独立 spec 和覆盖标记；
+TODO 不能进入执行。preflight 仍由真实浏览器证据接入。
 
 ## 探索、问题和演示
 
@@ -228,4 +171,4 @@ HTML 支持筛选；脚本 ZIP 排除依赖、凭证与运行日志。只有源�
 未知工作表已解决、PASS 反馈完成且交付物齐全时，run 才进入 completed。
 
 `validate` 检查技能引用、Intent/计划/代码覆盖，以及运行状态与证据一致性。
-它不代替真实执行或证明页面定位稳定。本次改造按用户要求未运行这些命令。
+它不代替真实执行或证明页面定位稳定。校验不代替真实站点验证。

@@ -11,12 +11,12 @@
 
 | 阶段 | 输入与动作 | 完成门 | 下一步 |
 |---|---|---|---|
-| Excel 准备 | CLI 导入原始行；Codex 按业务分组并调用意图技能 | Intent 可追溯、引用有效、ready_for_asset_matching=true | matching |
-| 匹配 | 检索索引、查看详情和真实来源；确认每个 capability 决策 | 每项 selection_confirmed，能力覆盖完整，直接复用有当前证据 | discovery |
-| 预检 | 浏览器访问目标，验证认证、目标可见性和必需输入 | preflight 证据与当前配置、认证文件一致 | 探索或执行 |
-| 探索与生成 | 复用公共流程、解决必要未知、编写最终 spec 和 fixture | register 校验覆盖、运行证据、未知项、局部依赖 | execution |
-| 运行 | run-batch 保存收据/代码快照，启动 Playwright 并读取专用 reporter | 第一次成功为 candidate；相同版本第二次独立成功为 stable | feedback |
-| 反馈交付 | PASS 后评审候选，生成逐条结果与可独立运行的脚本工程 | 所有源用例已分类，反馈及交付物齐全 | completed |
+| Excel 导入 | CLI 保留原文，bind-specs 索引并优先执行现有脚本 | 来源与绑定可追溯 | spec |
+| case-spec | uia-case-spec 编写；spec lint 校验 Excel 原文、词表、目标和去重 | 独立目标；未知聚合 | gen |
+| 预检/生成 | 环境、会话、数据预检；spec gen 按模板生成单用例文件 | 统一 fixture；标记自动推出覆盖 | execution |
+| 探索 | 仅对未知页面节点做限定快照，再处理 TODO | 不持久化 snapshot refs | execution |
+| 运行 | run-batch/wait 保留尝试；环境→会话→数据→定位/时序→业务分诊 | 每日 1 次，夜间 2 批同版本成功 | feedback |
+| 反馈交付 | 生成审核候选与结果 | 长期写回经用户审核 | completed |
 
 运行总状态为 active、waiting_human、delivery_pending 或 completed。每条用例的
 阶段和工作状态分别保存；`result` 与 `stability` 分开，避免把代码已生成或一次成功
@@ -24,11 +24,11 @@
 
 ## 调度和速度
 
-默认批次上限 10 条，不限制总用例数。准备/匹配分批消费原始用例；已就绪的脚本
+默认批次上限 10 条，不限制总用例数。case-spec 分批消费原始用例；已就绪的脚本
 立即执行。之后按公共业务流程选择能解锁最多用例的工作，P0/P1 在同等条件下优先。
 已有兼容脚本优先重跑，公共流程只在需要时探索一次。
 
-UI Profile 与历史资产提取在源材料可用时更新，不是每个需求都从头重建的阶段。
+旧 intent/reuse-plan/asset-matcher/profile-builder/asset-miner 链退出默认流程；文件和历史运行继续兼容。
 同一运行内通过验证的参数化能力可直接供其他用例使用。长期资产回写只生成可审阅
 候选，默认不直接写入两个规范知识库。
 
@@ -49,7 +49,7 @@ owner marker 准备独有数据，验证起点后才执行业务操作；无论�
 验证恢复。只读用例同样验证前置状态及基线。
 
 稳定版本指纹包含 spec、静态本地导入、显式动态依赖、fixture、运行器配置、
-相关数据规则、Intent 与复用计划。编辑后重新计数，原始尝试及代码快照继续保留。
+相关数据规则和 case-spec（历史运行仍包含 Intent 与复用计划）。编辑后重新计数，原始尝试及代码快照继续保留。
 每日交付把 `stability_passes` 设为 1。夜间回归设为 2，不能用重试、同一批里的页面复用
 或历史 PASS 凑够第二次。一批内部可以复用编辑器会话，那只减少打开编辑器的时间。
 
@@ -76,3 +76,5 @@ fixtures 可继续。清理恢复需要实际证据，通过 `resolve-fixture` �
 原有 Intent/reuse-plan 版本、UI Knowledge 与 Asset Registry 文件继续使用。旧技能
 目录保留迁移说明。`cases/TC_PD_001` 是本地历史样本，包含产品环境信息，不纳入公开仓库。
 项目技能与全局技能之间没有运行时路径依赖。
+
+Xinying 已授权测试站及账号自由修改、保存、发布；实际可行时恢复数据以便复跑。

@@ -1,0 +1,41 @@
+schema_version: case-spec.v1
+case_id: TC-0055
+intent: 保存处理中禁用重复提交、取消和关闭
+automatable: {status: needs-env, reason: 需词表指定的环境}
+required_env:
+- delayed_save
+data_prep:
+  llms.enabled: true
+  llms.source: system
+mutation_scope:
+- llms.txt
+start_page: editor
+steps:
+- {id: S1, verb: fill, target: txt.overview, value: phase2-save-in-progress}
+- {id: S2, verb: click, target: txt.save}
+- {id: S3, verb: click, target: '?save.repeat_attempt'}
+- {id: S4, verb: click, target: '?cancel.while_saving'}
+- {id: S5, verb: click, target: '?close.while_saving'}
+- {id: S6, verb: wait, target: txt.saved}
+assertions:
+- id: A1
+  after: S2
+  excel: 1. 保存按钮立即变为不可用并显示“保存中…”。
+  checks:
+  - {target: txt.save, op: attribute, attribute: aria-disabled, value: 'true'}
+  - {target: txt.save, op: text, value: 保存中…}
+- id: A2
+  after: S5
+  excel: 2. 重复保存、取消和关闭均不能执行，弹窗保持显示。
+  checks:
+  - {target: txt.dialog, op: visible}
+  - {target: '?save.request_count', op: count, value: 1}
+  - {target: '?save.controls_blocked', op: text, value: 'save,cancel,close'}
+- id: A3
+  after: S6
+  excel: 3. 保存成功后显示提示并关闭弹窗，全程只产生一次可见保存结果。
+  checks:
+  - {target: txt.saved, op: text, value: llms.txt 配置已保存}
+  - {target: txt.dialog, op: hidden}
+  - {target: '?save.visible_results', op: count, value: 1}
+questions: []

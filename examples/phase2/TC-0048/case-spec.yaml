@@ -1,0 +1,37 @@
+schema_version: case-spec.v1
+case_id: TC-0048
+intent: 自定义内容为空或仅空格时被拦截
+automatable: {status: 'yes', reason: 可通过编辑器操作验证}
+required_env: []
+data_prep:
+  llms.enabled: true
+  llms.source: custom
+mutation_scope:
+- llms.txt
+start_page: editor
+steps:
+- {id: S1, verb: fill, target: txt.content, value: ''}
+- {id: S2, verb: click, target: txt.save}
+- {id: S3, verb: fill, target: txt.content, value: "  \n  "}
+- {id: S4, verb: click, target: txt.save}
+- {id: S5, verb: fill, target: txt.content, value: x}
+assertions:
+- id: A1
+  after: S2
+  excel: 1. 文本域下方显示“请填写自定义 llms.txt 内容”，弹窗保持打开。
+  checks:
+  - {target: txt.custom.error, op: text, value: 请填写自定义 llms.txt 内容}
+  - {target: txt.dialog, op: visible}
+- id: A2
+  after: S4
+  excel: 2. 文本域下方仍显示相同错误，弹窗保持打开。
+  checks:
+  - {target: txt.custom.error, op: text, value: 请填写自定义 llms.txt 内容}
+  - {target: txt.dialog, op: visible}
+- id: A3
+  after: S5
+  excel: 3. 必填错误消失，保存按钮可用。
+  checks:
+  - {target: txt.custom.error, op: hidden}
+  - {target: txt.save, op: attribute, attribute: aria-disabled, value: 'false'}
+questions: []

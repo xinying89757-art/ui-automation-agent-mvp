@@ -1,0 +1,39 @@
+schema_version: case-spec.v1
+case_id: TC-0033
+intent: FAQ有5条时全部按列表顺序输出
+automatable: {status: needs-env, reason: 需词表指定的环境}
+required_env:
+- public_frontend
+data_prep:
+  llms.enabled: true
+  llms.source: system
+  faq.count: 5
+mutation_scope:
+- llms.txt
+- faq
+start_page: editor
+steps:
+- {id: S1, verb: click, target: txt.save}
+- {id: S2, verb: open, target: '?public.llms.faq'}
+assertions:
+- id: A1
+  after: S1
+  excel: 1. 页面显示保存成功提示。
+  checks:
+  - {target: txt.saved, op: visible}
+- id: A2
+  after: S2
+  excel: 2. FAQ模块显示5条问答且顺序与FAQ列表一致，每条均使用问题和答案两行格式。
+  checks:
+  - {target: '?public.faq.ordered_five_pairs', op: text, value: ['question1
+
+        answer1', 'question2
+
+        answer2', 'question3
+
+        answer3', 'question4
+
+        answer4', 'question5
+
+        answer5']}
+questions: []

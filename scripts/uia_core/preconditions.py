@@ -3,22 +3,25 @@ from __future__ import annotations
 
 from .common import digest, now, read_json
 
-ITEMS = (
-    ("no_settings_permission", "无网站设置权限的账号", ("不具备当前站点的网站设置", "无网站设置权限", "没有网站设置")),
-    ("editor_4_0", "4.0 编辑器", ("4.0编辑器", "4.0 编辑器")),
-    ("fresh_unconfigured_site", "从未配置过的新站点", ("尚未修改过", "新站点首次", "从未配置")),
-    ("simplified_chinese_site", "简体中文站点", ("简体中文站点",)),
-    ("multi_language_site", "多语言或小语种站点", ("小语种", "简站", "专站")),
-    ("existing_root_llms", "根目录已有 llms.txt", ("根目录已有", "根目录有客户上传", "根目录已存在")),
-    ("unmigrated_site", "未迁移的存量站点", ("上线前", "存量迁移")),
-)
-LABELS = {item_id: label for item_id, label, _needles in ITEMS}
+def vocabulary():
+    from .common import ROOT, read_yaml
+    path = ROOT / "preconditions.yaml"
+    if not path.is_file():
+        from pathlib import Path
+        path = Path(__file__).resolve().parents[2] / "preconditions.yaml"
+    return read_yaml(path)["preconditions"]
+
+
+def labels():
+    return {key: value["label"] for key, value in vocabulary().items()}
+
+
 QUESTION_KEY = digest(["preconditions", "run-preconditions"])[:16]
 
 
 def derive_items(text):
     blob = text or ""
-    found = [item_id for item_id, _label, needles in ITEMS if any(needle in blob for needle in needles)]
+    found = [item_id for item_id, entry in vocabulary().items() if any(needle in blob for needle in entry.get("match", []))]
     return found
 
 
@@ -49,9 +52,11 @@ def apply_precondition_answer(m, question):
         if not case or _protected(case):
             continue
         items = case.get("precondition_items") or []
-        if any(item in unavailable for item in items) or any(item not in available for item in items):
+        unanswered_business = any(cid in row["case_ids"] and not (answer.get("business") or {}).get(row["question"])
+                                  for row in question.get("business_questions", []))
+        if unanswered_business or any(item in unavailable for item in items) or any(item not in available for item in items):
             case.update(result=None, work_status="waiting_human", stability="not_run",
-                        classification={"reason": "等待人工前置：" + "、".join(LABELS.get(item, item) for item in items),
+                        classification={"reason": "等待人工前置：" + "、".join(labels().get(item, item) for item in items),
                                         "at": now()})
         elif case["work_status"] != "finished":
             case["work_status"] = "runnable" if case.get("registration") and case.get("stage") == "execution" else "pending"
@@ -64,20 +69,25 @@ def sync_preconditions(base, m):
     affected = []
     for cid, case in m["cases"].items():
         items = derive_items(case_text(base, case))
+        spec_path = base / case.get("case_spec", "__missing__")
+        if spec_path.is_file():
+            from .common import read_yaml
+            items = list(read_yaml(spec_path).get("required_env", []))
         case["precondition_items"] = items
         if not items or _protected(case):
             continue
         grouped[cid] = items
         affected.append(cid)
-        labels = "、".join(LABELS.get(item, item) for item in items)
+        label_text = "、".join(labels().get(item, item) for item in items)
         case.update(result=None, stability="not_run", work_status="pending",
                     stage=case["stage"] if case.get("stage") not in {None, "finished"} else "discovery",
-                    classification={"reason": "等待人工前置：" + labels, "at": now()})
+                    classification={"reason": "等待人工前置：" + label_text, "at": now()})
     if not affected:
         return {"question_id": None, "cases": [], "items": []}
     lines = []
     present = []
-    for item_id, label, _needles in ITEMS:
+    for item_id, entry in vocabulary().items():
+        label = entry["label"]
         owners = [cid for cid, items in grouped.items() if item_id in items]
         if not owners:
             continue

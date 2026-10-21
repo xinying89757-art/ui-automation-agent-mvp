@@ -29,7 +29,7 @@ def daily_case_errors(base, case, cfg, execution=False):
         errors.append("Final script missing")
     else:
         body = script.read_text(encoding="utf-8")
-        if "support/test" not in body or "businessAssertion" not in body:
+        if not any(name in body for name in ("support/test", "support/fixtures")) or "businessAssertion" not in body:
             errors.append("Final spec must use the lifecycle fixture and businessAssertion wrapper")
         if "[" + case["case_id"] + "]" not in body:
             errors.append("Test title must contain [case_id]")
@@ -59,6 +59,32 @@ def daily_case_errors(base, case, cfg, execution=False):
 
 
 def case_errors(base, case, cfg, execution=False):
+    if (case.get("registration") or {}).get("case_spec"):
+        from .specs import catalogs, spec_path, schema_errors, locator_errors, coverage
+        env, data, pages = catalogs()
+        path = spec_path(base, case)
+        if not path.is_file():
+            return ["case-spec missing"], []
+        spec = read_yaml(path)
+        errors, unknown = schema_errors(spec, read_json(inside(base, case["source"])), env, data, pages)
+        if unknown:
+            errors.append("Unknown targets require exploration")
+        registration = case["registration"]
+        # Reuse established lifecycle/mutation checks, with the shared fixture import.
+        errors2, warnings = daily_case_errors(base, case, cfg, execution)
+        errors.extend(errors2)
+        script = inside(base, registration["script"])
+        if execution and script.is_file():
+            body = script.read_text()
+            errors.extend(locator_errors(body, pages))
+            if "TODO explore:" in body:
+                errors.append("Exploration TODO prevents execution")
+            refs = coverage(body, str(script.relative_to((base / "runner").resolve())))
+            for field in ("steps", "assertions"):
+                if set(refs[field]) != {x["id"] for x in spec[field]}:
+                    errors.append("Marker coverage differs from case-spec " + field)
+            registration["coverage"] = refs
+        return errors, warnings
     if case.get("daily_spec") or (case.get("registration") or {}).get("daily_spec"):
         return daily_case_errors(base, case, cfg, execution)
     errors, warnings = [], []

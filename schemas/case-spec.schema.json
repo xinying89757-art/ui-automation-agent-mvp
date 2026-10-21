@@ -1,0 +1,266 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "case-spec.v1",
+  "title": "UI automation case-spec v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "case_id",
+    "intent",
+    "automatable",
+    "required_env",
+    "data_prep",
+    "mutation_scope",
+    "start_page",
+    "steps",
+    "assertions",
+    "questions"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "case-spec.v1"
+    },
+    "case_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "intent": {
+      "type": "string",
+      "minLength": 1
+    },
+    "automatable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "reason"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "yes",
+            "needs-env",
+            "manual"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "required_env": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "data_prep": {
+      "type": "object",
+      "description": "Keys/types/scopes resolved from the extensible data-prep.yaml catalog."
+    },
+    "mutation_scope": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "start_page": {
+      "type": "string",
+      "minLength": 1
+    },
+    "steps": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/step"
+      }
+    },
+    "assertions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/assertion"
+      }
+    },
+    "questions": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "$defs": {
+    "step": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "verb",
+        "target"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^S[1-9][0-9]*$"
+        },
+        "verb": {
+          "enum": [
+            "open",
+            "click",
+            "fill",
+            "hover",
+            "select",
+            "check",
+            "uncheck",
+            "press",
+            "upload",
+            "wait",
+            "close",
+            "assert"
+          ]
+        },
+        "target": {
+          "type": "string",
+          "minLength": 1
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "verb": {
+                "enum": [
+                  "fill",
+                  "select",
+                  "press",
+                  "upload"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "value"
+            ]
+          }
+        }
+      ]
+    },
+    "assertion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "after",
+        "excel",
+        "checks"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^A[1-9][0-9]*$"
+        },
+        "after": {
+          "type": "string",
+          "pattern": "^S[1-9][0-9]*$"
+        },
+        "excel": {
+          "type": "string",
+          "minLength": 1
+        },
+        "checks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/check"
+          },
+          "minItems": 1
+        }
+      }
+    },
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target",
+        "op"
+      ],
+      "properties": {
+        "target": {
+          "type": "string",
+          "minLength": 1
+        },
+        "op": {
+          "enum": [
+            "visible",
+            "hidden",
+            "text",
+            "contains",
+            "value",
+            "attribute",
+            "count",
+            "enabled",
+            "disabled",
+            "left_of"
+          ]
+        },
+        "value": {
+          "type": [
+            "string",
+            "integer",
+            "array"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "attribute": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "op": {
+                "enum": [
+                  "text",
+                  "contains",
+                  "value",
+                  "attribute",
+                  "count",
+                  "left_of"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "value"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "op": {
+                "const": "attribute"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "attribute"
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,98 @@
+schema_version: page-map.v1
+pages:
+  editor: {entry: 编辑网站}
+  content-admin: {entry: 内容管理}
+  public: {public: true}
+targets:
+  settings:
+    selector: li.backstage-siteTool-setting .backstage-siteTool-inner
+    open: settings
+  txt.entry:
+    selector: '#site_customize_txt a'
+  txt.dialog:
+    selector: '#backstage-dialog-customizeFile'
+    open: llms
+  txt.title:
+    name: 管理txt文件
+    dialog: txt.dialog
+    scope: '#backstage-dialog-customizeFile'
+    selector: strong
+  txt.tab.llms:
+    name: llms.txt
+    dialog: txt.dialog
+    scope: '#backstage-dialog-customizeFile'
+    selector: a.customize-file-tab.on
+  txt.cancel:
+    name: 取消
+    dialog: txt.dialog
+    scope: '#backstage-dialog-customizeFile'
+    selector: a.backstage-dialog-cancel
+  txt.save:
+    name: 保存
+    mutation: llms.txt
+    dialog: txt.dialog
+    scope: '#backstage-dialog-customizeFile'
+    selector: a[class*='customize_file_llms']
+  txt.system:
+    dialog: txt.dialog
+    scope: '#backstage-dialog-customizeFile'
+    selector: label.llms-source-system
+  txt.custom:
+    dialog: txt.dialog
+    scope: '#backstage-dialog-customizeFile'
+    selector: label.llms-source-custom
+  txt.overview:
+    mutation: llms.txt
+    dialog: txt.dialog
+    scope: '#backstage-dialog-customizeFile'
+    selector: input.llms-overview
+  txt.content:
+    mutation: llms.txt
+    dialog: txt.dialog
+    scope: '#backstage-dialog-customizeFile'
+    selector: textarea.llms-custom-content
+  txt.extras:
+    dialog: txt.dialog
+    scope: '#backstage-dialog-customizeFile'
+    selector: .llms-extra-item
+  txt.saved:
+    selector: text=llms.txt 配置已保存
+  txt.rule.help:
+    dialog: txt.dialog
+    scope: '#backstage-dialog-customizeFile'
+    selector: .llms-rule-help
+  txt.rules:
+    dialog: txt.dialog
+    scope: '#backstage-dialog-customizeFile'
+    selector: '#llms-rule-tooltip'
+  txt.rule.title:
+    dialog: txt.dialog
+    scope: '#backstage-dialog-customizeFile'
+    selector: '#llms-rule-tooltip .llms-rule-title'
+  txt.rule.intro:
+    dialog: txt.dialog
+    scope: '#backstage-dialog-customizeFile'
+    selector: '#llms-rule-tooltip .llms-rule-intro'
+  txt.rule.modules:
+    dialog: txt.dialog
+    scope: '#backstage-dialog-customizeFile'
+    selector: '#llms-rule-tooltip .llms-rule-list strong'
+  txt.custom.error:
+    dialog: txt.dialog
+    scope: '#backstage-dialog-customizeFile'
+    selector: .llms-custom-row .llms-error
+  txt.extra.name:
+    dialog: txt.dialog
+    scope: '#backstage-dialog-customizeFile'
+    selector: input.llms-extra-name:visible
+  txt.extra.value:
+    dialog: txt.dialog
+    scope: '#backstage-dialog-customizeFile'
+    selector: input.llms-extra-value:visible
+observations:
+  duplicate_names:
+    - role: link
+      name: Contact Us
+      frame: '#backstage-innerpage'
+      matches: 2
+      evidence: spike-phase0.md section 1.2 (header and footer)

@@ -34,7 +34,7 @@ def init(run_id, config_path):
                            (ROOT / "assets/playwright-runner/tests").glob("*.spec.ts"))
     from .metrics import assertion_signature
     initial_assertions = {relative: assertion_signature(ROOT / relative) for relative in initial_specs}
-    m = {"schema_version": "uia-run.v1", "run_id": run_id, "created_at": now(),
+    m = {"schema_version": "uia-run.v1", "pipeline": "case-spec.v1", "run_id": run_id, "created_at": now(),
          "updated_at": now(), "config_path": str(Path(config_path).resolve()), "config": cfg,
          "config_hash": execution_config_fingerprint(cfg), "sources": [], "identity_map": {},
          "cases": {}, "archived_cases": [], "questions": {}, "exploration": [],
@@ -82,11 +82,13 @@ def answer(m, qid, value, base):
     require(q["kind"] != "login" or not isinstance(value, dict) or
             not any(k in value for k in ("password", "token", "cookie")), "Answer with a login-state reference, not a secret")
     if q["kind"] == "preconditions":
-        require(isinstance(value, dict) and set(value) <= {"available", "unavailable"},
-                "Answer with available and unavailable precondition ids")
+        require(isinstance(value, dict) and set(value) <= {"available", "unavailable", "business"},
+                "Answer with available/unavailable precondition ids and business question answers")
         for key in ("available", "unavailable"):
             require(isinstance(value.get(key, []), list) and all(isinstance(item, str) for item in value.get(key, [])),
                     "Precondition answer lists must be string arrays")
+        require(isinstance(value.get("business", {}), dict) and all(isinstance(k, str) and isinstance(v, str) and v.strip() for k, v in value.get("business", {}).items()),
+                "Business answers must map questions to nonempty text")
         q.update(status="answered", answer=value, answered_at=now(), wait_seconds=elapsed(q["created_at"]))
         from .preconditions import apply_precondition_answer
         apply_precondition_answer(m, q)
@@ -147,14 +149,14 @@ def import_excel(base, m, excel, mapping=None):
             changed = c["source_hash"] != raw["content_hash"]
             counts["changed" if changed else "unchanged"] += 1
             if changed:
-                reset_case(c, "source_case_changed")
+                reset_case(c, "source_case_changed", "spec" if m.get("pipeline") else "intent")
                 c["registration"] = None
                 c["intent_hash"] = None
                 c["plan_hash"] = None
                 c["repair_rounds"] = 0
         else:
             counts["added"] += 1
-            c = {"case_id": cid, "stage": "intent", "work_status": "pending", "result": None,
+            c = {"case_id": cid, "stage": "spec" if m.get("pipeline") else "intent", "work_status": "pending", "result": None,
                  "stability": "not_run", "pass_streak": 0, "version": None,
                  "flow_ids": ["case:" + cid], "fixture_ids": [], "isolated": False,
                  "registration": None, "intent_hash": None, "plan_hash": None,
@@ -218,7 +220,10 @@ def advance(base, m, cid, stage):
         require(intent["case"]["id"] == cid and intent.get("validation", {}).get("ready_for_asset_matching") is True,
                 "Intent identity/readiness is not confirmed")
         intent_hash = file_hash(inside(base, c["intent"]))
-        if c.get("intent_hash") and c["intent_hash"] != intent_hash:
+        if c.get("spec_hash") and file_hash(inside(base, c.get("case_spec", "__missing__"))) != c["spec_hash"]:
+            reset_case(c, "case_spec_changed", "spec")
+            c.update(spec_hash=None, registration=None)
+        elif c.get("intent_hash") and c["intent_hash"] != intent_hash:
             reset_case(c, "intent_changed", "matching")
             c.update(registration=None, plan_hash=None)
         c["intent_hash"] = intent_hash
@@ -312,11 +317,16 @@ def case_version(base, m, c):
     return digest({"files": code_files(base, registration), "source": c["source_hash"],
                    "intent": file_hash(inside(base, c["intent"])),
                    "plan": file_hash(inside(base, c["reuse_plan"])),
+                   "case_spec": file_hash(inside(base, c.get("case_spec", "__missing__"))),
                    "config": digest(relevant_config), "fixture": registration["fixture"],
                    "flow_ids": c["flow_ids"], "fixture_ids": c["fixture_ids"]})
 
 
 def register(base, m, cid, registration):
+    if m["cases"][cid].get("case_spec"):
+        from .specs import register_script
+        require(registration.get("case_id") == cid, "Registration case ID mismatch")
+        return register_script(base, m, cid, registration["script"])
     c = m["cases"][cid]
     require(not m.get("active_batch"), "Cannot register while a batch is active")
     require(not any(q["status"] == "open" and cid in q["case_ids"] for q in m["questions"].values()),
@@ -398,7 +408,10 @@ def refresh(base, m):
     if m.get("preflight") and m["preflight"].get("proxy_sha256") != network_fingerprint(cfg):
         m["preflight"] = None
     for c in m["cases"].values():
-        if c.get("intent_hash") and file_hash(inside(base, c["intent"])) != c["intent_hash"]:
+        if c.get("spec_hash") and file_hash(inside(base, c.get("case_spec", "__missing__"))) != c["spec_hash"]:
+            reset_case(c, "case_spec_changed", "spec")
+            c.update(spec_hash=None, registration=None)
+        elif c.get("intent_hash") and file_hash(inside(base, c["intent"])) != c["intent_hash"]:
             reset_case(c, "intent_changed", "intent")
             c.update(intent_hash=None, plan_hash=None, registration=None)
         elif c.get("plan_hash") and file_hash(inside(base, c["reuse_plan"])) != c["plan_hash"]:
@@ -460,6 +473,10 @@ def next_task(base, m):
     repairs = [c for c in available if c["stage"] == "repair"]
     if repairs:
         return {"action": "repair", "skill": "uia-runtime", "case_ids": [c["case_id"] for c in repairs[:budget]]}
+    selected = [c for c in available if c["stage"] == "spec" or (m.get("pipeline") == "case-spec.v1" and c["stage"] in {"intent", "matching"})][:budget]
+    if selected:
+        return {"action": "spec", "skill": "uia-case-spec", "case_ids": [c["case_id"] for c in selected],
+                "input_paths": [str(base / c["source"]) for c in selected]}
     selected = [c for c in available if c["stage"] == "matching"][:budget]
     if selected:
         return {"action": "matching", "skill": "uia-asset-matcher", "case_ids": [c["case_id"] for c in selected],
@@ -533,10 +550,11 @@ def bind_specs(base, m):
         body = spec.read_text(encoding="utf-8")
         for match in re.finditer(r"\[([A-Za-z0-9][A-Za-z0-9_.-]*)\]", body):
             cid = match.group(1)
-            if cid in found or cid not in m["cases"]:
+            if cid in found or cid not in m["cases"] or m["cases"][cid].get("case_spec"):
                 continue
             found[cid] = (spec, body[match.end():match.end() + 500])
-    require(found, "Specs do not match any imported case id")
+    if not found:
+        return {"bound": [], "next": "spec", "instruction": "Write missing case-specs with uia-case-spec"}
     bound = []
     for cid, (spec, window) in found.items():
         c = m["cases"][cid]
@@ -594,7 +612,10 @@ def absorb_locators(base, m):
     knowledge = read_json(knowledge_path)
     environment = m["config"].get("environment", {}).get("id")
     updated = []
+    from .specs import has_snapshot_ref
     for hit in hits:
+        if has_snapshot_ref(hit):
+            continue
         key = str(hit.get("key") or "")
         if key.startswith("rehearse.") or hit.get("case_id") not in passed or hit.get("environment") != environment:
             continue
@@ -627,6 +648,7 @@ def absorb_locators(base, m):
         updated.append(key)
     knowledge["environment"] = environment
     knowledge["updated_at"] = now()
+    require(not has_snapshot_ref(knowledge), "Knowledge write-back cannot contain snapshot refs")
     atomic_write(knowledge_path, knowledge)
     event(m, "locators_absorbed", updated=updated, passed=sorted(passed))
     return {"updated": updated, "passed_cases": sorted(passed), "writeback": "passed_cases_only"}

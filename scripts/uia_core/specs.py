@@ -1,0 +1,427 @@
+"""Case-spec v1: validate source expectations, compile templates, derive marker coverage.
+
+No model, selector inference or business-expectation rewriting occurs here.
+"""
+from __future__ import annotations
+
+import copy
+import json
+import re
+import yaml
+from pathlib import Path
+
+from .common import ROOT, UiaError, digest, event, file_hash, inside, read_json, read_yaml, require, reset_case
+
+SCHEMA = read_json(Path(__file__).resolve().parents[2] / 'schemas/case-spec.schema.json')
+VERBS = tuple(SCHEMA['$defs']['step']['properties']['verb']['enum'])
+OPS = tuple(SCHEMA['$defs']['check']['properties']['op']['enum'])
+REF = re.compile(r'aria-ref\s*=|\[ref\s*=|["\'](?:f\d+)?e\d+["\']|(?:snapshot_ref|snapshotRef)\s*[":=]', re.I)
+ICON = re.compile('[\ue000-\uf8ff\U000f0000-\U000ffffd\U00100000-\U0010fffd]')
+
+
+def has_snapshot_ref(value):
+    return bool(REF.search(json.dumps(value, ensure_ascii=False)))
+
+
+def catalogs():
+    return (read_yaml(ROOT / 'preconditions.yaml')['preconditions'],
+            read_yaml(ROOT / 'assets/playwright-runner/knowledge/data-prep.yaml')['data'],
+            read_yaml(ROOT / 'assets/playwright-runner/knowledge/page-map.yaml'))
+
+
+def spec_path(base, case):
+    return inside(base, case.get('case_spec') or f"cases/{case['case_id']}/case-spec.yaml")
+
+
+def expectation_quotes(source):
+    # A quote is an entire imported cell or an entire nonblank line from that cell.
+    cells = source.get('expected') or []
+    if isinstance(cells, str):
+        cells = [cells]
+    return {quote for cell in cells for quote in [cell, *cell.splitlines()] if quote.strip()}
+
+
+def schema_errors(spec, source, env, data, pages):
+    errors, unknown = [], set()
+    if not isinstance(spec, dict):
+        return ['case-spec must be a mapping'], []
+    def fail(condition, message):
+        if not condition:
+            errors.append(message)
+    required = set(SCHEMA['required'])
+    fail(set(spec) == required, 'case-spec fields must match v1 schema')
+    fail(spec.get('schema_version') == 'case-spec.v1', 'schema_version must be case-spec.v1')
+    fail(spec.get('case_id') == source.get('case_id'), 'case_id differs from imported source')
+    fail(isinstance(spec.get('intent'), str) and bool(spec['intent'].strip()), 'intent is required')
+    auto = spec.get('automatable')
+    fail(isinstance(auto, dict) and set(auto) == {'status', 'reason'} and auto.get('status') in {'yes', 'needs-env', 'manual'} and isinstance(auto.get('reason'), str) and bool(auto['reason'].strip()), 'automatable needs status yes|needs-env|manual and reason')
+    for key in ('required_env', 'mutation_scope', 'questions', 'steps', 'assertions'):
+        fail(isinstance(spec.get(key), list), key + ' must be a list')
+    if errors:
+        return errors, []
+    fail(all(isinstance(x, str) and x in env for x in spec['required_env']), 'required_env contains unknown vocabulary items')
+    fail(all(isinstance(x, str) and x.strip() for x in spec['mutation_scope']), 'mutation_scope must contain names')
+    fail(all(isinstance(x, str) and x.strip() for x in spec['questions']), 'questions must contain nonempty business questions')
+    fail(isinstance(spec['data_prep'], dict), 'data_prep must be a mapping')
+    for key, value in (spec['data_prep'].items() if isinstance(spec['data_prep'], dict) else []):
+        entry = data.get(key)
+        fail(bool(entry), 'unknown data-prep item: ' + key)
+        if entry:
+            fail(entry.get('scope') in spec['mutation_scope'], 'data-prep scope must be declared: ' + key)
+            kind = entry.get('type')
+            fail((kind == 'integer' and type(value) is int and value >= 0) or (kind == 'boolean' and type(value) is bool) or
+                 (kind == 'string' and isinstance(value, str)) or (kind == 'array' and isinstance(value, list)), 'wrong data-prep type: ' + key)
+    fail(spec['start_page'] in pages['pages'], 'unknown start_page')
+    def target(value):
+        if isinstance(value, str) and re.fullmatch(r'\?[\w.\-\u4e00-\u9fff]+', value):
+            unknown.add(value)
+        else:
+            fail(isinstance(value, str) and value in pages['targets'], 'target must be a page-map name or ?name')
+    step_ids, assertion_ids = set(), set()
+    for step in spec['steps']:
+        if not isinstance(step, dict):
+            errors.append('step must be a mapping'); continue
+        fail(not set(step) - {'id', 'verb', 'target', 'value'}, 'unknown step fields')
+        sid = step.get('id')
+        fail(isinstance(sid, str) and bool(re.fullmatch(r'S[1-9]\d*', sid)) and sid not in step_ids, 'unique S-number required')
+        step_ids.add(str(sid))
+        fail(step.get('verb') in VERBS, 'step verb is not supported')
+        target(step.get('target'))
+        entry = pages['targets'].get(step.get('target'), {})
+        if entry.get('mutation') and step.get('verb') in {'click', 'fill', 'select', 'check', 'uncheck', 'press', 'upload'}:
+            fail(entry['mutation'] in spec['mutation_scope'], 'step mutation scope must be declared: ' + str(sid))
+        if step.get('verb') in {'fill', 'select', 'press', 'upload'}:
+            fail(isinstance(step.get('value'), str), 'step value must be an explicit string (blank allowed)')
+    for assertion in spec['assertions']:
+        if not isinstance(assertion, dict):
+            errors.append('assertion must be a mapping'); continue
+        fail(set(assertion) == {'id', 'after', 'excel', 'checks'}, 'assertion needs id/after/excel/checks')
+        aid = assertion.get('id')
+        fail(isinstance(aid, str) and bool(re.fullmatch(r'A[1-9]\d*', aid)) and aid not in assertion_ids, 'unique A-number required')
+        assertion_ids.add(str(aid))
+        fail(assertion.get('after') in step_ids, 'assertion.after must name its step')
+        fail(isinstance(assertion.get('excel'), str) and assertion['excel'] in expectation_quotes(source), 'assertion must quote an exact Excel expectation cell or line verbatim')
+        checks = assertion.get('checks')
+        fail(isinstance(checks, list) and bool(checks), 'assertion needs nonempty checks')
+        for check in checks if isinstance(checks, list) else []:
+            if not isinstance(check, dict):
+                errors.append('check must be a mapping'); continue
+            fail(not set(check) - {'target', 'op', 'value', 'attribute'}, 'unknown check fields')
+            target(check.get('target'))
+            fail(check.get('op') in OPS, 'unknown assertion operator')
+            if check.get('op') == 'left_of':
+                target(check.get('value'))
+            if check.get('op') in {'text', 'contains', 'value', 'attribute', 'count'}:
+                fail('value' in check, 'assertion operator requires value')
+                fail(type(check.get('value')) is int if check.get('op') == 'count' else (isinstance(check.get('value'), str) or check.get('op') == 'text' and isinstance(check.get('value'), list) and all(isinstance(x, str) for x in check['value'])), 'invalid assertion value type')
+            if check.get('op') == 'attribute':
+                fail(isinstance(check.get('attribute'), str), 'attribute name required')
+    fail(bool(spec['steps']) or auto['status'] == 'manual', 'automatable case needs steps')
+    fail(bool(spec['assertions']) or bool(spec['questions']) or auto['status'] == 'manual', 'missing Excel expectations must become a question')
+    for step in spec['steps']:
+        if isinstance(step, dict) and step.get('verb') == 'close':
+            fail(any(a.get('after') == step.get('id') and any(c.get('op') == 'hidden' for c in a.get('checks', [])) for a in spec['assertions'] if isinstance(a, dict)), 'close step requires its own hidden assertion')
+    fail(not has_snapshot_ref(spec), 'snapshot refs cannot be persisted in case-spec')
+    return errors, sorted(unknown)
+
+
+def locator_expression(name, pages):
+    entry = pages['targets'].get(name)
+    if not entry:
+        return None
+    root = 'page'
+    if entry.get('frame'):
+        root += '.frameLocator(' + json.dumps(entry['frame']) + ')'
+    if entry.get('scope'):
+        root += '.locator(' + json.dumps(entry['scope']) + ')'
+    if 'selector' in entry:
+        return root + '.locator(' + json.dumps(entry['selector']) + ')'
+    if 'role' in entry and 'name' in entry:
+        name = ICON.sub('', entry['name']).strip()
+        if ICON.search(entry['name']):
+            escaped = re.sub(r'([.*+?^${}()|\[\]\\])', r'\\\1', name)
+            options = '{ name: new RegExp(' + json.dumps(escaped, ensure_ascii=False) + ', "u") }'
+        else:
+            options = '{ name: ' + json.dumps(name, ensure_ascii=False) + ', exact: true }'
+        return root + '.getByRole(' + json.dumps(entry['role']) + ', ' + options + ')'
+    return None
+
+
+def locator_errors(body, pages):
+    errors = []
+    if not re.search(r"import\s*\{[^}]*\btest\b[^}]*\}\s*from\s*['\"][^'\"]*support/fixtures(?:\.js|\.ts)?['\"]", body):
+        errors.append('spec must import test from support/fixtures')
+    if re.search(r"import\s*\{[^}]*\btest\b[^}]*\}\s*from\s*['\"]@playwright/test", body):
+        errors.append('spec cannot import test directly from @playwright/test')
+    if ICON.search(body):
+        errors.append('strip icon glyphs from accessible names')
+    if has_snapshot_ref(body):
+        errors.append('snapshot refs cannot be persisted in specs')
+    for name, entry in pages['targets'].items():
+        if entry.get('dialog') and entry.get('scope') != pages['targets'].get(entry['dialog'], {}).get('selector'):
+            errors.append('dialog target must be scoped: ' + name)
+        if entry.get('dialog'):
+            selector = entry.get('selector')
+            if selector and re.search(r"\bpage\.locator\(\s*(['\"])" + re.escape(selector) + r"\1\s*[,)]", body):
+                errors.append('dialog-internal CSS locator must use dialog scope: ' + name)
+            # Names may accompany CSS targets to lint AI role/text locator alternatives.
+            clean_name = ICON.sub('', entry.get('name', '')).strip()
+            if clean_name and re.search(r'\bpage\.getBy(?:Role|Text|Label)\([^\n]*' + re.escape(clean_name), body):
+                errors.append('dialog-internal named locator must use dialog scope: ' + name)
+        if entry.get('role') and entry.get('name'):
+            clean = ICON.sub('', entry['name']).strip()
+            # Includes map observations of duplicates, even when only one alias is stored.
+            peers = [e for e in pages['targets'].values() if e.get('role') == entry['role'] and ICON.sub('', e.get('name', '')).strip() == clean and e.get('frame') == entry.get('frame') and e.get('scope') == entry.get('scope')]
+            if (entry.get('matches', 1) > 1 or len(peers) > 1) and not entry.get('scope'):
+                if re.search(r'getByRole\([^\n]*' + re.escape(clean), body):
+                    errors.append('non-unique role/name needs a container scope: ' + name)
+            if entry.get('dialog') and re.search(r'\bpage\.getByRole\([^\n]*' + re.escape(clean), body):
+                errors.append('dialog-internal locator must use dialog scope: ' + name)
+    for observed in pages.get('observations', {}).get('duplicate_names', []):
+        if observed.get('matches', 0) < 2:
+            continue
+        for line in body.splitlines():
+            match = re.search(r"getByRole\(\s*['\"]" + re.escape(observed['role']) + r"['\"][^;]*" + re.escape(observed['name']), line)
+            if match:
+                prefix = line[:match.start()]
+                if not re.search(r"(?:\.locator\([^)]*\)|\.getByRole\([^)]*\))\.$", prefix):
+                    errors.append('observed non-unique role/name requires a container scope: ' + observed['name'])
+    # Explicit AI close actions must be followed by an expect hidden assertion.
+    for segment in re.split(r'//\s*@step\s+S\d+', body)[1:]:
+        if re.search(r'(?:取消|关闭|cancel|close)[^\n]*(?:\.click\(|Dialog\()', segment, re.I) and not re.search(r'\bexpect\([^;]+\)\.toBe(?:Hidden|Visible)\(', segment, re.S):
+            errors.append('close action requires an explicit visibility assertion')
+    return sorted(set(errors))
+
+
+def coverage(body, file):
+    result = {'steps': {}, 'assertions': {}}
+    for line, text in enumerate(body.splitlines(), 1):
+        for field, pattern in [('steps', r'^\s*//\s*@step\s+(S\d+)\s*$'), ('assertions', r"\bawait\s+businessAssertion\(['\"](A\d+)['\"]")]:
+            for match in re.finditer(pattern, text):
+                require(match[1] not in result[field], 'Duplicate coverage marker: ' + match[1])
+                result[field][match[1]] = {'file': file, 'line': line}
+    return result
+
+
+def lint(base, m, case_ids=None, record=True):
+    env, data, pages = catalogs()
+    selected = case_ids or [cid for cid, c in m['cases'].items() if spec_path(base, c).is_file()]
+    # Cross-case duplication cannot be bypassed with --cases or a single-case generation.
+    chosen = list(dict.fromkeys([*selected, *[cid for cid, c in m['cases'].items() if spec_path(base, c).is_file()]]))
+    results, seen, explore, business = {}, {}, {}, {}
+    for cid in chosen:
+        require(cid in m['cases'], 'Unknown case: ' + cid)
+        case = m['cases'][cid]; path = spec_path(base, case)
+        try:
+            spec = read_yaml(path)
+            errors, unknown = schema_errors(spec, read_json(inside(base, case['source'])), env, data, pages)
+        except (OSError, ValueError, TypeError, yaml.YAMLError):
+            spec, errors, unknown = {}, ['missing or malformed case-spec'], []
+        auto = spec.get('automatable') if isinstance(spec, dict) else None
+        results[cid] = {'errors': errors, 'automatable': auto.get('status', 'invalid') if isinstance(auto, dict) else 'invalid'}
+        if errors:
+            continue
+        for target in unknown:
+            explore.setdefault(target, []).append(cid)
+        for text in spec['questions']:
+            business.setdefault(text, []).append(cid)
+        for assertion in spec['assertions']:
+            signature = digest(sorted(assertion['checks'], key=lambda check: json.dumps(check, sort_keys=True, ensure_ascii=False)))
+            if signature in seen and seen[signature][0] != cid:
+                other, aid = seen[signature]
+                results[cid]['errors'].append('identical assertion across cases: ' + other + '/' + aid)
+                results[other]['errors'].append('identical assertion across cases: ' + cid + '/' + assertion['id'])
+            else:
+                seen[signature] = (cid, assertion['id'])
+        reg = case.get('registration') or {}
+        script = inside(base, reg['script']) if reg.get('case_spec') else base / 'runner/tests/generated' / (cid + '.spec.ts')
+        if script.is_file():
+            body = script.read_text()
+            errors.extend(locator_errors(body, pages))
+            try:
+                refs = coverage(body, str(script.resolve().relative_to((base / 'runner').resolve())))
+                for field in ('steps', 'assertions'):
+                    if set(refs[field]) != {x['id'] for x in spec[field]}:
+                        errors.append('marker coverage differs from case-spec ' + field)
+            except (ValueError, UiaError):
+                errors.append('invalid coverage markers')
+    knowledge_errors = []
+    # Check all knowledge files, including the run-local overlay, without printing contents.
+    for root in [ROOT / 'knowledge', ROOT / 'ui-knowledge', ROOT / 'automation-assets', ROOT / 'assets/playwright-runner/knowledge', base / 'state/knowledge']:
+        for path in root.rglob('*') if root.exists() else []:
+            if path.is_file() and path.suffix in {'.json', '.yaml', '.yml', '.md'} and has_snapshot_ref(path.read_text()):
+                knowledge_errors.append('knowledge contains snapshot refs: ' + path.name)
+    if record:
+        require(not m.get('active_batch'), 'Cannot lint/update specs during an active batch')
+        from .workflow import question
+        for cid, row in results.items():
+            case = m['cases'][cid]
+            case['case_spec'] = str(spec_path(base, case).relative_to(base))
+            if case.get('spec_first_lint', {}).get('source_hash') != case['source_hash']:
+                case['spec_first_lint'] = {'passed': not row['errors'], 'automatable': row['automatable'], 'source_hash': case['source_hash']}
+            case['spec_lint'] = copy.deepcopy(row)
+            if not row['errors']:
+                spec = read_yaml(spec_path(base, case))
+                case['precondition_items'] = spec['required_env']
+                if not case.get('registration') or case.get('daily_spec'):
+                    case['stage'] = 'spec'
+                if spec['automatable']['status'] == 'manual':
+                    case.update(stage='finished', work_status='finished', result='not_suitable', classification={'reason': spec['automatable']['reason']})
+        from .preconditions import sync_preconditions, QUESTION_KEY
+        sync_preconditions(base, m)
+        if business:
+            owners = sorted({c for ids in business.values() for c in ids})
+            q = m['questions'].get(QUESTION_KEY)
+            if not q:
+                q = question(m, 'preconditions', 'run-preconditions', '执行前业务确认清单', owners, key=QUESTION_KEY)
+            q['business_questions'] = [{'question': text, 'case_ids': ids} for text, ids in business.items()]
+            q['prompt'] = q['prompt'].split('\n业务歧义：', 1)[0] + '\n业务歧义：\n' + '\n'.join(
+                '- ' + text + ' (' + ', '.join(ids) + ')' for text, ids in business.items())
+            q['case_ids'] = sorted(set(q['case_ids']) | set(owners))
+            for cid in owners:
+                m['cases'][cid]['work_status'] = 'waiting_human'
+        m['pipeline'] = 'case-spec.v1'
+        m['spec_explore'] = [{'target': target, 'case_ids': ids} for target, ids in explore.items()]
+        event(m, 'spec_linted', case_ids=chosen, passed=sum(not x['errors'] for x in results.values()))
+    auto = [m['cases'][cid].get('spec_first_lint', row) for cid, row in results.items() if row['automatable'] != 'manual']
+    passed = sum(x.get('passed', not x.get('errors')) for x in auto)
+    return {'valid': not knowledge_errors and all(not r['errors'] for r in results.values()), 'errors': knowledge_errors, 'cases': results, 'explore': [{'target': k, 'case_ids': v} for k, v in explore.items()],
+            'questions': [{'question': k, 'case_ids': v} for k, v in business.items()],
+            'first_pass': {'passed': passed, 'automatable': len(auto), 'rate': passed / len(auto) if auto else None}}
+
+
+def generate(base, m, cid):
+    require(not m.get('active_batch'), 'Cannot generate during an active batch')
+    result = lint(base, m, [cid])
+    require(result['valid'], 'case-spec lint failed', result)
+    case = m['cases'][cid]; spec = read_yaml(spec_path(base, case)); _, catalog, pages = catalogs()
+    scopes = set(spec['mutation_scope'])
+    for key in spec['data_prep']:
+        require(catalog[key].get('scope') in scopes, 'data-prep scope must be declared: ' + key)
+    if scopes:
+        mutation = m.get('config', {}).get('mutation', {})
+        require(mutation.get('allowed') and (scopes <= set(mutation.get('scope', [])) or
+                mutation.get('scope') == ['*'] and mutation.get('authorization_profile', {}).get('approved_by') == 'Xinying'),
+                'case-spec mutation scope exceeds configured authorization')
+    require(spec['automatable']['status'] != 'manual', 'Manual case cannot generate executable code')
+    lines = ["// Generated deterministically from case-spec.v1; edit the spec or explicitly review an AI repair.",
+             "import { test, expect, businessAssertion } from '../../support/fixtures.js';",
+             "import { openTarget } from '../../support/case-spec.js';", '',
+             'test(' + json.dumps('[' + cid + '] ' + spec['intent'], ensure_ascii=False) + ', async ({ page }) => {']
+    todos = []
+    def todo(label):
+        todos.append(label)
+        lines.append('  // TODO explore: ' + label)
+        lines.append('  throw new Error(' + json.dumps('UIA_EXPLORATION_REQUIRED: ' + label) + ');')
+    for step in spec['steps']:
+        sid, verb, name = step['id'], step['verb'], step['target']
+        lines.append('  // @step ' + sid)
+        loc = locator_expression(name, pages)
+        if not loc or verb == 'open' and not pages['targets'].get(name, {}).get('open'):
+            todo(sid + ' ' + name)
+        elif verb == 'open':
+            lines.append('  await openTarget(page, ' + json.dumps(pages['targets'][name]['open']) + ');')
+        elif verb in {'click', 'hover', 'check', 'uncheck', 'close'}:
+            lines.append('  await ' + loc + '.' + ('click' if verb == 'close' else verb) + '();')
+        elif verb in {'fill', 'select', 'press', 'upload'}:
+            method = {'select': 'selectOption', 'upload': 'setInputFiles'}.get(verb, verb)
+            lines.append('  await ' + loc + '.' + method + '(' + json.dumps(step['value'], ensure_ascii=False) + ');')
+        elif verb in {'wait', 'assert'}:
+            lines.append('  await expect(' + loc + ').toBeVisible();')
+        for assertion in (a for a in spec['assertions'] if a['after'] == sid):
+            lines.append('  // Excel: ' + assertion['excel'].replace('\n', '\n  // '))
+            lines.append("  await businessAssertion('" + assertion['id'] + "', async () => {")
+            for check in assertion['checks']:
+                loc = locator_expression(check['target'], pages)
+                if not loc:
+                    todo(assertion['id'] + ' ' + check['target']); continue
+                if check['op'] == 'left_of':
+                    other = locator_expression(check['value'], pages)
+                    if not other:
+                        todo(assertion['id'] + ' ' + check['value']); continue
+                    lines.append('    expect((await ' + loc + '.boundingBox())!.x).toBeLessThan((await ' + other + '.boundingBox())!.x);')
+                    continue
+                method = {'visible':'toBeVisible', 'hidden':'toBeHidden', 'text':'toHaveText', 'contains':'toContainText', 'value':'toHaveValue',
+                          'attribute':'toHaveAttribute', 'count':'toHaveCount', 'enabled':'toBeEnabled', 'disabled':'toBeDisabled'}[check['op']]
+                args = [check['attribute']] if check['op'] == 'attribute' else []
+                if 'value' in check:
+                    args.append(check['value'])
+                lines.append('    await expect(' + loc + ').' + method + '(' + ', '.join(json.dumps(x, ensure_ascii=False) for x in args) + ');')
+            lines.append('  });')
+    lines += ['});', '']
+    body = '\n'.join(lines)
+    require(not locator_errors(body, pages), 'Generated locator lint failed', locator_errors(body, pages))
+    relative = 'tests/generated/' + cid + '.spec.ts'
+    script = base / 'runner' / relative
+    script.parent.mkdir(parents=True, exist_ok=True)
+    script.write_text(body)
+    unsupported_data = [key for key in spec['data_prep'] if not catalog[key].get('handler')]
+    if unsupported_data:
+        markers = ['  // TODO explore: data-prep ' + key + '\n  throw new Error(' + json.dumps('UIA_EXPLORATION_REQUIRED: data-prep ' + key) + ');' for key in unsupported_data]
+        body = body.replace('async ({ page }) => {', 'async ({ page }) => {\n' + '\n'.join(markers))
+        script.write_text(body)
+    todos += ['data-prep ' + key for key in unsupported_data]
+    if todos or spec['questions']:
+        case.update(stage='discovery', work_status='pending')
+        event(m, 'spec_generated_todo', case_id=cid, todos=todos)
+        return {'case_id': cid, 'script': 'runner/' + relative, 'todos': todos, 'runnable': False}
+    return register_script(base, m, cid, 'runner/' + relative)
+
+
+def register_script(base, m, cid, script_path):
+    """Register a final template/AI spec; coverage and lifecycle declarations are derived."""
+    require(not m.get('active_batch'), 'Cannot register during an active batch')
+    case = m['cases'][cid]
+    spec = read_yaml(spec_path(base, case))
+    result = lint(base, m, [cid])
+    require(result['valid'], 'case-spec lint failed', result)
+    require(not any(cid in item['case_ids'] for item in result['explore']), 'Resolve unknown targets before registration')
+    require(not spec['questions'], 'Resolve business questions before registration')
+    env, catalog, pages = catalogs()
+    require(spec['automatable']['status'] != 'manual', 'Manual case cannot register')
+    require(all(catalog[key].get('handler') for key in spec['data_prep']), 'Data preparation handler is not implemented')
+    script = inside(base, script_path)
+    inside(base / 'runner/tests', script)
+    require(script.suffix == '.ts' and script.is_file(), 'Final spec must be a TypeScript file under runner/tests')
+    relative = str(script.relative_to((base / 'runner').resolve()))
+    body = script.read_text()
+    require(not locator_errors(body, pages), 'Final spec locator lint failed', locator_errors(body, pages))
+    require('TODO explore:' not in body and 'UIA_EXPLORATION_REQUIRED' not in body, 'Resolve exploration TODO before registration')
+    refs = coverage(body, relative)
+    for field in ('steps', 'assertions'):
+        require(set(refs[field]) == {x['id'] for x in spec[field]}, 'Coverage markers differ from case-spec ' + field)
+    reg = {'case_id':cid, 'case_spec':True, 'script':'runner/' + relative,
+           'fixture':{'hooks':'fixtures/case-spec.mjs', 'mutates':bool(spec['mutation_scope']), 'mutation_scope':spec['mutation_scope']},
+           'dependencies':[], 'needs_public':pages['pages'][spec['start_page']].get('public', False) or 'public_frontend' in spec['required_env'],
+           'coverage':refs}
+    previous = case.get('version')
+    case.update(registration=reg, daily_spec=False, case_spec=str(spec_path(base, case).relative_to(base)),
+                spec_hash=file_hash(spec_path(base, case)), flow_ids=['case-spec'], fixture_ids=['case-spec:' + cid])
+    from .workflow import case_version
+    version = case_version(base, m, case)
+    if previous != version:
+        reset_case(case, 'case_spec_registered', 'execution')
+    case.update(version=version, stage='execution', work_status='runnable')
+    from .preconditions import sync_preconditions
+    sync_preconditions(base, m)
+    for question in m.get('questions', {}).values():
+        if question['status'] == 'open' and cid in question['case_ids']:
+            case['work_status'] = 'waiting_human'
+    from .checks import case_errors
+    errors, _ = case_errors(base, case, m['config'], execution=True)
+    require(not errors, 'Final spec execution gate failed', errors)
+    event(m, 'spec_registered', case_id=cid, script=reg['script'])
+    return {'case_id':cid, 'script':reg['script'], 'todos':[], 'runnable':case['work_status'] == 'runnable', 'coverage':reg['coverage']}
+
+
+def render(base, m, cid):
+    spec = read_yaml(spec_path(base, m['cases'][cid]))
+    lines = ['# ' + cid + ': ' + spec['intent'], '', 'Start: ' + spec['start_page'], '',
+             'Environment: ' + ', '.join(spec['required_env']), 'Data: ' + json.dumps(spec['data_prep'], ensure_ascii=False), '', '## Steps', '']
+    lines += [f"- {s['id']}: {s['verb']} {s['target']}" + (' = ' + repr(s['value']) if 'value' in s else '') for s in spec['steps']]
+    lines += ['', '## Excel expectations', '']
+    lines += [f"- {a['id']} after {a['after']}: {a['excel']}" for a in spec['assertions']]
+    lines += ['', '## Business questions', ''] + ['- ' + q for q in spec['questions']]
+    target = spec_path(base, m['cases'][cid]).with_suffix('.md')
+    target.write_text('\n'.join(lines) + '\n')
+    return {'markdown':str(target.relative_to(base))}

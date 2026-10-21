@@ -5,7 +5,7 @@ import json
 import sys
 from pathlib import Path
 
-from . import checks, reports, runtime, workflow, profiles
+from . import checks, reports, runtime, workflow, profiles, specs
 from .common import (RESULTS, UiaError, atomic_write, digest, event, file_hash, inside, load_run,
                      locked_run, now, read_json, redact, require, save, summary)
 
@@ -52,6 +52,15 @@ def parser():
     source.add_argument("--run")
     snapshot.add_argument("--node", default="page", choices=["page", "content-admin", "editor"])
     snapshot.add_argument("--manual", action="store_true")
+    snapshot.add_argument("--frame", help="iframe selector, e.g. #backstage-innerpage")
+    snapshot.add_argument("--scope", help="dialog or container selector")
+    snapshot.add_argument("--hover")
+    snapshot.add_argument("--click", action="append", default=[])
+    snapshot.add_argument("--open-target", choices=["settings", "llms"], help="open a known node before snapshot")
+    spec = commands.add_parser("spec")
+    spec.add_argument("action", choices=["lint", "gen", "render"])
+    spec.add_argument("--run", required=True)
+    spec.add_argument("--cases", nargs="+")
     init = commands.add_parser("init")
     init.add_argument("--run-id", required=True)
     source = init.add_mutually_exclusive_group(required=True)
@@ -118,6 +127,11 @@ def dispatch(args, path, m):
     cmd = args.command
     if hasattr(args, "case"):
         require(args.case in m["cases"], "Unknown case: " + args.case)
+    if cmd == "spec":
+        if args.action == "lint":
+            return specs.lint(base, m, args.cases)
+        chosen = args.cases or [cid for cid, c in m["cases"].items() if specs.spec_path(base, c).is_file()]
+        return {"results": [(specs.generate if args.action == "gen" else specs.render)(base, m, cid) for cid in chosen]}
     if cmd == "import":
         workflow.scaffold(base)
         return workflow.import_excel(base, m, args.excel, read_json(args.mapping) if args.mapping else None)
@@ -178,6 +192,7 @@ def dispatch(args, path, m):
             require(item.get("classification") in allowed and item.get("summary") and item.get("evidence"), "Incomplete feedback item")
             for ref in item["evidence"]:
                 require(inside(base, ref).is_file(), "Feedback evidence missing: " + ref)
+        require(not specs.has_snapshot_ref(review), "Feedback/write-back cannot contain snapshot refs")
         serialized = json.dumps(review, ensure_ascii=False)
         require(redact(serialized, m["config"]) == serialized, "Feedback includes a configured secret")
         target = inside(base, str(Path("cases") / args.case / "feedback.json"))
@@ -297,7 +312,7 @@ def execute(args):
         area = {"page": None, "content-admin": "内容管理", "editor": "编辑网站"}[args.node]
         if args.run:
             with locked_run(args.run) as (path, m):
-                snapshot_result = profiles.invoke_snapshot(m["config"], path.parent / "runner", area, args.manual)
+                snapshot_result = profiles.invoke_snapshot(m["config"], path.parent / "runner", area, args.manual, args.frame, args.scope, args.open_target, args.hover, args.click)
                 known = any(c.get("registration") for c in m["cases"].values())
                 m.setdefault("exploration", []).append({"node": args.node, "known_page": known,
                                                          "re_explored": known, "at": now()})
@@ -305,7 +320,7 @@ def execute(args):
                 save(path, m)
                 return snapshot_result
         cfg = config(profiles.profile_path(args.profile) if args.profile else args.config)
-        return profiles.invoke_snapshot(cfg, area=area, manual=args.manual)
+        return profiles.invoke_snapshot(cfg, area=area, manual=args.manual, frame=args.frame, scope=args.scope, open_target=args.open_target, hover=args.hover, clicks=args.click)
     if args.command == "init":
         return workflow.init(args.run_id, profiles.profile_path(args.profile) if args.profile else args.config)
     if args.command == "validate" and not args.run:

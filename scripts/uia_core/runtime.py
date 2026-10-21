@@ -10,7 +10,7 @@ from urllib.parse import urlsplit
 
 from .checks import case_errors
 from .common import (RESULTS, atomic_write, digest, elapsed, event, file_hash, inside,
-                     now, read_json, redact, require, reset_case)
+                     now, read_json, read_yaml, redact, require, reset_case)
 from .workflow import case_version, code_files, question, refresh
 from .profiles import network_fingerprint
 
@@ -202,10 +202,8 @@ def begin_batch(base, m, case_ids):
         errors, _ = case_errors(base, c, m["config"], execution=True)
         require(not errors, "Execution gate failed", {"case_id": c["case_id"], "errors": errors})
     # Runtime bindings are a projection of the manifest, not a second mutable truth.
-    bindings = {cid: {"case_id": cid, "hooks": c["registration"]["fixture"]["hooks"],
-                      "mutates": c["registration"]["fixture"]["mutates"], "isolated": c["isolated"],
-                      "fixture_ids": c["fixture_ids"], "flow_ids": c["flow_ids"]}
-                for cid, c in m["cases"].items() if c.get("registration")}
+    from .bindings import case_bindings
+    bindings = case_bindings(base, m)
     cases_file = base / "state/cases.json"
     atomic_write(cases_file, bindings)
     knowledge_source = base / "runner/knowledge/llms-txt.json"
@@ -348,7 +346,8 @@ def consume_batch(base, m, exit_code=None):
                    "setup_verified": prepared, "cleanup_verified": clean,
                    "setup_started": row.get("setup_started", False),
                    "duration_ms": row.get("duration_ms", 0), "errors": row.get("errors", []),
-                   "attachments": row.get("attachments", [])}
+                   "attachments": row.get("attachments", []),
+                   "assertions": row.get("assertions", []), "failure_stage": row.get("failure_stage")}
         prior = c["attempts"][-1] if c["attempts"] else None
         c["attempts"].append(attempt)
         if attempt["executed"] and not m.get("first_result_at"):

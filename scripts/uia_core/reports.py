@@ -43,7 +43,7 @@ def make_report(base, m):
     for c in m["cases"].values():
         records.append({k: c.get(k) for k in ("case_id", "original_id", "title", "module", "priority",
                        "sheet", "rows", "stage", "work_status", "result", "stability", "pass_streak",
-                       "flow_ids", "fixture_ids", "repair_rounds", "attempts", "feedback", "classification")})
+                       "flow_ids", "fixture_ids", "repair_rounds", "attempts", "feedback", "classification", "case_spec", "spec_first_lint", "spec_lint")})
         records[-1]["script"] = (c.get("registration") or {}).get("script")
         attempt = c["attempts"][-1] if c.get("attempts") else None
         classification = c.get("classification") or {}
@@ -162,6 +162,8 @@ th{background:#23415a;color:white}a{color:#0069a3}pre{white-space:pre-wrap}secti
     script_package = None
     if runner.exists():
         with zipfile.ZipFile(out / "scripts.zip", "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            from .bindings import case_bindings
+            archive.writestr("runner/cases.json", scrub_text(json.dumps(case_bindings(base, m), ensure_ascii=False), m["config"]))
             protected = {Path(m["config_path"]).resolve()}
             if m["config"].get("auth", {}).get("storage_state"):
                 protected.add(Path(m["config"]["auth"]["storage_state"]).resolve())
@@ -174,7 +176,7 @@ th{background:#23415a;color:white}a{color:#0069a3}pre{white-space:pre-wrap}secti
                 rel = file.relative_to(runner)
                 if not file.is_file() or file.is_symlink() or file.resolve() in protected or any(part in {"node_modules", "results", ".auth", "test-results", "playwright-report"} for part in rel.parts):
                     continue
-                if file.name.startswith(".env") or file.name in {"auth.json", "storage-state.json", "error-context.md", "trace.zip", "playwright-results.json"} or ".local." in file.name:
+                if file.name.startswith(".env") or file.name in {"cases.json", "auth.json", "storage-state.json", "error-context.md", "trace.zip", "playwright-results.json"} or ".local." in file.name:
                     continue
                 if file.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp", ".webm"} or any(part in {"playwright-report", "traces", "test-results"} for part in rel.parts):
                     continue

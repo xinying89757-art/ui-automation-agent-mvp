@@ -98,7 +98,11 @@ def calculate(base, m, final_report_at=None):
         if file.is_file() and assertion_signature(file) != original:
             assertion_changes += 1
     explored_known = sum(1 for item in m.get("exploration", []) if item.get("known_page") or item.get("re_explored"))
+    first_lints = [c["spec_first_lint"] for c in cases if c.get("spec_first_lint") and c["spec_first_lint"].get("automatable") != "manual"]
+    first_passed = sum(bool(row.get("passed")) for row in first_lints)
     return {
+        "spec_lint_first_pass": {"passed": first_passed, "automatable": len(first_lints),
+                                 "rate": first_passed / len(first_lints) if first_lints else None},
         "unplanned_interventions": int(m.get("unplanned_interventions", 0)),
         "import_to_first_result_seconds": elapsed(imported_at, first_at) if imported_at and first_at else None,
         "import_to_final_report_seconds": elapsed(imported_at, review_at) if imported_at and review_at else None,

@@ -132,7 +132,7 @@ def setup(name, environment, site, account=None, credentials_file=None, password
 
 def update_profile(name, site=None, mutation_allowed=None, scope=None, stability_passes=None,
                    editor_data_restorable=False):
-    """Change site URL and mutation scope in the private profile. Does not print credentials."""
+    """Record test-site scope, including authorized edits/save/publish; restoration aids repeatability. Never print credentials."""
     destination = profile_path(name)
     require(destination.is_file(), "Profile does not exist; run setup first")
     require(site or mutation_allowed is not None or scope is not None or stability_passes is not None,
@@ -232,7 +232,7 @@ def invoke_login(cfg, runner=None, check_only=False, force=False, evidence=None,
         Path(temp).unlink(missing_ok=True)
 
 
-def invoke_snapshot(cfg, runner=None, area=None, manual=False):
+def invoke_snapshot(cfg, runner=None, area=None, manual=False, frame=None, scope=None, open_target=None, hover=None, clicks=None):
     runner = Path(runner or runtime_root()).resolve()
     require((runner / "node_modules/@playwright/test").is_dir(),
             "Install Node dependencies first: npm --prefix " + str(runner) + " ci")
@@ -246,9 +246,14 @@ def invoke_snapshot(cfg, runner=None, area=None, manual=False):
         command = ["node", str(runner / "scripts/session.mjs"), "--config", temp, "--snapshot"]
         if area:
             command.append(area)
+        for flag, value in (("--frame", frame), ("--scope", scope), ("--open-target", open_target), ("--hover", hover)):
+            if value:
+                command.extend([flag, value])
         if manual:
             command.append("--manual")
-        result = subprocess.run(command, cwd=runner, capture_output=True, text=True)
+        for selector in clicks or []:
+            command.extend(["--click", selector])
+        result = subprocess.run(command, cwd=runner, capture_output=True, text=True, timeout=180)
         try:
             payload = json.loads(result.stdout)
         except (ValueError, TypeError):

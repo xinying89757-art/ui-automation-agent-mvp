@@ -1,0 +1,8 @@
+schema_version: data-prep.v1
+data:
+  llms.enabled: {type: boolean, handler: llms-form, scope: llms.txt}
+  llms.source: {type: string, handler: llms-form, scope: llms.txt}
+  llms.overview: {type: string, handler: llms-form, scope: llms.txt}
+  llms.custom: {type: string, handler: llms-form, scope: llms.txt}
+  llms.extras: {type: array, handler: llms-form, scope: llms.txt}
+  faq.count: {type: integer, handler: null, scope: faq, note: 需探索 FAQ 管理页并实现可恢复的准备器}

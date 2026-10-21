@@ -27,7 +27,8 @@ the project root, never from a particular user's global skill installation.
   Edits reset the count. Preserve every attempt and interruption.
 - Keep credentials in environment variables/protected local auth state. Do not include
   secrets in source assets, manifests, questions or delivery packages.
-- Preserve original workbooks and `cases/TC_PD_001` unchanged. Its historical result is
+- Preserve original workbooks and local product-specific samples unchanged. The public
+  repository excludes local `cases/TC_PD_001`; its historical result remains
   `BLOCKED_BY_RUNTIME_INPUT`, not PASS.
 - After real successful execution, generate a consolidated asset-review diff. Long-term
   knowledge write-back follows the user's review; run-local verified code may be reused.

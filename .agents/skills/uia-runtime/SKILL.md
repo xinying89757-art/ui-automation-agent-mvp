@@ -15,6 +15,11 @@ Playwright dependency. Keep the process session alive across tool interactions.
 
 ## Preflight and discovery
 
+- Read [environment/login](../../../docs/environments-and-login.md) for profile-based runs.
+  Run `login --run` before exploration/execution; `--check-only` cannot satisfy preflight.
+  Use the bundled environment, network and auth modules. Gray requires the local PAC
+  and observed `X-Via: Ld-Gray`; never replace failed gray routing with direct production.
+  Do not copy proxy addresses, historical credentials or site IDs into business specs.
 - Verify reachability, actual login and target visibility through the real UI before
   business writes. Save secret-free browser evidence and call `preflight`.
 - Explore only required gaps; reuse live-verified flows across selected cases.
@@ -38,6 +43,11 @@ Playwright dependency. Keep the process session alive across tool interactions.
   for visitor/password cases; never inherit an already-unlocked visitor session.
 - Parameterize public/admin URLs, proxy, credentials references and test data. Copy
   reusable code into local exported modules so the runner has no absolute external imports.
+- Keep default `page`/`context` unauthenticated. Use `adminPage`, `adminContext` or
+  `caseContext.openAdmin('内容管理'|'编辑网站')` for managed access. These consume verified
+  login state; refresh an expired session outside test traces via `login --run`.
+  The runner and exported package carry `environments.json`, `network/gray.pac` and
+  environment-check/login scripts. Do not introduce paths to the source workspace.
 - Save registration JSON with source-step/capability/assertion file+line coverage,
   evidence, required gap resolutions, hooks, reuse IDs and dynamic dependencies.
   Call `register`; failed gates return concrete problems to repair without weakening assertions.

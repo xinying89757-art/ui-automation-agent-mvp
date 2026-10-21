@@ -6,7 +6,9 @@
     "test": "playwright test",
     "test:headed": "playwright test --headed",
     "report": "playwright show-report",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "login": "node scripts/session.mjs",
+    "check:environment": "node scripts/check-environment.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

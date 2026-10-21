@@ -9,6 +9,7 @@ export interface CaseContext {
   browser: Browser;
   context: BrowserContext;
   page: Page;
+  openAdmin(area?: '内容管理' | '编辑网站'): Promise<Page>;
   fixtureState?: unknown;
 }
 

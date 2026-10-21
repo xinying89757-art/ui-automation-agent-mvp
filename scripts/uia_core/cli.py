@@ -5,7 +5,7 @@ import json
 import sys
 from pathlib import Path
 
-from . import checks, reports, runtime, workflow
+from . import checks, reports, runtime, workflow, profiles
 from .common import (RESULTS, UiaError, atomic_write, digest, event, file_hash, inside, load_run,
                      locked_run, now, read_json, redact, require, save, summary)
 
@@ -18,9 +18,28 @@ class JsonParser(argparse.ArgumentParser):
 def parser():
     p = JsonParser(description="Local UI automation workflow; commands emit JSON")
     commands = p.add_subparsers(dest="command", required=True)
+    environments = commands.add_parser("env")
+    environments.add_argument("action", choices=["list"])
+    setup = commands.add_parser("setup")
+    setup.add_argument("--profile", required=True)
+    setup.add_argument("--environment", choices=["p", "gray", "production"], required=True)
+    setup.add_argument("--site", required=True)
+    setup.add_argument("--account")
+    setup.add_argument("--credentials-file")
+    setup.add_argument("--password-env")
+    login = commands.add_parser("login")
+    source = login.add_mutually_exclusive_group(required=True)
+    source.add_argument("--profile")
+    source.add_argument("--config")
+    source.add_argument("--run")
+    login.add_argument("--force", action="store_true")
+    login.add_argument("--check-only", action="store_true")
+    login.add_argument("--manual", action="store_true")
     init = commands.add_parser("init")
     init.add_argument("--run-id", required=True)
-    init.add_argument("--config", required=True)
+    source = init.add_mutually_exclusive_group(required=True)
+    source.add_argument("--config")
+    source.add_argument("--profile")
     for name in ("import", "status", "next", "bind", "advance", "match", "scaffold", "register", "preflight",
                  "question", "answer", "explore", "run-batch", "record-run", "recover", "repair", "classify",
                  "feedback", "resolve-fixture", "replay-demo", "report", "validate"):
@@ -186,8 +205,40 @@ def dispatch(args, path, m):
 
 
 def execute(args):
+    if args.command == "env":
+        return {"environments": profiles.presets()}
+    if args.command == "setup":
+        return profiles.setup(args.profile, args.environment, args.site, args.account, args.credentials_file, args.password_env)
+    if args.command == "login":
+        from .common import config
+        if not args.run:
+            cfg = config(profiles.profile_path(args.profile) if args.profile else args.config)
+            return profiles.invoke_login(cfg, check_only=args.check_only, force=args.force, manual=args.manual)
+        with locked_run(args.run) as (path, m):
+            require(not m.get("active_batch"), "Cannot replace authentication during an active batch")
+            workflow.refresh(path.parent, m)
+            workflow.scaffold(path.parent)
+            workflow.refresh(path.parent, m)
+            evidence = Path("evidence") / ("environment-" + now().replace(":", "-") + ".json")
+            try:
+                result = profiles.invoke_login(m["config"], path.parent / "runner", args.check_only, args.force, path.parent / evidence, args.manual)
+            except UiaError as error:
+                affected = [cid for cid, c in m["cases"].items() if c["work_status"] != "finished" and
+                            c["stage"] in {"discovery", "execution", "repair"}]
+                details = error.details if isinstance(error.details, dict) else {}
+                q = workflow.question(m, "login", "session", str(error), affected, reopen=True)
+                q["choices"] = details.get("choices", [])
+                save(path, m)
+                raise
+            if not args.check_only:
+                for q in list(m["questions"].values()):
+                    if q["status"] == "open" and (q["subject"] == "session" or q["subject"] == "preflight"):
+                        workflow.answer(m, q["id"], {"evidence": str(evidence)}, path.parent)
+                result["preflight"] = runtime.preflight(path.parent, m, str(evidence))
+            save(path, m)
+            return result
     if args.command == "init":
-        return workflow.init(args.run_id, args.config)
+        return workflow.init(args.run_id, profiles.profile_path(args.profile) if args.profile else args.config)
     if args.command == "validate" and not args.run:
         errors = checks.skill_errors()
         return {"valid": not errors, "errors": errors, "warnings": []}
@@ -202,7 +253,10 @@ def execute(args):
                                    for row in progress.get("cases", [])] if progress else [],
                 "cases": [{k: c.get(k) for k in ("case_id", "title", "stage", "work_status", "result", "stability", "pass_streak")}
                           for c in m["cases"].values()],
-                "questions": [{k: q.get(k) for k in ("id", "kind", "prompt", "case_ids", "status")}
+                "connection": {"environment": m["config"].get("environment", {}).get("id", "legacy"),
+                               "entry_url": m["config"].get("environment", {}).get("entry_url"),
+                               "site": m["config"].get("site"), "network_mode": m["config"].get("network", {}).get("mode", "legacy")},
+                "questions": [{k: q.get(k) for k in ("id", "kind", "prompt", "case_ids", "status", "choices")}
                               for q in m["questions"].values() if q["status"] == "open"]}
     if args.command == "run-batch":
         # Release the manifest lock while Playwright runs; the active receipt prevents another batch.

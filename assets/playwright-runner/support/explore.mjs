@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 // Local browser fallback: one JSON command per stdin line, no model API dependency.
 import { chromium } from '@playwright/test';
+import { loadConfig, launchOptions, contextOptions } from './environment.mjs';
+import { authenticatedSession, credentials, saveSession } from './auth.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
@@ -13,14 +15,15 @@ if (!args.includes('--config') || !args.includes('--evidence-dir')) {
   emit({ ok: false, error: 'Use --config config.json --evidence-dir <local-directory>' });
   process.exit(2);
 }
-const cfg = JSON.parse(fs.readFileSync(option('--config'), 'utf8'));
+const cfg = loadConfig(option('--config'));
 const evidenceDir = path.resolve(option('--evidence-dir'));
 fs.mkdirSync(evidenceDir, { recursive: true });
-const allowedHosts = new Set(Object.values(cfg.targets ?? {}).map(url => new URL(url).host));
-const proxy = process.env[cfg.proxy_env ?? 'UI_PROXY'];
-const browser = await chromium.launch({ headless: args.includes('--headless'), proxy: proxy ? { server: proxy } : undefined });
-const context = await browser.newContext({ storageState: cfg.auth?.storage_state ?? undefined });
-await context.newPage();
+const allowedHosts = new Set([...Object.values(cfg.targets ?? {}), ...['entry_url', 'login_url', 'cloud_url'].map(k => cfg.environment?.[k]).filter(Boolean)].map(url => new URL(url).host));
+const browser = await chromium.launch(launchOptions(cfg, args.includes('--headless')));
+const session = cfg.auth?.provider === 'leadong' && !args.includes('--public') ? await authenticatedSession(browser, cfg) : null;
+const context = session?.context ?? await browser.newContext({ ...contextOptions(cfg),
+  ...(cfg.auth?.provider !== 'leadong' && cfg.auth?.storage_state ? { storageState: cfg.auth.storage_state } : {}) });
+if (!session) await context.newPage();
 let sequence = 0;
 const secretNames = new Set(cfg.auth?.secret_env ?? []);
 function collectSecrets(value, sensitive = false) {
@@ -32,6 +35,7 @@ function collectSecrets(value, sensitive = false) {
 }
 collectSecrets(cfg.data_rules);
 const secrets = [...secretNames].map(key => process.env[key]).filter(Boolean);
+if (cfg.auth?.credentials_file) secrets.push(...Object.values(credentials(cfg)));
 const sanitize = text => secrets.reduce((value, secret) => value.split(secret).join('[REDACTED]'), String(text));
 const allowed = url => { if (!allowedHosts.has(new URL(url).host)) throw new Error('Target is outside configured hosts'); };
 
@@ -80,8 +84,8 @@ try {
         if (!args.includes('--auth-out')) throw new Error('Start with a protected --auth-out path');
         const authPath = path.resolve(option('--auth-out'));
         fs.mkdirSync(path.dirname(authPath), { recursive: true });
-        await context.storageState({ path: authPath });
-        fs.chmodSync(authPath, 0o600);
+        if (cfg.auth?.provider === 'leadong') await saveSession(context, { ...cfg, auth: { ...cfg.auth, storage_state: authPath } });
+        else { await context.storageState({ path: authPath }); fs.chmodSync(authPath, 0o600); }
         observation = { auth_state_file: authPath };
       } else {
         const target = locate(page, command);

@@ -9,6 +9,21 @@ coverage、hooks、dependencies 的代码路径相对该运行下的 runner。
 
 ## 初始化、导入、状态与分组
 
+配置三环境及公共登录见 [环境与登录说明](environments-and-login.md)。新增接口：
+
+```bash
+python3 scripts/uia.py env list
+python3 scripts/uia.py setup --profile my-gray --environment gray --site en.example.com --account my-account
+python3 scripts/uia.py init --run-id REQ-001 --profile my-gray
+python3 scripts/uia.py login --profile my-gray --check-only
+python3 scripts/uia.py login --run REQ-001
+```
+
+`setup` 的密码隐藏输入，或显式使用 `--credentials-file` / `--password-env`；不接受密码参数。
+`login` 的 `--profile`、`--config`、`--run` 三选一，可加 `--force`；`--run` 成功后保存环境/站点证据并接入 preflight。
+命名环境的证据必须含当前环境 ID、实际初始地址、网络指纹及灰度标记，不可只沿用下方旧配置的 targets 示例。
+旧 `init --config` 接口继续兼容。配置格式仍为 `uia-config.v1`，新增 `environment`、`network`、`site` 及 `auth.provider/credentials_file/identity`。
+
 ```bash
 python3 scripts/uia.py init --run-id REQ-001 --config config/uia.local.yaml
 python3 scripts/uia.py import --run REQ-001 --excel /path/to/cases.xlsx

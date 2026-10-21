@@ -1,6 +1,7 @@
 import type { FullResult, Reporter, TestCase, TestResult } from '@playwright/test/reporter';
 import fs from 'node:fs';
 import path from 'node:path';
+import { credentials } from './auth.mjs';
 
 export default class UiaReporter implements Reporter {
   private cases: Record<string, unknown>[] = [];
@@ -21,6 +22,10 @@ export default class UiaReporter implements Reporter {
     };
     visit(cfg.data_rules);
     this.secrets = [...names].map(key => process.env[key]).filter((value): value is string => Boolean(value));
+    if (cfg.auth?.credentials_file) {
+      try { this.secrets.push(...Object.values(credentials(cfg)) as string[]); }
+      catch { /* Authentication failure is reported by the fixture without raw secrets. */ }
+    }
   }
   private clean(value: string): string {
     for (const secret of this.secrets) value = value.split(secret).join('[REDACTED]');

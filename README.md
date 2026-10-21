@@ -3,10 +3,10 @@
 在 Codex 中提供 Excel 测试用例和环境信息，由项目技能组织意图准备、资产匹配、
 页面探索、分批执行、有限修复和稳定性验证，交付可以独立运行的 Playwright 工程。
 
-**本次改造状态：实现已交付，未验收。** 未安装依赖或浏览器，未运行静态校验命令、
-测试套件、本地模拟流程或真实用例。
+**当前状态：三环境与公共登录已实现并做离线验证，真实环境未验收。**
+本轮运行了配置/认证离线测试、项目静态校验和 TypeScript 检查；未安装浏览器，未连接真实环境或执行业务用例。
 
-公开仓库只包含工作流实现和通用模板。本地产品资料 `ui-knowledge/`、
+公开仓库包含工作流实现、通用模板、三环境默认入口与代理配置、完整灰度 PAC 和检查脚本。本地产品资料 `ui-knowledge/`、
 `automation-assets/` 与 `cases/TC_PD_001/` 含环境地址和产品专属信息，仅保留在原机器上，
 没有上传。使用时请导入自己的用例并建立对应的 UI Knowledge 和 Automation Assets。
 
@@ -15,7 +15,7 @@
 在本目录打开 Codex，用自然语言描述：
 
 > 使用 $uia-orchestrator，把 `/path/to/需求测试用例.xlsx` 转成 UI 自动化。
-> 环境配置使用 `config/uia.local.yaml`。必要时集中询问我，其余步骤自动继续。
+> 使用灰度环境，目标网站 `en.example.com`，账号配置使用 `my-gray`。必要时集中询问我，其余步骤自动继续。
 
 继续已有任务：
 
@@ -26,18 +26,28 @@
 
 ## 环境准备
 
-Python 3.9+、Node.js 22+。以下命令供后续使用，本次改造未执行：
+Python 3.9+、Node.js 22+。首次使用：
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 python3 -m pip install -r requirements.txt
-cp config/uia.example.yaml config/uia.local.yaml
+npm --prefix assets/playwright-runner ci
+python3 scripts/uia.py env list
+python3 scripts/uia.py setup --profile my-gray --environment gray --site en.example.com --account my-account
 ```
 
-编辑配置中的 public/admin 等目标地址、认证状态引用、所需 secret 环境变量名和数据规则。
-修改业务数据的用例需配置 `mutation.allowed` 与具体操作范围；默认关闭。
-示例地址使用 `.invalid`，必须替换。凭证值通过当前进程的环境变量提供。
+密码通过终端隐藏输入，或使用显式指定的本地私有凭据文件。账号、密码与登录态保存在 `.auth/`，
+不提交 GitHub、不写入报告或脚本包。目标网站域名由用户提供，后台初始入口由环境选择决定：
+
+| 环境 | 初始入口 | 网络 |
+|---|---|---|
+| P 版（p） | `http://jianzhan.leadong.com/website.html` | 固定 P 版代理 |
+| 灰度（gray） | `http://www.leadong.com/website.html` | 项目内完整 PAC，验证灰度响应头 |
+| 正式版（production） | `https://www.leadong.com/website.html` | 强制直连 |
+
+详细配置、独立登录和环境检查见 [环境与公共登录](docs/environments-and-login.md)。
+修改业务数据仍需配置 `mutation.allowed` 与具体操作范围；默认关闭。
 
 技能初始化运行并生成 runner 后，在对应工程中安装锁定依赖和浏览器：
 
@@ -68,7 +78,10 @@ Excel → 来源保留与业务分组 → 每条 Intent → 资产匹配 → 真
 总控负责解释用例、探索 UI、生成代码；Python CLI 提供确定性的状态操作，**不会单独调用模型**。
 
 ```bash
-python3 scripts/uia.py init --run-id REQ-001 --config config/uia.local.yaml
+python3 scripts/uia.py init --run-id REQ-001 --profile my-gray
+python3 scripts/uia.py scaffold --run REQ-001
+# 为 runner 安装依赖和浏览器后执行；登录成功后记录真实环境预检证据。
+python3 scripts/uia.py login --run REQ-001
 python3 scripts/uia.py import --run REQ-001 --excel /path/to/cases.xlsx
 python3 scripts/uia.py next --run REQ-001
 python3 scripts/uia.py status --run REQ-001
@@ -77,15 +90,23 @@ python3 scripts/uia.py status --run REQ-001
 后续阶段的完整接口见 [接口说明](docs/interfaces.md)，阶段执行约定见 [工作流](docs/workflow.md)。
 
 运行状态位于 `runs/<run-id>/run.json`；源用例归一记录、Intent、复用计划、脚本和运行证据
-位于该运行目录。运行数据、认证状态、环境配置和依赖目录默认不进入 Git。
+位于该运行目录。运行数据、认证状态、本地账号配置和依赖目录默认不进入 Git；三环境默认配置和灰度 PAC 随项目交付。
 
 最终报告包括 `results.json`、`results.xlsx`、`index.html`、`scripts.zip` 和
-`asset-review.json`。脚本包包含可独立运行的 Node 工程、公共流程和 fixtures，
+`asset-review.json`。脚本包包含可独立运行的 Node 工程、公共登录/流程、fixtures、环境定义及完整灰度 PAC，
 不包含认证状态、依赖安装目录或原始运行日志。后续运行仍需提供自己的配置与认证来源。
 
-## 后续验证
+## 离线检查与后续验收
 
-本轮没有执行下列检查。后续可先静态校验项目技能，再用真实 Excel 和授权环境验证：
+本轮离线验证可复现为：
+
+```bash
+node --test tests/environment-auth.test.mjs
+python3 -m unittest discover -s tests -p 'test_*.py' -v
+npm --prefix assets/playwright-runner run typecheck
+```
+
+静态校验及后续真实运行的校验入口：
 
 ```bash
 python3 scripts/uia.py validate

@@ -19,6 +19,12 @@ do not invoke Claude Code `Task()` or assume a shell script can invoke the model
    existing run rather than creating duplicates. Ask once for missing environment or
    business scope; never request secrets in the conversation. Explain counts and the
    next business flow in a concise progress update.
+   For named environments read [environment and login setup](../../../docs/environments-and-login.md).
+   Offer P (`p`), 灰度 (`gray`), 正式版 (`production`) when the environment is missing;
+   show the distinct initial URL, network mode, account alias and target website domain.
+   Use `setup` to save a private profile; passwords come from a hidden terminal prompt or
+   a user-specified private file, never a command argument or question answer artifact.
+   Do not migrate historical accounts. Pass the selected profile to `init --profile`.
 2. Call `init`, `import`, then `next`; for resume call `status` then `next`. Load only
    the selected case/flow artifacts, not the entire Excel and all Intents into context.
 3. Follow the action returned by `next`:
@@ -27,10 +33,14 @@ do not invoke Claude Code `Task()` or assume a shell script can invoke the model
    - `matching`: [uia-asset-matcher](../uia-asset-matcher/SKILL.md).
    - `preflight`, `discover`, `run-batch`, `repair`, `monitor`, `recover`:
      [uia-runtime](../uia-runtime/SKILL.md).
+     Profile-based preflight uses `login --run`: it verifies the actual environment,
+     refreshes authentication at most once and records evidence through the same gate.
    - `feedback`: [uia-runtime-feedback-reviewer](../uia-runtime-feedback-reviewer/SKILL.md);
      save the review using the project `feedback` command.
    - `ask_human`: present the consolidated requests with affected cases, attempted
      strategies, and the exact answer/demonstration needed. Save answers with `answer`.
+     For login/environment blockers include returned choices and their consequences;
+     after the user updates the private profile, run `login --run` again to resume.
    - `report`: generate all result formats and show artifact links plus remaining gaps.
 4. Call `next` after each stage/batch/answer. Continue independent work without asking
    permission for normal stage transitions. A difficult case never blocks unrelated ready cases.

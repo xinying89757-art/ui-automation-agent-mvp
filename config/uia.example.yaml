@@ -1,13 +1,19 @@
 schema_version: uia-config.v1
-# Copy to config/uia.local.yaml; paths are relative to this file.
-targets:
-  public: "https://test.example.invalid"
-  # admin: "https://admin.example.invalid"
+# For ordinary use, prefer: python3 scripts/uia.py setup --profile NAME --environment p --site DOMAIN
+# This file shows manual per-profile overrides; all paths are relative to its location.
+environment:
+  id: p # p | gray | production
+  # entry_url: http://jianzhan.leadong.com/website.html
+  # login_url: http://jianzhan.leadong.com/login.html
+  # cloud_url: http://jianzhan.leadong.com/website.html
+site: https://test.example.invalid
+# Network defaults come from the selected environment. An optional local override:
+# network: {mode: pac, pac_file: ../assets/playwright-runner/network/gray.pac}
 auth:
-  storage_state: null
-  # Persist names/references only. Values remain in the calling environment.
+  provider: leadong
+  credentials_file: ../.auth/credentials/operator.local.json
+  storage_state: ../.auth/sessions/operator.json
   secret_env: []
-proxy_env: UI_PROXY
 source_roots: []
 data_rules: {}
 execution:
@@ -18,7 +24,6 @@ execution:
   exploration_minutes_per_flow: 10
   strategies_per_gap: 2
   timeout_ms: 180000
-  # A larger worker count also requires every selected case to declare isolation.
 mutation:
   allowed: false
   scope: []

@@ -1,0 +1,24 @@
+{
+  "p": {
+    "label": "P版",
+    "entry_url": "http://jianzhan.leadong.com/website.html",
+    "login_url": "http://jianzhan.leadong.com/login.html",
+    "cloud_url": "http://jianzhan.leadong.com/website.html",
+    "network": {"mode": "proxy", "server": "http://101.43.28.166:7128", "ignore_https_errors": false}
+  },
+  "gray": {
+    "label": "灰度",
+    "entry_url": "http://www.leadong.com/website.html",
+    "login_url": "http://www.leadong.com/login.html",
+    "cloud_url": "http://www.leadong.com/website.html",
+    "required_header": {"name": "x-via", "value": "Ld-Gray"},
+    "network": {"mode": "pac", "ignore_https_errors": true}
+  },
+  "production": {
+    "label": "正式版",
+    "entry_url": "https://www.leadong.com/website.html",
+    "login_url": "https://www.leadong.com/login.html",
+    "cloud_url": "https://www.leadong.com/website.html",
+    "network": {"mode": "direct", "ignore_https_errors": false}
+  }
+}

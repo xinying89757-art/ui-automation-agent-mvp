@@ -12,6 +12,7 @@ from .checks import case_errors
 from .common import (RESULTS, atomic_write, digest, elapsed, event, file_hash, inside,
                      now, read_json, redact, require, reset_case)
 from .workflow import case_version, code_files, question, refresh
+from .profiles import network_fingerprint
 
 
 def process_alive(pid):
@@ -58,6 +59,15 @@ def preflight(base, m, evidence):
     proof = read_json(proof_path)
     targets = cfg.get("targets", {})
     errors = []
+    if cfg.get("environment"):
+        observed_environment = proof.get("environment", {})
+        if (observed_environment.get("environment") != cfg["environment"]["id"] or
+                observed_environment.get("entry_url") != cfg["environment"]["entry_url"] or
+                observed_environment.get("verified") is not True or
+                observed_environment.get("network_fingerprint") != network_fingerprint(cfg)):
+            errors.append("Selected environment and network were not verified")
+        if cfg["environment"]["id"] == "gray" and "ld-gray" not in observed_environment.get("x_via", "").lower():
+            errors.append("Gray response marker is missing")
     if not targets:
         errors.append("Target URLs missing")
     for name, url in targets.items():
@@ -77,7 +87,7 @@ def preflight(base, m, evidence):
     status = "blocked" if errors else "passed"
     m["preflight"] = {"status": status, "checked_at": now(), "config_hash": m["config_hash"],
                       "auth_sha256": file_hash(auth) if auth else None,
-                      "proxy_sha256": digest(os.environ.get(cfg.get("proxy_env", "UI_PROXY"))),
+                      "proxy_sha256": network_fingerprint(cfg),
                       "evidence": evidence, "sha256": file_hash(proof_path), "errors": errors}
     if errors:
         affected = [cid for cid, c in m["cases"].items() if c["work_status"] != "finished" and c["stage"] in {"discovery", "execution", "repair"}]
@@ -138,7 +148,14 @@ def begin_batch(base, m, case_ids):
         shutil.copyfile(inside(base / "runner", name), dest)
     atomic_write(directory / "snapshot/versions.json", {"versions": versions, "files": snapshot})
     atomic_write(directory / "snapshot/cases.json", {cid: bindings[cid] for cid in case_ids})
-    atomic_write(directory / "config.json", m["config"])
+    import copy
+    snapshot_config = copy.deepcopy(m["config"])
+    if snapshot_config.get("network", {}).get("mode") == "pac":
+        from .profiles import runtime_root
+        pac_source = snapshot_config["network"].get("pac_file") or runtime_root() / "network/gray.pac"
+        shutil.copyfile(pac_source, directory / "active.pac")
+        snapshot_config["network"]["pac_file"] = str((directory / "active.pac").resolve())
+    atomic_write(directory / "config.json", snapshot_config)
     escaped = "|".join(re.escape("[" + cid + "]") for cid in case_ids)
     selected_scripts = sorted({str(inside(base, c["registration"]["script"]).relative_to(base / "runner")).replace("\\", "/") for c in selected})
     command = ["node", str(cli), "test"] + [re.escape(name) + "$" for name in selected_scripts] + ["--grep", "^(?:" + escaped + ")\\s"]

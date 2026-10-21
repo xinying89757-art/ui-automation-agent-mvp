@@ -148,10 +148,48 @@ def config(path):
     p = Path(path).resolve()
     data = read_yaml(p)
     require(data.get("schema_version") == "uia-config.v1", "Expected uia-config.v1")
+    from .profiles import presets, site_url, connection_settings
+    supplied = data.get("environment")
+    if supplied:
+        supplied = {"id": supplied} if isinstance(supplied, str) else supplied
+        require(isinstance(supplied, dict) and supplied.get("id") in presets(), "Unknown environment")
+        preset = presets()[supplied["id"]]
+        data["environment"] = {k: copy.deepcopy(v) for k, v in {**preset, **supplied}.items() if k != "network"}
+        data["network"] = {**preset["network"], **data.get("network", {})}
+        data["targets"] = {"admin": data["environment"]["cloud_url"], **data.get("targets", {})}
+        if data.get("site"):
+            from urllib.parse import urlsplit
+            url = site_url(data["site"], urlsplit(data["environment"]["entry_url"]).scheme)
+            data["site"] = urlsplit(url).netloc
+            data["targets"].setdefault("public", url)
+        for key in ("entry_url", "login_url", "cloud_url"):
+            from urllib.parse import urlsplit
+            u = urlsplit(data["environment"][key])
+            require(u.scheme in {"http", "https"} and u.hostname and not u.username and not u.password,
+                    "Environment entries must be HTTP(S) URLs without credentials")
+            if supplied["id"] == "production":
+                require(u.scheme == "https", "Production entries require HTTPS")
+        if supplied["id"] == "gray":
+            require(urlsplit(data["environment"]["entry_url"]).scheme == "http", "Gray must start from HTTP")
+            data["environment"]["required_header"] = copy.deepcopy(preset["required_header"])
+        require(data["targets"]["admin"] == data["environment"]["cloud_url"],
+                "Override environment.cloud_url to change the admin target")
+    network = data.get("network")
+    if network:
+        require(isinstance(network, dict) and network.get("mode") in {"direct", "proxy", "pac"}, "Invalid network mode")
+        if data.get("environment", {}).get("id") == "production":
+            require(network["mode"] == "direct" and not network.get("ignore_https_errors"), "Production requires direct access and certificate validation")
+        if network["mode"] == "proxy":
+            from urllib.parse import urlsplit
+            u = urlsplit(network.get("server", ""))
+            require(u.scheme in {"http", "https", "socks5"} and u.hostname and not u.username and not u.password,
+                    "Proxy URL must not contain credentials")
+        if network.get("pac_file"):
+            network["pac_file"] = str((p.parent / network["pac_file"]).resolve())
     for key in ("targets", "auth", "data_rules", "execution", "mutation"):
         require(isinstance(data.get(key, {}), dict), "Config section must be a mapping", key)
-    require(set(data.get("auth", {})) <= {"storage_state", "secret_env"},
-            "Authentication accepts only storage_state and secret_env references")
+    require(set(data.get("auth", {})) <= {"storage_state", "secret_env", "provider", "credentials_file", "identity"},
+            "Authentication accepts local references only")
     require(isinstance(data.get("auth", {}).get("secret_env", []), list) and
             all(isinstance(name, str) for name in data.get("auth", {}).get("secret_env", [])),
             "auth.secret_env must be a list of environment variable names")
@@ -191,13 +229,22 @@ def config(path):
     state = cfg.get("auth", {}).get("storage_state")
     if state:
         cfg["auth"]["storage_state"] = str((p.parent / state).resolve())
+    credential = cfg.get("auth", {}).get("credentials_file")
+    if credential:
+        credential = (p.parent / credential).resolve()
+        cfg["auth"]["credentials_file"] = str(credential)
+        require(credential.is_file(), "Local credential reference is missing")
+        account = read_json(credential).get("account")
+        require(isinstance(account, str) and account.strip(), "Local credentials need an account")
+        cfg["auth"]["identity"] = hashlib.sha256(account.strip().encode()).hexdigest()
+    cfg["connection_fingerprint"] = digest(connection_settings(cfg))
     cfg["source_roots"] = [str((p.parent / r).resolve()) for r in cfg.get("source_roots", [])]
     return cfg
 
 
 def execution_config_fingerprint(cfg):
     # Restoring authentication does not rewrite historical business results.
-    return digest({k: cfg.get(k) for k in ("targets", "data_rules", "mutation", "proxy_env")})
+    return digest({k: cfg.get(k) for k in ("targets", "data_rules", "mutation", "proxy_env", "connection_fingerprint")})
 
 
 def env_fingerprints(value):
@@ -277,6 +324,11 @@ def reset_case(c, reason, stage="intent"):
 def redact(text, cfg):
     result = str(text)
     names = sensitive_env_names(cfg)
+    credential = cfg.get("auth", {}).get("credentials_file")
+    if credential and Path(credential).is_file():
+        for value in read_json(credential).values():
+            if isinstance(value, str) and value:
+                result = result.replace(value, "[REDACTED]")
     for name in names:
         value = os.environ.get(name)
         if value:

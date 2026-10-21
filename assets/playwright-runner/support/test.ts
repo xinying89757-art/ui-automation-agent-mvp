@@ -4,6 +4,9 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createHash } from 'node:crypto';
 import type { CaseContext, FixtureHooks } from './contracts.js';
+import type { Page, BrowserContext } from '@playwright/test';
+import { loadConfig, runtimeRoot } from './environment.mjs';
+import { authenticatedSession, openSiteArea } from './auth.mjs';
 
 export { expect };
 
@@ -21,31 +24,42 @@ function dataRules(value: unknown): unknown {
   return value;
 }
 
-export const test = base.extend<{ caseContext: CaseContext; lifecycle: void }>({
+export const test = base.extend<{ caseContext: CaseContext; lifecycle: void; adminPage: Page; adminContext: BrowserContext }>({
   caseContext: async ({ browser, context, page }, use, info) => {
     const caseId = /^\[([^\]]+)\]/u.exec(info.title)?.[1];
     if (!caseId) throw new Error('UIA_ENVIRONMENT_BLOCKED: test title must start with [case_id]');
-    const cfg = process.env.UIA_CONFIG ? JSON.parse(fs.readFileSync(process.env.UIA_CONFIG, 'utf8')) : {};
-    const binding = JSON.parse(fs.readFileSync(path.resolve('cases.json'), 'utf8'))[caseId];
+    const cfg = loadConfig();
+    const binding = JSON.parse(fs.readFileSync(path.join(runtimeRoot, 'cases.json'), 'utf8'))[caseId];
     const rules = binding?.fixture_ids?.length
       ? Object.fromEntries(binding.fixture_ids.map((id: string) => [id, cfg.data_rules?.[id]]))
       : cfg.data_rules ?? {};
     const batchId = process.env.UIA_BATCH_ID ?? `manual-${Date.now()}`;
     info.annotations.push({ type: 'uia_case', description: caseId });
-    await use({ caseId, batchId, ownerMarker: `uia-${batchId}-${caseId}`,
-      targets: cfg.targets ?? {}, dataRules: dataRules(rules) as Record<string, unknown>, browser, context, page });
+    let session: Awaited<ReturnType<typeof authenticatedSession>> | undefined;
+    const openAdmin = async (area?: '内容管理' | '编辑网站'): Promise<Page> => {
+      try {
+        session ??= await authenticatedSession(browser, cfg, { allowLogin: false });
+        return area ? await openSiteArea(session.page, cfg, area) : session.page;
+      } catch { throw new Error('UIA_ENVIRONMENT_BLOCKED: administrator session unavailable; run login before execution'); }
+    };
+    try {
+      await use({ caseId, batchId, ownerMarker: `uia-${batchId}-${caseId}`,
+        targets: cfg.targets ?? {}, dataRules: dataRules(rules) as Record<string, unknown>, browser, context, page, openAdmin });
+    } finally { await session?.context.close(); }
   },
+  adminPage: async ({ caseContext }, use) => { await use(await caseContext.openAdmin()); },
+  adminContext: async ({ adminPage }, use) => { await use(adminPage.context()); },
   lifecycle: [async ({ caseContext }, use, info) => {
-    const entries = JSON.parse(fs.readFileSync(path.resolve('cases.json'), 'utf8'));
+    const entries = JSON.parse(fs.readFileSync(path.join(runtimeRoot, 'cases.json'), 'utf8'));
     const entry = entries[caseContext.caseId];
     if (!entry?.hooks) throw new Error('UIA_ENVIRONMENT_BLOCKED: registered fixture hooks missing');
     const fixtureIds: string[] = entry.fixture_ids?.length ? entry.fixture_ids : [`case:${caseContext.caseId}`];
-    const contaminationDir = process.env.UIA_CONTAMINATION_DIR ?? path.resolve('results/contaminated');
+    const contaminationDir = process.env.UIA_CONTAMINATION_DIR ?? path.join(runtimeRoot, 'results/contaminated');
     const marker = (id: string) => path.join(contaminationDir, `${createHash('sha256').update(id).digest('hex')}.json`);
     if (fixtureIds.some(id => fs.existsSync(marker(id)))) {
       throw new Error('UIA_ENVIRONMENT_BLOCKED: a dependent fixture requires verified cleanup');
     }
-    const module = await import(pathToFileURL(path.resolve(entry.hooks)).href);
+    const module = await import(pathToFileURL(path.resolve(runtimeRoot, entry.hooks)).href);
     const hooks: FixtureHooks = module.default;
     for (const method of ['prepare', 'verifyPrepared', 'cleanup', 'verifyCleanup'] as const) {
       if (typeof hooks?.[method] !== 'function') throw new Error(`UIA_ENVIRONMENT_BLOCKED: fixture lacks ${method}`);

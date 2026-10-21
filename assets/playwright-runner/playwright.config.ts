@@ -1,10 +1,10 @@
 import { defineConfig } from '@playwright/test';
-import fs from 'node:fs';
 import path from 'node:path';
+import { loadConfig, launchOptions, contextOptions, runtimeRoot } from './support/environment.mjs';
 
-const cfg = process.env.UIA_CONFIG ? JSON.parse(fs.readFileSync(process.env.UIA_CONFIG, 'utf8')) : {};
-const results = path.resolve(process.env.UIA_RESULTS_DIR ?? 'results/manual');
-const proxy = process.env[cfg.proxy_env ?? 'UI_PROXY'];
+const cfg = loadConfig();
+const { headless: _headless, ...networkLaunch } = launchOptions(cfg);
+const results = path.resolve(process.env.UIA_RESULTS_DIR ?? path.join(runtimeRoot, 'results/manual'));
 
 export default defineConfig({
   testDir: './tests',
@@ -22,8 +22,10 @@ export default defineConfig({
   ],
   use: {
     baseURL: cfg.targets?.public ?? process.env.UI_BASE_URL,
-    storageState: cfg.auth?.storage_state ?? process.env.UI_STORAGE_STATE,
-    proxy: proxy ? { server: proxy } : undefined,
+    // Profile-based admin authentication is explicit; public/visitor pages stay clean.
+    storageState: cfg.auth?.provider === 'leadong' ? undefined : cfg.auth?.storage_state ?? process.env.UI_STORAGE_STATE,
+    launchOptions: networkLaunch,
+    ...contextOptions(cfg),
     screenshot: 'only-on-failure',
     trace: 'retain-on-failure',
     video: 'off',

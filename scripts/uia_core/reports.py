@@ -120,13 +120,18 @@ th{background:#23415a;color:white}a{color:#0069a3}pre{white-space:pre-wrap}secti
             protected = {Path(m["config_path"]).resolve()}
             if m["config"].get("auth", {}).get("storage_state"):
                 protected.add(Path(m["config"]["auth"]["storage_state"]).resolve())
+            credential = m["config"].get("auth", {}).get("credentials_file")
+            if credential:
+                protected.add(Path(credential).resolve())
+            if m["config"].get("auth", {}).get("storage_state"):
+                protected.add(Path(m["config"]["auth"]["storage_state"] + ".meta.json").resolve())
             for file in runner.rglob("*"):
                 rel = file.relative_to(runner)
                 if not file.is_file() or file.is_symlink() or file.resolve() in protected or any(part in {"node_modules", "results", ".auth", "test-results", "playwright-report"} for part in rel.parts):
                     continue
                 if file.name.startswith(".env") or file.name in {"auth.json", "storage-state.json"} or ".local." in file.name:
                     continue
-                if file.suffix in {".ts", ".js", ".mjs", ".json", ".md"}:
+                if file.suffix in {".ts", ".js", ".mjs", ".json", ".md", ".pac"}:
                     archive.write(file, "runner/" + str(rel))
         script_package = str((out / "scripts.zip").relative_to(base))
     m["delivery"] = {"json": str((out / "results.json").relative_to(base)),

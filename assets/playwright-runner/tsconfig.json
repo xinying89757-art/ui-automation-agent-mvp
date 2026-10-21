@@ -6,7 +6,18 @@
     "strict": true,
     "noEmit": true,
     "skipLibCheck": true,
-    "types": ["node"]
+    "types": [
+      "node"
+    ],
+    "allowJs": true,
+    "checkJs": false
   },
-  "include": ["playwright.config.ts", "support/**/*.ts", "fixtures/**/*.ts", "flows/**/*.ts", "tests/**/*.ts"]
+  "include": [
+    "playwright.config.ts",
+    "support/**/*.ts",
+    "fixtures/**/*.ts",
+    "flows/**/*.ts",
+    "tests/**/*.ts",
+    "support/**/*.mjs"
+  ]
 }

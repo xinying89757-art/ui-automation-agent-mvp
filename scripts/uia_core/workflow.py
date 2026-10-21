@@ -14,11 +14,22 @@ from .common import (ROOT, UiaError, atomic_write, config, digest, elapsed, even
 from .workbooks import extract
 
 
+def run_config(base, path):
+    cfg = config(path)
+    if cfg.get("network", {}).get("mode") == "pac" and not cfg["network"].get("pac_file"):
+        pac = base / "runner/network/gray.pac"
+        if pac.is_file():
+            from .profiles import connection_settings
+            cfg["network"]["pac_file"] = str(pac.resolve())
+            cfg["connection_fingerprint"] = digest(connection_settings(cfg))
+    return cfg
+
+
 def init(run_id, config_path):
     require(run_id == safe_id(run_id), "Run ID must be a safe directory name")
     base = ROOT / "runs" / run_id
     require(not (base / "run.json").exists(), "Run already exists; use status/next to resume")
-    cfg = config(config_path)
+    cfg = run_config(base, config_path)
     m = {"schema_version": "uia-run.v1", "run_id": run_id, "created_at": now(),
          "updated_at": now(), "config_path": str(Path(config_path).resolve()), "config": cfg,
          "config_hash": execution_config_fingerprint(cfg), "sources": [], "identity_map": {},
@@ -219,9 +230,12 @@ def match(base, m, cid):
 def scaffold(base):
     dest = base / "runner"
     for file in (ROOT / "assets/playwright-runner").rglob("*"):
-        if not file.is_file():
+        relative = file.relative_to(ROOT / "assets/playwright-runner")
+        if (not file.is_file() or file.is_symlink() or
+                any(part in {"node_modules", ".auth", "results", "test-results", "playwright-report"} for part in relative.parts) or
+                ".local." in file.name):
             continue
-        target = dest / file.relative_to(ROOT / "assets/playwright-runner")
+        target = dest / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         if not target.exists():
             shutil.copyfile(file, target)
@@ -238,6 +252,9 @@ def code_files(base, registration):
     pending += [inside(runner, p) for p in registration.get("dependencies", [])]
     pending += [runner / name for name in ("playwright.config.ts", "package-lock.json", "package.json", "tsconfig.json")]
     pending.append(runner / "support/uia-reporter.ts")
+    pending += [file for folder in ("network", "scripts") for file in (runner / folder).rglob("*") if file.is_file()]
+    if (runner / "environments.json").is_file():
+        pending.append(runner / "environments.json")
     visited = set()
     while pending:
         file = pending.pop()
@@ -267,11 +284,12 @@ def case_version(base, m, c):
     cfg = m["config"]
     data = cfg.get("data_rules", {})
     relevant_data = {fid: data.get(fid) for fid in c["fixture_ids"]} if c["fixture_ids"] else data
-    relevant_config = {k: cfg.get(k) for k in ("targets", "mutation", "proxy_env")}
+    relevant_config = {k: cfg.get(k) for k in ("targets", "mutation", "proxy_env", "connection_fingerprint")}
     relevant_config["data_rules"] = relevant_data
     relevant_config["data_env_fingerprints"] = env_fingerprints(relevant_data)
     relevant_config["execution"] = {k: cfg["execution"][k] for k in ("workers", "timeout_ms")}
-    relevant_config["proxy_fingerprint"] = digest(os.environ.get(cfg.get("proxy_env", "UI_PROXY")))
+    from .profiles import network_fingerprint
+    relevant_config["proxy_fingerprint"] = network_fingerprint(cfg)
     return digest({"files": code_files(base, registration), "source": c["source_hash"],
                    "intent": file_hash(inside(base, c["intent"])),
                    "plan": file_hash(inside(base, c["reuse_plan"])),
@@ -319,14 +337,14 @@ def register(base, m, cid, registration):
 
 
 def refresh(base, m):
-    cfg = config(m["config_path"])
+    cfg = run_config(base, m["config_path"])
     new_hash = execution_config_fingerprint(cfg)
     if new_hash != m["config_hash"]:
         old = m["config"]
         target_changed = old.get("targets") != cfg.get("targets")
         changed_data = {k for k in set(old.get("data_rules", {})) | set(cfg.get("data_rules", {}))
                         if old.get("data_rules", {}).get(k) != cfg.get("data_rules", {}).get(k)}
-        other = any(old.get(k) != cfg.get(k) for k in ("mutation", "proxy_env"))
+        other = any(old.get(k) != cfg.get(k) for k in ("mutation", "proxy_env", "connection_fingerprint"))
         for c in m["cases"].values():
             if target_changed or other or bool(changed_data & set(c["fixture_ids"])) or (changed_data and not c["fixture_ids"]):
                 reset_case(c, "environment_or_data_rules_changed", "discovery" if target_changed else "execution")
@@ -340,7 +358,8 @@ def refresh(base, m):
     auth = cfg.get("auth", {}).get("storage_state")
     if m.get("preflight") and m["preflight"].get("auth_sha256") != (file_hash(auth) if auth else None):
         m["preflight"] = None
-    if m.get("preflight") and m["preflight"].get("proxy_sha256") != digest(os.environ.get(cfg.get("proxy_env", "UI_PROXY"))):
+    from .profiles import network_fingerprint
+    if m.get("preflight") and m["preflight"].get("proxy_sha256") != network_fingerprint(cfg):
         m["preflight"] = None
     for c in m["cases"].values():
         if c.get("intent_hash") and file_hash(inside(base, c["intent"])) != c["intent_hash"]:

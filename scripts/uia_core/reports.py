@@ -11,6 +11,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 
 from .common import atomic_write, elapsed, file_hash, inside, now, read_json, summary
 from .secrets import drop_unsafe_artifacts, scrub_text, unsafe_attachment
+from . import metrics as run_metrics
 
 
 def waiting_seconds(m):
@@ -55,19 +56,25 @@ def make_report(base, m):
             records[-1]["reason"] = brief_error(attempt, m["config"])
         records[-1]["reason"] = scrub_text(records[-1]["reason"], m["config"])
         records[-1]["media"] = []
+    m["final_report_at"] = now()
+    m["leak_hits"] = run_metrics.leak_scan(base, m["config"])
+    flow_metrics = run_metrics.calculate(base, m, m["final_report_at"])
+    atomic_write(base / "metrics.json", flow_metrics)
+    atomic_write(out / "metrics.json", flow_metrics)
     s = summary(m)
     metrics = {"elapsed_seconds": elapsed(m["created_at"]), "human_wait_seconds": waiting_seconds(m),
                "first_result_seconds": elapsed(m["created_at"], m["first_result_at"]) if m.get("first_result_at") else None,
                "first_pass_seconds": elapsed(m["created_at"], m["first_pass_at"]) if m.get("first_pass_at") else None,
-               "exploration_seconds": sum(a["seconds"] for a in m["exploration"]),
+               "exploration_seconds": sum(a.get("seconds", 0) for a in m["exploration"]),
                "exploration_attempts": len(m["exploration"]),
                "human_questions": len(m["questions"]),
                "cases_with_asset_reuse": sum(bool((c.get("registration") or {}).get("reused_assets")) for c in m["cases"].values()),
-               "repair_rounds": sum(c["repair_rounds"] for c in m["cases"].values())}
+               "repair_rounds": sum(c["repair_rounds"] for c in m["cases"].values()),
+               **flow_metrics}
     questions = [{k: q.get(k) for k in ("id", "kind", "subject", "prompt", "case_ids", "status", "attempted")}
                  for q in m["questions"].values()]
     payload = {"schema_version": "uia-results.v1", "run_id": m["run_id"], "generated_at": now(),
-               "summary": s, "metrics": metrics, "source": m["sources"], "cases": records,
+               "summary": s, "metrics": metrics, "flow_metrics": flow_metrics, "source": m["sources"], "cases": records,
                "questions": questions, "unresolved_sheets": [x for src in m["sources"] for x in src.get("unresolved_sheets", [])],
                "source_update_required": m.get("source_update_required", False), "delivery_complete": False}
     diff = {"schema_version": "uia-asset-review.v1", "writeback": "not_applied", "cases": []}
@@ -89,7 +96,7 @@ def make_report(base, m):
     stats = wb.create_sheet("汇总")
     stats.append(["指标", "值"])
     for key, value in {**s, **metrics}.items():
-        stats.append([key, json.dumps(value, ensure_ascii=False) if isinstance(value, dict) else value])
+        stats.append([key, json.dumps(value, ensure_ascii=False) if isinstance(value, (dict, list)) else value])
     qs = wb.create_sheet("人工问题")
     qs.append(["问题ID", "类型", "问题", "影响用例", "状态", "已尝试"])
     for q in questions:
@@ -138,7 +145,7 @@ th{background:#23415a;color:white}a{color:#0069a3}pre{white-space:pre-wrap}secti
     body += "</tr></thead><tbody>" + "".join(rows) + "</tbody></table></section><h2>耗时与人工问题</h2><pre>"
     previews = sorted((base / "batches").glob("*/preview.json"), key=lambda item: item.stat().st_mtime)
     review = base / "state/heal-review.json"
-    memory = base / "runner/knowledge/llms-txt.json"
+    memory = base / "state/knowledge/llms-txt.json"
     extra = {}
     if previews:
         extra["preview"] = read_json(previews[-1])
@@ -172,7 +179,9 @@ th{background:#23415a;color:white}a{color:#0069a3}pre{white-space:pre-wrap}secti
                 if file.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp", ".webm"} or any(part in {"playwright-report", "traces", "test-results"} for part in rel.parts):
                     continue
                 if file.suffix in {".ts", ".js", ".mjs", ".json", ".md", ".pac", ".txt", ".yaml", ".yml"}:
-                    archive.writestr("runner/" + str(rel), scrub_text(file.read_text(encoding="utf-8"), m["config"]))
+                    overlay = base / "state/knowledge/llms-txt.json" if str(rel) == "knowledge/llms-txt.json" else None
+                    content = overlay.read_text(encoding="utf-8") if overlay and overlay.is_file() else file.read_text(encoding="utf-8")
+                    archive.writestr("runner/" + str(rel), scrub_text(content, m["config"]))
         script_package = str((out / "scripts.zip").relative_to(base))
     m["delivery"] = {"json": str((out / "results.json").relative_to(base)),
                      "html": str((out / "index.html").relative_to(base)),

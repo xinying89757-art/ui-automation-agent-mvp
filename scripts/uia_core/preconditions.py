@@ -64,6 +64,9 @@ def apply_precondition_answer(m, question):
 
 
 def sync_preconditions(base, m):
+    if m.get("interaction_mode") == "once":
+        from .experience import sync_checklist
+        return sync_checklist(base, m)
     from .workflow import question
     grouped = {}
     affected = []

@@ -18,6 +18,14 @@ class JsonParser(argparse.ArgumentParser):
 def parser():
     p = JsonParser(description="Local UI automation workflow; commands emit JSON")
     commands = p.add_subparsers(dest="command", required=True)
+    go = commands.add_parser("go")
+    go.add_argument("excel")
+    go.add_argument("--profile")
+    go.add_argument("--cases", help="Comma-separated case IDs")
+    turn = commands.add_parser("session-turn")
+    turn.add_argument("--run", required=True)
+    turn.add_argument("--id", required=True)
+    turn.add_argument("--kind", choices=["发起", "答清单", "审核单", "看报告", "计划外"], required=True)
     environments = commands.add_parser("env")
     environments.add_argument("action", choices=["list"])
     setup = commands.add_parser("setup")
@@ -97,9 +105,10 @@ def parser():
             cmd.add_argument("--sheet")
             cmd.add_argument("--attempted", nargs="*", default=[])
         if name in {"answer", "replay-demo"}:
-            cmd.add_argument("--question", required=True)
+            cmd.add_argument("--question", required=name == "replay-demo")
         if name == "answer":
-            cmd.add_argument("--file", required=True, help="JSON value/object containing the non-secret answer")
+            cmd.add_argument("--file", help="Legacy non-secret JSON answer")
+            cmd.add_argument("sentence", nargs="?")
         if name == "explore":
             cmd.add_argument("--flow", required=True)
             cmd.add_argument("--gap", required=True)
@@ -152,7 +161,14 @@ def dispatch(args, path, m):
         return runtime.preflight(base, m, args.evidence)
     if cmd == "question":
         return workflow.question(m, args.kind, args.subject, args.prompt, args.cases, args.key, args.attempted, args.sheet)
+    if cmd == "session-turn":
+        from .experience import session_turn
+        return session_turn(m, args.id, args.kind)
     if cmd == "answer":
+        if args.sentence:
+            from .experience import answer_sentence
+            return answer_sentence(base, m, args.sentence)
+        require(args.question and args.file, "请提供中文一句话，或 --question 和 --file")
         return workflow.answer(m, args.question, read_json(args.file), base)
     if cmd == "explore":
         return workflow.explore(base, m, args.flow, args.gap, args.strategy, args.seconds, args.outcome, args.evidence)
@@ -239,7 +255,14 @@ def dispatch(args, path, m):
     if cmd == "absorb-locators":
         return workflow.absorb_locators(base, m)
     if cmd == "heal-review":
-        return workflow.heal_review(base, args.evidence)
+        result = workflow.heal_review(base, args.evidence)
+        if not result.get('accept') and result.get('rejected_diff'):
+            from .experience import add_review
+            payload = read_json(inside(base, args.evidence))
+            cases = [cid for cid, c in m['cases'].items() if (c.get('registration') or {}).get('script') == payload.get('spec')]
+            add_review(m, 'assertion_change', cases, 'AI 修复提案含断言变更，默认不应用', evidence=args.evidence,
+                       proposed_diff=result['rejected_diff'])
+        return result
     if cmd == "report":
         if not m.get("active_batch"):
             workflow.refresh(base, m)
@@ -252,6 +275,9 @@ def dispatch(args, path, m):
 
 
 def execute(args):
+    if args.command == "go":
+        from .experience import go
+        return go(args.excel, args.profile, args.cases)
     if args.command == "env":
         return {"environments": profiles.presets()}
     if args.command == "setup":
@@ -356,9 +382,6 @@ def execute(args):
     with locked_run(args.run) as (path, m):
         require(not m.get("active_batch") or args.command in {"record-run", "recover", "validate", "report", "next"},
                 "An execution batch is active; recover it before changing the run")
-        if args.command in {"question", "repair", "classify", "resolve-fixture", "replay-demo", "login"}:
-            m["unplanned_interventions"] = int(m.get("unplanned_interventions", 0)) + 1
-            event(m, "unplanned_intervention", command=args.command)
         before = digest({k: m[k] for k in ("cases", "questions", "sources", "config", "preflight", "contaminated_fixtures")})
         result = dispatch(args, path, m)
         after = digest({k: m[k] for k in ("cases", "questions", "sources", "config", "preflight", "contaminated_fixtures")})

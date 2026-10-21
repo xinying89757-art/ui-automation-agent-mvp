@@ -31,9 +31,9 @@ def init(run_id, config_path):
     require(not (base / "run.json").exists(), "Run already exists; use status/next to resume")
     cfg = run_config(base, config_path)
     initial_specs = sorted("runner/" + str(p.relative_to(ROOT / "assets/playwright-runner")) for p in
-                           (ROOT / "assets/playwright-runner/tests").glob("*.spec.ts"))
+                           (ROOT / "assets/playwright-runner/tests").rglob("*.spec.ts"))
     from .metrics import assertion_signature
-    initial_assertions = {relative: assertion_signature(ROOT / relative) for relative in initial_specs}
+    initial_assertions = {relative: assertion_signature(ROOT / "assets/playwright-runner" / Path(relative).relative_to("runner")) for relative in initial_specs}
     m = {"schema_version": "uia-run.v1", "pipeline": "case-spec.v1", "run_id": run_id, "created_at": now(),
          "updated_at": now(), "config_path": str(Path(config_path).resolve()), "config": cfg,
          "config_hash": execution_config_fingerprint(cfg), "sources": [], "identity_map": {},
@@ -62,6 +62,8 @@ def question(m, kind, subject, prompt, case_ids, key=None, attempted=None, sheet
     q = existing or {"id": key, "kind": kind, "subject": subject, "prompt": prompt,
                      "case_ids": [], "attempted": [], "created_at": now(), "status": "open",
                      "resume_states": {}, "sheet": sheet}
+    if m.get("interaction_mode") == "once" and subject != "run-preconditions":
+        q["status"] = "deferred"
     q["attempted"] = list(dict.fromkeys(q["attempted"] + (attempted or [])))
     for cid in case_ids:
         if cid not in q["case_ids"]:
@@ -78,7 +80,7 @@ def question(m, kind, subject, prompt, case_ids, key=None, attempted=None, sheet
 def answer(m, qid, value, base):
     require(qid in m["questions"], "Unknown question")
     q = m["questions"][qid]
-    require(q["status"] == "open", "Question already answered")
+    require(q["status"] in {"open", "deferred"}, "Question already answered")
     require(q["kind"] != "login" or not isinstance(value, dict) or
             not any(k in value for k in ("password", "token", "cookie")), "Answer with a login-state reference, not a secret")
     if q["kind"] == "preconditions":
@@ -129,10 +131,14 @@ def import_excel(base, m, excel, mapping=None):
     require(source.is_file(), "Source workbook does not exist")
     parsed = extract(source, mappings)
     # Keep one active Excel per run. Importing a changed version reconciles by stable identity.
+    if m.get("selected_cases"):
+        require(set(m["selected_cases"]) <= {r["suggested_id"] for r in parsed["cases"]}, "Unknown selected case ID")
     old = m["cases"]
     new, used = {}, set()
     counts = {"added": 0, "changed": 0, "unchanged": 0, "archived": 0}
     for raw in parsed["cases"]:
+        if m.get("selected_cases") and raw["suggested_id"] not in m["selected_cases"]:
+            continue
         identity = raw["identity_key"]
         cid = m["identity_map"].get(identity, raw["suggested_id"])
         reserved = {v for k, v in m["identity_map"].items() if k != identity}
@@ -444,7 +450,7 @@ def refresh(base, m):
                 reset_case(c, "code_or_dependency_changed", "execution")
                 c.update(version=version, work_status="runnable")
     for q in m["questions"].values():
-        if q["status"] == "open":
+        if q["status"] in {"open", "deferred"}:
             for cid in q["case_ids"]:
                 if cid in m["cases"] and m["cases"][cid]["work_status"] != "finished":
                     m["cases"][cid]["work_status"] = "waiting_human"
@@ -504,6 +510,8 @@ def next_task(base, m):
     if feedback:
         return {"action": "feedback", "skill": "uia-runtime-feedback-reviewer", "case_ids": [c["case_id"] for c in feedback[:budget]]}
     pending_questions = [q for q in m["questions"].values() if q["status"] == "open"]
+    if m.get("interaction_mode") == "once" and m.get("checklist_issued"):
+        return {"action": "review", "file": str(base / "review.md"), "mid_run_questions": 0}
     if pending_questions:
         return {"action": "ask_human", "questions": pending_questions,
                 "message": "All currently independent work has been processed; consolidate these requests."}
@@ -544,9 +552,11 @@ def bind_specs(base, m):
     require(not m.get("active_batch"), "Recover the active batch before binding specs")
     runner = base / "runner"
     specs = sorted(path for path in (runner / "tests").rglob("*.spec.ts") if path.name != "healer-rehearsal.spec.ts")
-    require(specs, "No Playwright specs to bind")
+    # Empty fresh runners simply queue case-spec tasks.
     found = {}
     for spec in specs:
+        if "generated" in spec.relative_to(runner).parts:
+            continue  # Generated tests require case-spec fixtures, not legacy hooks.
         body = spec.read_text(encoding="utf-8")
         for match in re.finditer(r"\[([A-Za-z0-9][A-Za-z0-9_.-]*)\]", body):
             cid = match.group(1)
@@ -574,7 +584,7 @@ def bind_specs(base, m):
         errors, _warnings = case_errors(base, c, m["config"], execution=True)
         require(not errors, "Daily spec gate failed", {"case_id": cid, "errors": errors})
         version = case_version(base, m, c)
-        if c.get("version") == version and (c.get("result") == "passed" or c.get("work_status") == "runnable"):
+        if c.get("version") == version and (c.get("result") is not None or c.get("work_status") in {"runnable", "waiting_human"}):
             continue
         if c.get("version") and c.get("version") != version:
             reset_case(c, "daily_spec_changed", "execution")

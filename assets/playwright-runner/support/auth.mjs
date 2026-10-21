@@ -268,24 +268,63 @@ export async function authenticatedSession(browser, cfg, { force = false, allowL
   } catch (error) { await context.close(); throw error; }
 }
 
-export async function snapshotSession(browser, cfg, { area, manual = false } = {}) {
+/** Visible-only bounded DOM summaries. Never include form values or session refs. */
+export async function scopedStructure(page, { frame, scope } = {}) {
+  const root = frame ? page.frameLocator(frame).locator(scope || 'body') : page.locator(scope || 'body');
+  await root.waitFor({ state: 'visible', timeout: 15000 });
+  return root.evaluate(container => {
+    const visible = node => {
+      if (node.closest('[hidden], [aria-hidden="true"]')) return false;
+      const css = getComputedStyle(node);
+      return css.display !== 'none' && css.visibility !== 'hidden' && css.visibility !== 'collapse' &&
+        css.opacity !== '0' && !!node.getClientRects().length && node.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true });
+    };
+    const role = node => node.getAttribute('role') || ({ A: 'link', BUTTON: 'button', INPUT: 'textbox', TEXTAREA: 'textbox', H1: 'heading', H2: 'heading' }[node.tagName] || null);
+    const ownText = node => [...node.childNodes].filter(child => child.nodeType === 3).map(child => child.textContent).join(' ');
+    const name = node => (node.getAttribute('aria-label') || node.getAttribute('title') ||
+      node.getAttribute('placeholder') || ownText(node) || '')
+      .replace(/[\ue000-\uf8ff]/gu, '').trim().replace(/\s+/gu, ' ').slice(0, 120);
+    const nodes = [container, ...container.querySelectorAll('*')].filter(node => visible(node) &&
+      !['SCRIPT', 'STYLE', 'NOSCRIPT', 'IFRAME'].includes(node.tagName)).slice(0, 300).map(node => ({
+        tag: node.tagName.toLowerCase(), role: role(node), name: name(node), id: node.id || undefined,
+        classes: typeof node.className === 'string' ? node.className.split(/\s+/u).filter(Boolean).slice(0, 6) : [],
+        attributes: Object.fromEntries(['role', 'aria-checked', 'aria-disabled', 'data-llms-enabled', 'data-enabled', 'data-value', 'type'].flatMap(key => node.hasAttribute(key) ? [[key, node.getAttribute(key)]] : []))
+      }));
+    const pairs = new Map();
+    for (const node of nodes) {
+      if (node.role && node.name) {
+        const key = JSON.stringify([node.role, node.name]);
+        pairs.set(key, (pairs.get(key) || 0) + 1);
+      }
+    }
+    return { nodes, duplicate_names: [...pairs].filter(([, count]) => count > 1).map(([pair, count]) => ({ pair: JSON.parse(pair), count })) };
+  });
+}
+
+export async function snapshotSession(browser, cfg, { area, manual = false, frame, scope, openTarget, hover, clicks = [] } = {}) {
   const session = await authenticatedSession(browser, cfg, { allowLogin: true, manual });
   try {
     let page = session.page;
     if (area) page = await openSiteArea(page, cfg, area);
     await page.waitForLoadState('domcontentloaded').catch(() => {});
-    const structure = await page.evaluate(() => {
-      const describe = root => [...root.querySelectorAll('body, body *')].slice(0, 300).map(node => ({
-        tag: node.tagName.toLowerCase(), role: node.getAttribute('role'),
-        name: (node.getAttribute('aria-label') || node.getAttribute('title') || node.textContent || '').trim().replace(/\\s+/gu, ' ').slice(0, 120),
-        id: node.id || undefined, classes: typeof node.className === 'string' ? node.className.split(/\\s+/u).filter(Boolean).slice(0, 4) : []
-      }));
-      const frame = document.querySelector('#backstage-innerpage');
-      let frameStructure = [];
-      try { if (frame?.contentDocument) frameStructure = describe(frame.contentDocument); } catch { /* cross-origin frame omitted */ }
-      return { url: location.origin + location.pathname, title: document.title, nodes: describe(document),
-        iframe: frame ? { id: frame.id, same_origin: Boolean(frame.contentDocument), nodes: frameStructure } : null };
-    });
+    if (area === '编辑网站') {
+      await page.waitForFunction(() => {
+        try { return !!document.querySelector('#backstage-innerpage')?.contentWindow?.jQuery; }
+        catch { return false; }
+      }, null, { timeout: 60000 });
+    }
+    if (openTarget) {
+      const { openLlms, openSettings } = await import('../flows/llms-txt.mjs');
+      if (openTarget === 'llms') await openLlms(page);
+      else if (openTarget === 'settings') await openSettings(page);
+    }
+    for (const selector of clicks) await page.locator(selector).click();
+    if (hover) await page.locator(hover).hover();
+    const structure = { ...await scopedStructure(page, { frame, scope }), frame: frame || null, scope: scope || 'body' };
+    if (!frame && !scope && await page.locator('#backstage-innerpage').count()) {
+      try { structure.iframe = await scopedStructure(page, { frame: '#backstage-innerpage' }); }
+      catch { structure.iframe = { unavailable: true }; }
+    }
     const { scrubText } = await import('./redact.mjs');
     let safe = scrubText(JSON.stringify(structure));
     const privateValues = credentials(cfg);

@@ -1,11 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { FullResult, Reporter, TestCase, TestResult } from '@playwright/test/reporter';
+import type { FullResult, Reporter, TestCase, TestResult, TestStep } from '@playwright/test/reporter';
 import { credentials } from './auth.mjs';
 import { scrubText, unsafeArtifact } from './redact.mjs';
 
 export default class UiaReporter implements Reporter {
   private cases: Record<string, unknown>[] = [];
+  private assertions = new Map<string, { id: string; passed: boolean }[]>();
   private startedAt = new Date().toISOString();
   private output: string;
   private secrets: string[];
@@ -37,6 +38,13 @@ export default class UiaReporter implements Reporter {
     if (!attachment.path || unsafeArtifact(attachment.path) || unsafeArtifact(attachment.name ?? '')) return false;
     return !['screenshot', 'trace', 'error-context', 'video'].includes(attachment.name ?? '');
   }
+  onStepEnd(test: TestCase, _result: TestResult, step: TestStep): void {
+    const id = /^assert:(A\d+)$/u.exec(step.title)?.[1];
+    if (!id) return;
+    const rows = this.assertions.get(test.id) ?? [];
+    rows.push({ id, passed: !step.error });
+    this.assertions.set(test.id, rows);
+  }
   onTestEnd(test: TestCase, result: TestResult): void {
     const caseId = test.annotations.find(a => a.type === 'uia_case')?.description ?? /^\[([^\]]+)\]/u.exec(test.title)?.[1];
     let lifecycle: Record<string, unknown> = {};
@@ -57,6 +65,8 @@ export default class UiaReporter implements Reporter {
     this.cases.push({ case_id: caseId, result: status, playwright_status: result.status,
       setup_started: result.attachments.some(a => a.name === 'uia-setup-started'),
       duration_ms: result.duration, retry: result.retry, errors, lifecycle,
+      assertions: this.assertions.get(test.id) ?? [],
+      failure_stage: passed ? null : /UIA_ENVIRONMENT_BLOCKED/u.test(message) ? "environment_or_session" : /UIA_SETUP_FAILED/u.test(message) ? "data_preparation" : /UIA_BUSINESS_FAILURE/u.test(message) ? "business_assertion" : "locator_or_timing",
       script: test.location.file, line: test.location.line,
       attachments: result.attachments.filter(a => this.keepAttachment(a)).map(a => ({ name: a.name, path: a.path })) });
     this.flush('running', false);

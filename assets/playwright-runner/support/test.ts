@@ -25,7 +25,7 @@ function dataRules(value: unknown): unknown {
   return value;
 }
 
-type SiteSession = {
+export type SiteSession = {
   openArea(area?: '内容管理' | '编辑网站'): Promise<Page>;
 };
 
@@ -74,7 +74,7 @@ export const test = base.extend<{ caseContext: CaseContext; lifecycle: void; adm
       }
     };
     await use({ caseId, batchId, ownerMarker: `uia-${batchId}-${caseId}`,
-      targets: cfg.targets ?? {}, dataRules: dataRules(rules) as Record<string, unknown>, browser, context, page, openAdmin });
+      spec: binding?.spec, targets: cfg.targets ?? {}, dataRules: dataRules(rules) as Record<string, unknown>, browser, context, page, openAdmin });
   },
   adminPage: async ({ caseContext }, use) => { await use(await caseContext.openAdmin()); },
   adminContext: async ({ adminPage }, use) => { await use(adminPage.context()); },
@@ -112,8 +112,8 @@ export const test = base.extend<{ caseContext: CaseContext; lifecycle: void; adm
       await use();
     } finally {
       try {
-        await hooks.cleanup(caseContext, state);
-        cleanupVerified = await hooks.verifyCleanup(caseContext, state);
+        await hooks.cleanup(caseContext, state ?? caseContext.fixtureState);
+        cleanupVerified = await hooks.verifyCleanup(caseContext, state ?? caseContext.fixtureState);
         if (!cleanupVerified) throw new Error('Restored baseline was not verified');
       } catch (error) {
         cleanupError = error;

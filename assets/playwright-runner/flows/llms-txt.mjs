@@ -170,7 +170,7 @@ export async function openSettings(page) {
     const frame = document.getElementById('backstage-innerpage');
     try { return Boolean(frame && frame.contentWindow && frame.contentWindow.jQuery); }
     catch { return false; }
-  }, null, { timeout: 30000 });
+  }, null, { timeout: 60000 });
   const open = page.locator('li.backstage-siteTool-setting.backstage-siteTool-on');
   if (!(await visible(open))) {
     const gear = (await locate(page, 'settings.inner')).locator;

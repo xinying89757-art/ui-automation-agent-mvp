@@ -42,21 +42,32 @@ export async function saveSession(context, cfg) {
   privateWrite(`${file}.meta.json`, { binding: sessionBinding(cfg), saved_at: new Date().toISOString() });
 }
 export async function isLoginPage(page) {
-  return await visible(page.locator('#loginName')) || /\/(?:login|signin)(?:[./?]|$)/iu.test(new URL(page.url()).pathname);
+  const field = page.locator('#loginName');
+  if (await visible(field)) return true;
+  try { await field.waitFor({ state: 'visible', timeout: 5000 }); } catch { /* the entry URL can render the form late */ }
+  if (await visible(field)) return true;
+  return /\/(?:login|signin)(?:[./?]|$)/iu.test(new URL(page.url()).pathname);
 }
 export async function enterCloudPlatform(page) {
+  if (page.url().includes('phoenix2')) return;
   const avatar = page.locator('.wrap-login-container, .wrap-login-dropdown').first();
-  if (await visible(avatar)) await avatar.hover();
+  // The post-login page can cover this control with a promo video. The cloud URL is opened next either way.
+  if (await visible(avatar)) await avatar.hover({ timeout: 3000 }).catch(() => {});
   const cloud = page.getByText(/(?:返回)?领动云平台/u).last();
-  if (await visible(cloud)) await cloud.click();
+  if (await visible(cloud)) await cloud.click({ timeout: 5000 }).catch(() => {});
 }
 export async function loginOnce(page, cfg) {
   const value = credentials(cfg);
   await page.goto(cfg.environment.login_url, { waitUntil: 'domcontentloaded', timeout: 30000 });
   if (new URL(page.url()).host !== new URL(cfg.environment.login_url).host) fail('ENVIRONMENT_MISMATCH', '登录页跳转到了其他主机');
-  const captcha = page.locator('input[name*="captcha"], input[id*="captcha"], .geetest_panel, .h-captcha').first();
+  const captcha = page.locator('#faptcha_response_field, input[name*="captcha"], input[id*="captcha"], .geetest_panel, .h-captcha').first();
   if (await visible(captcha)) fail('CAPTCHA_REQUIRED', '登录需要人工完成验证码', ['使用 --manual 手动完成验证码', '暂停相关用例']);
-  if (!(await visible(page.locator('#loginName')))) fail('LOGIN_FORM_MISSING', '没有找到已知登录表单，请检查环境入口');
+  try { await page.locator('#loginName').waitFor({ state: 'visible', timeout: 15000 }); }
+  catch (error) {
+    if (error instanceof WorkflowError) throw error;
+    if (await visible(captcha)) fail('CAPTCHA_REQUIRED', '登录需要人工完成验证码', ['使用 --manual 手动完成验证码', '暂停相关用例']);
+    fail('LOGIN_FORM_MISSING', '没有找到已知登录表单，请检查环境入口');
+  }
   try {
     await page.locator('#loginName').fill(value.account);
     await page.locator('#password').fill(value.password);
@@ -66,10 +77,11 @@ export async function loginOnce(page, cfg) {
       const loggedOut = input && input.getClientRects().length > 0;
       const errors = [...document.querySelectorAll('.login-error, #loginError, .error, .geetest_panel')]
         .some(node => node.getClientRects().length && node.textContent?.trim());
+      const onPlatform = location.href.includes('phoenix2');
       const dashboard = document.querySelector('.contentShow, .wrap-webSite');
       const moved = !/\/(?:login|signin)(?:[./?]|$)/iu.test(location.pathname);
-      return errors || (!loggedOut && (moved || dashboard?.getClientRects().length));
-    }, null, { timeout: 15000 });
+      return errors || (!loggedOut && (moved || onPlatform || Boolean(dashboard && dashboard.getClientRects().length)));
+    }, null, { timeout: 25000 });
   } catch {
     const text = await page.locator('body').innerText().catch(() => '');
     if (/密码.*错误|账号.*错误|用户名.*错误|账户.*锁|password.*incorrect/iu.test(text)) fail('INVALID_CREDENTIALS', '账号或密码错误，未重复提交', ['更新本地凭据', '暂停相关用例']);
@@ -102,6 +114,15 @@ async function selectedDomain(page) {
 }
 export async function selectTargetSite(page, cfg) {
   if (!cfg.site) fail('SITE_REQUIRED', '请提供目标网站域名');
+  // The current cloud shell lists the site and “网页编辑” directly; the older site cards are absent.
+  const editorEntry = page.getByText('网页编辑', { exact: true }).first();
+  if (!(await visible(editorEntry))) {
+    await editorEntry.waitFor({ state: 'visible', timeout: 25000 }).catch(() => {});
+  }
+  if (await visible(editorEntry)) {
+    const body = await page.locator('body').innerText().catch(() => '');
+    if (body.toLowerCase().includes(String(cfg.site).toLowerCase())) return { kind: 'platform', host: cfg.site };
+  }
   if (await selectedDomain(page) === cfg.site) return { kind: 'selected', host: cfg.site };
   const switcher = page.locator('.wrap-webSite').first();
   if (await visible(switcher)) {
@@ -162,6 +183,15 @@ export async function openSiteArea(page, cfg, area) {
   const label = selected.kind === 'card' || area === '内容管理' ? area : '网页编辑';
   const action = root.getByText(label, { exact: true }).first();
   if (!(await visible(action))) fail('SITE_PERMISSION_DENIED', '当前账号没有所需站点管理入口', ['切换有权限账号', '暂停相关用例']);
+  if (selected.kind === 'platform') {
+    const popupPromise = page.context().waitForEvent('page', { timeout: 30000 });
+    await action.click();
+    let destination;
+    try { destination = await popupPromise; }
+    catch { fail('EDITOR_POPUP_MISSING', '网页编辑没有打开编辑器窗口', ['确认账号有编辑权限', '暂停相关用例']); }
+    await destination.waitForLoadState('domcontentloaded');
+    return destination;
+  }
   const popup = page.context().waitForEvent('page', { timeout: 10000 }).catch(() => null);
   const before = page.url();
   const navigation = page.waitForURL(url => url.href !== before, { timeout: 10000 }).then(() => page).catch(() => null);
@@ -199,7 +229,9 @@ export async function authenticatedSession(browser, cfg, { force = false, allowL
       if (!allowLogin || refreshed) fail('AUTH_REQUIRED', '云平台要求重新登录');
       await authenticate(); refreshed = true;
     }
-    await page.locator('.contentShow, .wrap-webSite').first().waitFor({ state: 'visible', timeout: 15000 }).catch(() => {});
+    const shellReady = page.locator('.contentShow, .wrap-webSite').first().waitFor({ state: 'visible', timeout: 25000 }).catch(() => {});
+    const editorReady = page.getByText('网页编辑', { exact: true }).first().waitFor({ state: 'visible', timeout: 25000 }).catch(() => {});
+    await Promise.race([shellReady, editorReady]);
     const site = await selectTargetSite(page, cfg);
     if (allowLogin) await saveSession(context, cfg);
     return { context, page, environment, site, reused: Boolean(state) && !refreshed, refreshed };

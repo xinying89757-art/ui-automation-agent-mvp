@@ -482,3 +482,124 @@ def explore(base, m, flow_id, gap_id, strategy, seconds, outcome, evidence):
                  "Demonstrate the unresolved operation from its documented start state; provide a Playwright action script.",
                  affected, attempted=[a["strategy"] for a in per_gap] + [strategy])
     return {"recorded": attempt, "budget_exhausted": exhausted}
+
+
+def bind_specs(base, m):
+    """Point imported cases at Playwright specs. This is the daily path: no intent YAML."""
+    require(not m.get("active_batch"), "Recover the active batch before binding specs")
+    runner = base / "runner"
+    specs = sorted(path for path in (runner / "tests").rglob("*.spec.ts") if path.name != "healer-rehearsal.spec.ts")
+    require(specs, "No Playwright specs to bind")
+    found = {}
+    for spec in specs:
+        body = spec.read_text(encoding="utf-8")
+        for match in re.finditer(r"\[([A-Za-z0-9][A-Za-z0-9_.-]*)\]", body):
+            cid = match.group(1)
+            if cid in found or cid not in m["cases"]:
+                continue
+            found[cid] = (spec, body[match.end():match.end() + 500])
+    require(found, "Specs do not match any imported case id")
+    bound = []
+    for cid, (spec, window) in found.items():
+        c = m["cases"][cid]
+        mutates = "uia-mutates" in window
+        registration = {
+            "case_id": cid, "daily_spec": True,
+            "script": spec.relative_to(base).as_posix(),
+            "fixture": {"hooks": "fixtures/llms-txt.mjs", "mutates": mutates,
+                        "mutation_scope": ["llms.txt"] if mutates else []},
+            "dependencies": ["flows/llms-txt.mjs", "support/heal.mjs"],
+        }
+        c["daily_spec"] = True
+        c["registration"] = registration
+        c["flow_ids"] = ["llms-txt"]
+        c["fixture_ids"] = ["llms-overview"] if mutates else ["llms-readonly"]
+        c["isolated"] = False
+        errors, _warnings = case_errors(base, c, m["config"], execution=True)
+        require(not errors, "Daily spec gate failed", {"case_id": cid, "errors": errors})
+        version = case_version(base, m, c)
+        if c.get("version") == version and (c.get("result") == "passed" or c.get("work_status") == "runnable"):
+            continue
+        if c.get("version") and c.get("version") != version:
+            reset_case(c, "daily_spec_changed", "execution")
+        c.update(version=version, stage="execution", work_status="runnable", intent_hash=None,
+                 plan_hash=None, result=None, stability="not_run", pass_streak=0)
+        bound.append(cid)
+    entries = {}
+    for cid, c in m["cases"].items():
+        if not c.get("registration"):
+            continue
+        entries[cid] = {"case_id": cid, "hooks": c["registration"]["fixture"]["hooks"],
+                        "mutates": c["registration"]["fixture"]["mutates"], "isolated": c["isolated"],
+                        "fixture_ids": c["fixture_ids"], "flow_ids": c["flow_ids"]}
+    atomic_write(runner / "cases.json", entries)
+    event(m, "specs_bound", case_ids=sorted(found))
+    return {"bound": sorted(found), "reopened": bound}
+
+
+def absorb_locators(base, m):
+    """Write fingerprints back only for cases that passed in that batch. Never edit specs."""
+    files = sorted((base / "batches").glob("*/locator-hits.json"), key=lambda item: item.stat().st_mtime)
+    if not files:
+        return {"updated": [], "missing": True}
+    hits_path = files[-1]
+    hits = read_json(hits_path)
+    batch_id = hits_path.parent.name
+    passed = {cid for cid, c in m["cases"].items()
+              if any(a.get("batch_id") == batch_id and a.get("result") == "passed" for a in c.get("attempts", []))}
+    knowledge_path = base / "runner/knowledge/llms-txt.json"
+    knowledge = read_json(knowledge_path)
+    environment = m["config"].get("environment", {}).get("id")
+    updated = []
+    for hit in hits:
+        key = str(hit.get("key") or "")
+        if key.startswith("rehearse.") or hit.get("case_id") not in passed or hit.get("environment") != environment:
+            continue
+        if hit.get("via") == "preview":
+            knowledge["preview"] = {"iframe": "#backstage-innerpage",
+                                    **{name: hit.get(name) for name in ("access", "sameOrigin", "parentCanvas", "frameCanvas", "iframeCount")}}
+            updated.append("preview")
+            continue
+        entry = knowledge.get("entries", {}).get(key)
+        if not entry or not hit.get("selector"):
+            continue
+        previous = entry.get("last_success")
+        if previous and previous != hit["selector"]:
+            entry["history"] = ([{"selector": previous, "at": entry.get("updated_at")}] + entry.get("history", []))[:3]
+        entry["last_success"] = hit["selector"]
+        for field in ("bbox", "ancestors", "tag"):
+            if hit.get(field):
+                entry[field] = hit[field]
+        text = str(hit.get("text") or "").strip()
+        if text:
+            entry["observed_text"] = text[:80]
+            if "\n" not in text and len(text) <= 40 and not entry.get("name"):
+                entry["name"] = text
+        entry["via"] = hit.get("via")
+        entry["updated_at"] = now()
+        updated.append(key)
+    knowledge["environment"] = environment
+    knowledge["updated_at"] = now()
+    atomic_write(knowledge_path, knowledge)
+    atomic_write(ROOT / "assets/playwright-runner/knowledge/llms-txt.json", knowledge)
+    event(m, "locators_absorbed", updated=updated, passed=sorted(passed))
+    return {"updated": updated, "passed_cases": sorted(passed), "writeback": "passed_cases_only"}
+
+
+def heal_review(base, evidence):
+    """Classify a proposed repair. The spec file is never written."""
+    import subprocess
+    payload_path = inside(base, evidence)
+    payload = read_json(payload_path)
+    spec = inside(base, payload["spec"])
+    before = spec.read_bytes()
+    out = base / "state" / "heal-review.json"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    cli = ROOT / "assets/playwright-runner/support/heal-cli.mjs"
+    proc = subprocess.run(["node", str(cli), str(payload_path), str(out), str(base)],
+                          check=False, capture_output=True, text=True)
+    require(proc.returncode == 0 and out.is_file(), "Heal review failed", (proc.stderr or proc.stdout)[-500:])
+    require(spec.read_bytes() == before, "Heal review rewrote the spec")
+    result = read_json(out)
+    require(result.get("applied") is False and result.get("spec_unchanged") is True, "Heal review must leave the spec unchanged")
+    return result

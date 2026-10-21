@@ -156,9 +156,12 @@ def begin_batch(base, m, case_ids):
         shutil.copyfile(pac_source, directory / "active.pac")
         snapshot_config["network"]["pac_file"] = str((directory / "active.pac").resolve())
     atomic_write(directory / "config.json", snapshot_config)
-    escaped = "|".join(re.escape("[" + cid + "]") for cid in case_ids)
+    # Playwright compiles file and title filters with the unicode flag, which rejects escaped hyphens.
+    pattern = lambda value: re.escape(value).replace("\\-", "-")
+    escaped = "|".join(pattern("[" + cid + "]") for cid in case_ids)
     selected_scripts = sorted({str(inside(base, c["registration"]["script"]).relative_to(base / "runner")).replace("\\", "/") for c in selected})
-    command = ["node", str(cli), "test"] + [re.escape(name) + "$" for name in selected_scripts] + ["--grep", "^(?:" + escaped + ")\\s"]
+    # Title grep cannot be anchored: Playwright joins the file suite title in front of the case title.
+    command = ["node", str(cli), "test"] + [pattern(name) + "$" for name in selected_scripts] + ["--grep", "(?:" + escaped + ")\\s"]
     batch = {"id": batch_id, "case_ids": case_ids, "versions": versions,
              "owner_pid": os.getpid(),
              "started_at": now(), "directory": str(directory.relative_to(base)),
@@ -203,6 +206,8 @@ def consume_batch(base, m, exit_code=None):
     batch = m.get("active_batch")
     require(batch, "No active execution batch")
     report_path = inside(base, batch["report"])
+    from .secrets import drop_unsafe_artifacts
+    drop_unsafe_artifacts(report_path.parent)
     require(report_path.is_file(), "Reporter output missing; recover with --abandon and saved evidence")
     report = read_json(report_path)
     require(report.get("schema_version") == "uia-batch-results.v1" and report.get("batch_id") == batch["id"],

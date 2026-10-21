@@ -34,13 +34,19 @@ export const test = base.extend<{ caseContext: CaseContext; lifecycle: void; adm
       ? Object.fromEntries(binding.fixture_ids.map((id: string) => [id, cfg.data_rules?.[id]]))
       : cfg.data_rules ?? {};
     const batchId = process.env.UIA_BATCH_ID ?? `manual-${Date.now()}`;
+    process.env.UIA_CASE_ID = caseId;
     info.annotations.push({ type: 'uia_case', description: caseId });
     let session: Awaited<ReturnType<typeof authenticatedSession>> | undefined;
     const openAdmin = async (area?: '内容管理' | '编辑网站'): Promise<Page> => {
       try {
         session ??= await authenticatedSession(browser, cfg, { allowLogin: false });
         return area ? await openSiteArea(session.page, cfg, area) : session.page;
-      } catch { throw new Error('UIA_ENVIRONMENT_BLOCKED: administrator session unavailable; run login before execution'); }
+      } catch (error) {
+        const code = (error as { code?: string }).code;
+        const blocked = new Set(['AUTH_REQUIRED', 'CAPTCHA_REQUIRED', 'LOGIN_FAILED', 'LOGIN_FORM_MISSING', 'CREDENTIALS_REQUIRED', 'ENVIRONMENT_UNREACHABLE', 'ENVIRONMENT_MISMATCH', 'ENVIRONMENT_HTTP_ERROR', 'GRAY_NOT_CONFIRMED', 'INVALID_CREDENTIALS', 'SITE_NOT_ACCESSIBLE', 'SITE_PERMISSION_DENIED', 'SITE_PERMISSION_UNVERIFIED', 'SITE_AMBIGUOUS', 'ACCOUNT_CHANGED', 'MANUAL_LOGIN_TIMEOUT']);
+        if (code && blocked.has(code)) throw new Error(`UIA_ENVIRONMENT_BLOCKED: ${(error as Error).message}`);
+        throw error;
+      }
     };
     try {
       await use({ caseId, batchId, ownerMarker: `uia-${batchId}-${caseId}`,

@@ -12,13 +12,13 @@ export default defineConfig({
   workers: cfg.execution?.workers ?? 1,
   retries: 0,
   forbidOnly: true,
-  timeout: cfg.execution?.timeout_ms ?? 180_000,
-  expect: { timeout: 10_000 },
+  // One case cannot hold the batch. Public-file polling has its own shorter budget.
+  timeout: Math.min(cfg.execution?.timeout_ms ?? 180_000, 240_000),
+  testIgnore: process.env.UIA_HEALER_REHEARSAL ? [] : ['**/healer-rehearsal.spec.ts'],
+  expect: { timeout: 15_000 },
   outputDir: path.join(results, 'artifacts'),
   reporter: [
     ['./support/uia-reporter.ts', { outputFile: path.join(results, 'case-results.json') }],
-    ['json', { outputFile: path.join(results, 'playwright-results.json') }],
-    ['html', { outputFolder: path.join(results, 'playwright-report'), open: 'never' }],
   ],
   use: {
     baseURL: cfg.targets?.public ?? process.env.UI_BASE_URL,
@@ -26,8 +26,8 @@ export default defineConfig({
     storageState: cfg.auth?.provider === 'leadong' ? undefined : cfg.auth?.storage_state ?? process.env.UI_STORAGE_STATE,
     launchOptions: networkLaunch,
     ...contextOptions(cfg),
-    screenshot: 'only-on-failure',
-    trace: 'retain-on-failure',
+    screenshot: 'off',
+    trace: 'off',
     video: 'off',
   },
 });

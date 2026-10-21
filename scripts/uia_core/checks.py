@@ -18,7 +18,46 @@ def intent_errors(path):
     return v.errors, v.warnings
 
 
+def daily_case_errors(base, case, cfg, execution=False):
+    """Daily specs skip the intent registry. They still have to call the lifecycle and keep assertions reviewable."""
+    errors, warnings = [], []
+    registration = case.get("registration") or {}
+    if not execution:
+        return errors, warnings
+    script = inside(base, registration.get("script", "__missing__"))
+    if not script.is_file():
+        errors.append("Final script missing")
+    else:
+        body = script.read_text(encoding="utf-8")
+        if "support/test" not in body or "businessAssertion" not in body:
+            errors.append("Final spec must use the lifecycle fixture and businessAssertion wrapper")
+        if "[" + case["case_id"] + "]" not in body:
+            errors.append("Test title must contain [case_id]")
+        if re.search(r"waitForTimeout|xpath=|\.nth\(|test\.fixme|test\.skip", body):
+            errors.append("Daily spec uses a skipped case or a disallowed locator pattern")
+    fixture = registration.get("fixture") or {}
+    hooks = inside(base / "runner", fixture.get("hooks", "__missing__"))
+    if not hooks.is_file():
+        errors.append("Fixture hooks module missing")
+    else:
+        hook_body = hooks.read_text(encoding="utf-8")
+        for name in ("prepare", "verifyPrepared", "cleanup", "verifyCleanup"):
+            if name not in hook_body:
+                errors.append("Fixture hooks missing " + name)
+    if fixture.get("mutates") and (not cfg.get("mutation", {}).get("allowed") or not cfg.get("mutation", {}).get("scope")):
+        errors.append("Mutating case needs configured operation scope")
+    if fixture.get("mutates") and (not fixture.get("mutation_scope") or
+            not set(fixture["mutation_scope"]) <= set(cfg.get("mutation", {}).get("scope", []))):
+        errors.append("Fixture mutation scope must be within the configured authorized operations")
+    for dep in registration.get("dependencies", []):
+        if not inside(base / "runner", dep).is_file():
+            errors.append("Daily dependency missing: " + dep)
+    return errors, warnings
+
+
 def case_errors(base, case, cfg, execution=False):
+    if case.get("daily_spec") or (case.get("registration") or {}).get("daily_spec"):
+        return daily_case_errors(base, case, cfg, execution)
     errors, warnings = [], []
     intent_path = inside(base, case["intent"])
     if not intent_path.is_file():
@@ -145,7 +184,7 @@ def run_errors(base, m):
             evidence = inside(base, attempt.get("evidence", "__missing__"))
             if not evidence.is_file() or file_hash(evidence) != attempt.get("evidence_sha256"):
                 errors.append(cid + ": execution evidence missing or changed")
-        if inside(base, c["intent"]).is_file():
+        if c.get("daily_spec") or inside(base, c["intent"]).is_file():
             e, w = case_errors(base, c, m["config"], execution=bool(c.get("registration")))
             errors.extend(cid + ": " + item for item in e)
             warnings.extend(cid + ": " + item for item in w)

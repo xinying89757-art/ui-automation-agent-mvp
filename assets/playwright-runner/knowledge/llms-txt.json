@@ -1,0 +1,660 @@
+{
+  "schema_version": "uia-locator-memory.v1",
+  "environment": "production",
+  "page": "editor-3.0",
+  "component": "llms-txt",
+  "notes": [
+    "Replay reads this file and does not call a model.",
+    "Fingerprints are written back only after the whole case passes.",
+    "The healer may propose a locator diff. It does not rewrite assertions.",
+    "The public llms.txt file is fetched over HTTP.",
+    "Open 设置 only after the preview iframe exposes jQuery.",
+    "网页编辑 opens the 3.0 editor in a popup."
+  ],
+  "preview": {
+    "iframe": "#backstage-innerpage",
+    "access": "same-origin",
+    "sameOrigin": true,
+    "parentCanvas": 0,
+    "frameCanvas": 0,
+    "iframeCount": 1
+  },
+  "entries": {
+    "settings.inner": {
+      "intent": "打开网站设置",
+      "page": "editor-3.0",
+      "component": "toolbar",
+      "environment": "production",
+      "scope": "body",
+      "primary": {
+        "kind": "css",
+        "value": "li.backstage-siteTool-setting .backstage-siteTool-inner"
+      },
+      "fallbacks": [],
+      "tag": "div",
+      "name": "设置",
+      "ancestors": [
+        "li.backstage-siteTool-setting",
+        "ul.backstage-siteBuildTools-icons",
+        "div.backstage-siteBuildTools"
+      ],
+      "last_success": "li.backstage-siteTool-setting .backstage-siteTool-inner",
+      "bbox": {
+        "x": 0,
+        "y": 342,
+        "width": 75,
+        "height": 72
+      },
+      "via": "selector",
+      "updated_at": "2026-10-21T10:22:47.197488+00:00",
+      "observed_text": "设置"
+    },
+    "settings.open": {
+      "intent": "网站设置面板已展开",
+      "page": "editor-3.0",
+      "component": "toolbar",
+      "environment": "production",
+      "scope": "body",
+      "primary": {
+        "kind": "css",
+        "value": "li.backstage-siteTool-setting.backstage-siteTool-on"
+      },
+      "fallbacks": [],
+      "tag": "li",
+      "ancestors": [
+        "ul.backstage-siteBuildTools-icons",
+        "div.backstage-siteBuildTools"
+      ],
+      "last_success": "li.backstage-siteTool-setting.backstage-siteTool-on",
+      "bbox": {
+        "x": 0,
+        "y": 342,
+        "width": 75,
+        "height": 73
+      },
+      "observed_text": "设置\n\n网站设置\n \n\n你可以 设置浏览器图标， 禁止鼠标右键， 禁止拷贝， 设置防同行 功能， 对所有页面添加 Head标签、 Body标签， 管理网站备份，",
+      "via": "selector",
+      "updated_at": "2026-10-21T10:22:47.197490+00:00"
+    },
+    "manageTxt": {
+      "intent": "打开管理txt文件",
+      "page": "editor-3.0",
+      "component": "site-settings",
+      "environment": "production",
+      "scope": "#site_customize_txt",
+      "primary": {
+        "kind": "css",
+        "value": "#site_customize_txt a"
+      },
+      "fallbacks": [
+        {
+          "kind": "text",
+          "value": "text=管理txt文件"
+        }
+      ],
+      "tag": "a",
+      "name": "管理txt文件",
+      "ancestors": [
+        "#site_customize_txt",
+        "ul.backstage-siteTool-setwidgets",
+        "div.backstage-siteTool-settingscont",
+        "div.backstage-siteTool-contwrap"
+      ],
+      "last_success": "#site_customize_txt a",
+      "bbox": {
+        "x": 115,
+        "y": 457,
+        "width": 195,
+        "height": 40
+      },
+      "via": "selector",
+      "updated_at": "2026-10-21T10:22:47.197491+00:00",
+      "observed_text": "管理txt文件"
+    },
+    "dialog": {
+      "intent": "管理txt文件弹窗",
+      "page": "editor-3.0",
+      "component": "llms-dialog",
+      "environment": "production",
+      "scope": "body",
+      "primary": {
+        "kind": "css",
+        "value": "#backstage-dialog-customizeFile"
+      },
+      "fallbacks": [],
+      "tag": "div",
+      "attributes": {
+        "id": "backstage-dialog-customizeFile"
+      },
+      "last_success": "#backstage-dialog-customizeFile",
+      "bbox": {
+        "x": 360,
+        "y": 18,
+        "width": 720,
+        "height": 860
+      },
+      "observed_text": "管理txt文件\nllms.txt 自定义txt文件\nllms.txt 功能\n\n开启后系统将自动在网站根目录生成并持续更新 llms.txt 文件，帮助 AI 大",
+      "via": "selector",
+      "updated_at": "2026-10-21T10:22:47.197493+00:00"
+    },
+    "tab.custom": {
+      "intent": "切换到自定义txt文件页签",
+      "page": "editor-3.0",
+      "component": "llms-dialog",
+      "environment": "production",
+      "scope": "#backstage-dialog-customizeFile",
+      "primary": {
+        "kind": "css",
+        "value": "#backstage-dialog-customizeFile a.customize-file-tab >> text=自定义txt文件"
+      },
+      "fallbacks": [],
+      "tag": "a",
+      "name": "自定义txt文件",
+      "classes": [
+        "customize-file-tab"
+      ],
+      "last_success": "#backstage-dialog-customizeFile a.customize-file-tab >> text=自定义txt文件",
+      "bbox": {
+        "x": 458,
+        "y": 78,
+        "width": 117,
+        "height": 44
+      },
+      "ancestors": [
+        "div.customize-file-tabs",
+        "#backstage-dialog-customizeFile"
+      ],
+      "via": "selector",
+      "updated_at": "2026-10-21T10:22:47.197438+00:00",
+      "observed_text": "自定义txt文件"
+    },
+    "tab.llms": {
+      "intent": "切回 llms.txt 页签",
+      "page": "editor-3.0",
+      "component": "llms-dialog",
+      "environment": "production",
+      "scope": "#backstage-dialog-customizeFile",
+      "primary": {
+        "kind": "css",
+        "value": "#backstage-dialog-customizeFile a.customize-file-tab >> text=llms.txt"
+      },
+      "fallbacks": [],
+      "tag": "a",
+      "name": "llms.txt",
+      "classes": [
+        "customize-file-tab"
+      ],
+      "last_success": "#backstage-dialog-customizeFile a.customize-file-tab >> text=llms.txt",
+      "bbox": {
+        "x": 380,
+        "y": 78,
+        "width": 74,
+        "height": 44
+      },
+      "ancestors": [
+        "div.customize-file-tabs",
+        "#backstage-dialog-customizeFile"
+      ],
+      "via": "selector",
+      "updated_at": "2026-10-21T10:22:47.197428+00:00",
+      "observed_text": "llms.txt"
+    },
+    "source.system": {
+      "intent": "选择系统自动生成",
+      "page": "editor-3.0",
+      "component": "llms-dialog",
+      "environment": "production",
+      "scope": "#backstage-dialog-customizeFile",
+      "primary": {
+        "kind": "css",
+        "value": "label.llms-source-system"
+      },
+      "fallbacks": [],
+      "tag": "label",
+      "name": "系统自动生成",
+      "classes": [
+        "llms-source-system"
+      ],
+      "last_success": "label.llms-source-system",
+      "bbox": {
+        "x": 380,
+        "y": 291,
+        "width": 334,
+        "height": 38
+      },
+      "ancestors": [
+        "div.llms-sources",
+        "div.llms-section",
+        "div.llms-fields",
+        "div.llms-form"
+      ],
+      "via": "selector",
+      "updated_at": "2026-10-21T10:22:47.197473+00:00",
+      "observed_text": "系统自动生成"
+    },
+    "source.custom": {
+      "intent": "选择自定义内容",
+      "page": "editor-3.0",
+      "component": "llms-dialog",
+      "environment": "production",
+      "scope": "#backstage-dialog-customizeFile",
+      "primary": {
+        "kind": "css",
+        "value": "label.llms-source-custom"
+      },
+      "fallbacks": [],
+      "tag": "label",
+      "name": "自定义内容",
+      "classes": [
+        "llms-source-custom"
+      ],
+      "last_success": "label.llms-source-custom",
+      "bbox": {
+        "x": 726,
+        "y": 291,
+        "width": 334,
+        "height": 38
+      },
+      "ancestors": [
+        "div.llms-sources",
+        "div.llms-section",
+        "div.llms-fields",
+        "div.llms-form"
+      ],
+      "via": "selector",
+      "updated_at": "2026-10-21T10:22:47.197468+00:00",
+      "observed_text": "自定义内容"
+    },
+    "overview": {
+      "intent": "编辑网站概述",
+      "page": "editor-3.0",
+      "component": "llms-dialog",
+      "environment": "production",
+      "scope": "#backstage-dialog-customizeFile",
+      "primary": {
+        "kind": "css",
+        "value": "input.llms-overview"
+      },
+      "fallbacks": [],
+      "tag": "input",
+      "classes": [
+        "llms-overview"
+      ],
+      "attributes": {
+        "type": "text"
+      },
+      "last_success": "input.llms-overview",
+      "bbox": {
+        "x": 395,
+        "y": 410,
+        "width": 650,
+        "height": 32
+      },
+      "ancestors": [
+        "div.llms-input-count-wrap",
+        "div.llms-section",
+        "div.llms-system-fields",
+        "div.llms-fields"
+      ],
+      "name": "为空则取首页 Meta Description",
+      "via": "selector",
+      "updated_at": "2026-10-21T10:22:47.197483+00:00",
+      "observed_text": "为空则取首页 Meta Description"
+    },
+    "addField": {
+      "intent": "添加扩展字段",
+      "page": "editor-3.0",
+      "component": "llms-dialog",
+      "environment": "production",
+      "scope": "#backstage-dialog-customizeFile",
+      "primary": {
+        "kind": "css",
+        "value": "a.llms-add-field"
+      },
+      "fallbacks": [],
+      "tag": "a",
+      "name": "+ 添加字段",
+      "classes": [
+        "llms-add-field"
+      ],
+      "last_success": "a.llms-add-field",
+      "bbox": {
+        "x": 960,
+        "y": 512,
+        "width": 85,
+        "height": 30
+      },
+      "ancestors": [
+        "h4.llms-section-title",
+        "div.llms-section",
+        "div.llms-system-fields",
+        "div.llms-fields"
+      ],
+      "via": "selector",
+      "updated_at": "2026-10-21T10:22:47.197495+00:00",
+      "observed_text": "+ 添加字段"
+    },
+    "extraName": {
+      "intent": "扩展字段名称",
+      "page": "editor-3.0",
+      "component": "llms-dialog",
+      "environment": "production",
+      "scope": "#backstage-dialog-customizeFile",
+      "primary": {
+        "kind": "css",
+        "value": "input.llms-extra-name:visible"
+      },
+      "fallbacks": [],
+      "tag": "input",
+      "classes": [
+        "llms-extra-name"
+      ],
+      "last_success": "input.llms-extra-name:visible",
+      "bbox": {
+        "x": 395,
+        "y": 594,
+        "width": 180,
+        "height": 32
+      },
+      "ancestors": [
+        "div.llms-input-count-wrap",
+        "div.llms-extra-controls",
+        "div.llms-extra-item",
+        "div.llms-extra-fields"
+      ],
+      "name": "字段名称",
+      "via": "selector",
+      "updated_at": "2026-10-21T10:22:47.197497+00:00",
+      "observed_text": "字段名称"
+    },
+    "extraValue": {
+      "intent": "扩展字段内容",
+      "page": "editor-3.0",
+      "component": "llms-dialog",
+      "environment": "production",
+      "scope": "#backstage-dialog-customizeFile",
+      "primary": {
+        "kind": "css",
+        "value": "input.llms-extra-value:visible"
+      },
+      "fallbacks": [],
+      "tag": "input",
+      "classes": [
+        "llms-extra-value"
+      ],
+      "last_success": "input.llms-extra-value:visible",
+      "bbox": {
+        "x": 583,
+        "y": 594,
+        "width": 432,
+        "height": 32
+      },
+      "ancestors": [
+        "div.llms-input-count-wrap",
+        "div.llms-extra-controls",
+        "div.llms-extra-item",
+        "div.llms-extra-fields"
+      ],
+      "name": "请输入内容",
+      "via": "selector",
+      "updated_at": "2026-10-21T10:22:47.197498+00:00",
+      "observed_text": "请输入内容"
+    },
+    "customContent": {
+      "intent": "自定义 llms.txt 文本域",
+      "page": "editor-3.0",
+      "component": "llms-dialog",
+      "environment": "production",
+      "scope": "#backstage-dialog-customizeFile",
+      "primary": {
+        "kind": "css",
+        "value": "textarea.llms-custom-content"
+      },
+      "fallbacks": [],
+      "tag": "textarea",
+      "classes": [
+        "llms-custom-content"
+      ],
+      "last_success": "textarea.llms-custom-content",
+      "bbox": {
+        "x": 380,
+        "y": 395,
+        "width": 680,
+        "height": 260
+      },
+      "ancestors": [
+        "div.llms-section",
+        "div.llms-custom-fields",
+        "div.llms-fields",
+        "div.llms-form"
+      ],
+      "name": "请输入完整的 llms.txt 文件内容",
+      "via": "selector",
+      "updated_at": "2026-10-21T10:22:47.197471+00:00",
+      "observed_text": "请输入完整的 llms.txt 文件内容"
+    },
+    "save": {
+      "intent": "保存 llms.txt 配置",
+      "page": "editor-3.0",
+      "component": "llms-dialog",
+      "environment": "production",
+      "scope": "#backstage-dialog-customizeFile",
+      "primary": {
+        "kind": "css",
+        "value": "#backstage-dialog-customizeFile a[class*='customize_file_llms']"
+      },
+      "fallbacks": [],
+      "tag": "a",
+      "name": "保存",
+      "last_success": "#backstage-dialog-customizeFile a[class*='customize_file_llms']",
+      "bbox": {
+        "x": 974,
+        "y": 830,
+        "width": 76,
+        "height": 34
+      },
+      "ancestors": [
+        "div.fix",
+        "div.backstage-dialog-bottom",
+        "#backstage-dialog-customizeFile"
+      ],
+      "via": "selector",
+      "updated_at": "2026-10-21T10:22:47.197500+00:00",
+      "observed_text": "保存"
+    },
+    "cancel": {
+      "intent": "取消并关闭弹窗",
+      "page": "editor-3.0",
+      "component": "llms-dialog",
+      "environment": "production",
+      "scope": "#backstage-dialog-customizeFile",
+      "primary": {
+        "kind": "css",
+        "value": "#backstage-dialog-customizeFile a.backstage-dialog-cancel"
+      },
+      "fallbacks": [],
+      "tag": "a",
+      "name": "取消",
+      "classes": [
+        "backstage-dialog-cancel"
+      ],
+      "last_success": "#backstage-dialog-customizeFile a.backstage-dialog-cancel",
+      "bbox": {
+        "x": 390,
+        "y": 830,
+        "width": 70,
+        "height": 34
+      },
+      "ancestors": [
+        "div.fix",
+        "div.backstage-dialog-bottom",
+        "#backstage-dialog-customizeFile"
+      ],
+      "via": "selector",
+      "updated_at": "2026-10-21T10:22:47.197413+00:00",
+      "observed_text": "取消"
+    },
+    "addNow": {
+      "intent": "自定义 txt 页签的立即添加",
+      "page": "editor-3.0",
+      "component": "llms-dialog",
+      "environment": "production",
+      "scope": "#backstage-dialog-customizeFile",
+      "primary": {
+        "kind": "css",
+        "value": "#backstage-dialog-customizeFile a[class*='customize_file_add']"
+      },
+      "fallbacks": [],
+      "tag": "a",
+      "name": "立即添加",
+      "last_success": "#backstage-dialog-customizeFile a[class*='customize_file_add']",
+      "bbox": {
+        "x": 960,
+        "y": 830,
+        "width": 90,
+        "height": 34
+      },
+      "ancestors": [
+        "div.fix",
+        "div.backstage-dialog-bottom",
+        "#backstage-dialog-customizeFile"
+      ],
+      "via": "selector",
+      "updated_at": "2026-10-21T10:22:47.197440+00:00",
+      "observed_text": "立即添加"
+    },
+    "addFileDialog": {
+      "intent": "添加txt文件弹窗",
+      "page": "editor-3.0",
+      "component": "custom-txt",
+      "environment": "production",
+      "scope": "body",
+      "primary": {
+        "kind": "css",
+        "value": "#backstage-dialog-viewCustomizeFile"
+      },
+      "fallbacks": [],
+      "tag": "div",
+      "name": "添加txt文件",
+      "attributes": {
+        "id": "backstage-dialog-viewCustomizeFile"
+      }
+    },
+    "addFileName": {
+      "intent": "自定义txt文件名称",
+      "page": "editor-3.0",
+      "component": "custom-txt",
+      "environment": "production",
+      "scope": "#backstage-dialog-viewCustomizeFile",
+      "primary": {
+        "kind": "css",
+        "value": "#backstage-dialog-viewCustomizeFile #filename"
+      },
+      "fallbacks": [],
+      "tag": "input",
+      "name": "文件名称",
+      "attributes": {
+        "id": "filename",
+        "type": "text"
+      },
+      "last_success": "#backstage-dialog-viewCustomizeFile #filename",
+      "bbox": {
+        "x": 250,
+        "y": 163,
+        "width": 312,
+        "height": 28
+      },
+      "ancestors": [
+        "div.backstage-settings-cont",
+        "div.backstage-settings-wrap",
+        "div.backstage-dialogcont-settings",
+        "div.backstage-dialog-innercont"
+      ],
+      "via": "selector",
+      "updated_at": "2026-10-21T10:22:47.197442+00:00"
+    },
+    "addFileContent": {
+      "intent": "自定义txt文件内容",
+      "page": "editor-3.0",
+      "component": "custom-txt",
+      "environment": "production",
+      "scope": "#backstage-dialog-viewCustomizeFile",
+      "primary": {
+        "kind": "css",
+        "value": "#backstage-dialog-viewCustomizeFile #fileContent"
+      },
+      "fallbacks": [],
+      "tag": "textarea",
+      "attributes": {
+        "id": "fileContent"
+      },
+      "last_success": "#backstage-dialog-viewCustomizeFile #fileContent",
+      "bbox": {
+        "x": 250,
+        "y": 286,
+        "width": 754,
+        "height": 92
+      },
+      "ancestors": [
+        "div.backstage-settings-cont",
+        "div.backstage-settings-wrap",
+        "div.backstage-dialogcont-settings",
+        "div.backstage-dialog-innercont"
+      ],
+      "via": "selector",
+      "updated_at": "2026-10-21T10:22:47.197445+00:00"
+    },
+    "addFileSave": {
+      "intent": "保存自定义txt文件",
+      "page": "editor-3.0",
+      "component": "custom-txt",
+      "environment": "production",
+      "scope": "#backstage-dialog-viewCustomizeFile",
+      "primary": {
+        "kind": "css",
+        "value": "#backstage-dialog-viewCustomizeFile a[class*='customize_file_submit']"
+      },
+      "fallbacks": [],
+      "tag": "a",
+      "name": "保存",
+      "last_success": "#backstage-dialog-viewCustomizeFile a[class*='customize_file_submit']",
+      "bbox": {
+        "x": 1110,
+        "y": 838,
+        "width": 90,
+        "height": 30
+      },
+      "ancestors": [
+        "div.fix",
+        "div.backstage-dialog-bottom",
+        "#backstage-dialog-viewCustomizeFile"
+      ],
+      "observed_text": "保存",
+      "via": "selector",
+      "updated_at": "2026-10-21T10:22:47.197447+00:00"
+    },
+    "rehearse.stale": {
+      "intent": "演练：主定位器失效后按指纹找回管理txt文件",
+      "page": "editor-3.0",
+      "component": "site-settings",
+      "environment": "production",
+      "scope": "#site_customize_txt",
+      "primary": {
+        "kind": "css",
+        "value": "#stale-manage-txt"
+      },
+      "fallbacks": [
+        {
+          "kind": "css",
+          "value": "#also-stale"
+        }
+      ],
+      "tag": "a",
+      "name": "管理txt文件",
+      "ancestors": [
+        "#site_customize_txt"
+      ]
+    }
+  },
+  "updated_at": "2026-10-21T10:22:47.197501+00:00"
+}

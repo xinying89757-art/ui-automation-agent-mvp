@@ -1,7 +1,8 @@
-import type { FullResult, Reporter, TestCase, TestResult } from '@playwright/test/reporter';
 import fs from 'node:fs';
 import path from 'node:path';
+import type { FullResult, Reporter, TestCase, TestResult } from '@playwright/test/reporter';
 import { credentials } from './auth.mjs';
+import { scrubText, unsafeArtifact } from './redact.mjs';
 
 export default class UiaReporter implements Reporter {
   private cases: Record<string, unknown>[] = [];
@@ -28,8 +29,13 @@ export default class UiaReporter implements Reporter {
     }
   }
   private clean(value: string): string {
-    for (const secret of this.secrets) value = value.split(secret).join('[REDACTED]');
-    return value;
+    let text = value;
+    for (const secret of this.secrets) text = text.split(secret).join('[REDACTED]');
+    return scrubText(text);
+  }
+  private keepAttachment(attachment: { name?: string; path?: string }): boolean {
+    if (!attachment.path || unsafeArtifact(attachment.path) || unsafeArtifact(attachment.name ?? '')) return false;
+    return !['screenshot', 'trace', 'error-context', 'video'].includes(attachment.name ?? '');
   }
   onTestEnd(test: TestCase, result: TestResult): void {
     const caseId = test.annotations.find(a => a.type === 'uia_case')?.description ?? /^\[([^\]]+)\]/u.exec(test.title)?.[1];
@@ -52,7 +58,7 @@ export default class UiaReporter implements Reporter {
       setup_started: result.attachments.some(a => a.name === 'uia-setup-started'),
       duration_ms: result.duration, retry: result.retry, errors, lifecycle,
       script: test.location.file, line: test.location.line,
-      attachments: result.attachments.filter(a => a.path).map(a => ({ name: a.name, path: a.path })) });
+      attachments: result.attachments.filter(a => this.keepAttachment(a)).map(a => ({ name: a.name, path: a.path })) });
     this.flush('running', false);
   }
   private flush(status: string, complete: boolean): void {
@@ -64,5 +70,24 @@ export default class UiaReporter implements Reporter {
     fs.writeFileSync(temporary, JSON.stringify(report, null, 2), { mode: 0o600 });
     fs.renameSync(temporary, this.output);
   }
-  onEnd(result: FullResult): void { this.flush(result.status, true); }
+  onEnd(result: FullResult): void {
+    this.flush(result.status, true);
+    dropUnsafe(path.dirname(this.output));
+  }
+}
+
+function dropUnsafe(dir: string): void {
+  if (!fs.existsSync(dir)) return;
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (entry.name === 'playwright-report' || entry.name === 'traces') {
+        fs.rmSync(full, { recursive: true, force: true });
+        continue;
+      }
+      dropUnsafe(full);
+      continue;
+    }
+    if (unsafeArtifact(entry.name)) fs.rmSync(full, { force: true });
+  }
 }

@@ -42,7 +42,8 @@ def parser():
     source.add_argument("--profile")
     for name in ("import", "status", "next", "bind", "advance", "match", "scaffold", "register", "preflight",
                  "question", "answer", "explore", "run-batch", "record-run", "recover", "repair", "classify",
-                 "feedback", "resolve-fixture", "replay-demo", "report", "validate"):
+                 "feedback", "resolve-fixture", "replay-demo", "report", "validate",
+                 "bind-specs", "absorb-locators", "heal-review"):
         cmd = commands.add_parser(name)
         cmd.add_argument("--run", required=name != "validate")
         if name == "import":
@@ -90,6 +91,8 @@ def parser():
             cmd.add_argument("--evidence", required=True)
         if name == "resolve-fixture":
             cmd.add_argument("--fixture", required=True)
+        if name == "heal-review":
+            cmd.add_argument("--evidence", required=True)
     return p
 
 
@@ -193,6 +196,12 @@ def dispatch(args, path, m):
         q["answer"].update(replay="verified", replay_evidence=args.evidence)
         event(m, "demo_replayed", question_id=q["id"])
         return {"question_id": q["id"], "replay": "verified"}
+    if cmd == "bind-specs":
+        return workflow.bind_specs(base, m)
+    if cmd == "absorb-locators":
+        return workflow.absorb_locators(base, m)
+    if cmd == "heal-review":
+        return workflow.heal_review(base, args.evidence)
     if cmd == "report":
         if not m.get("active_batch"):
             workflow.refresh(base, m)

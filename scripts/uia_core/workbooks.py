@@ -12,9 +12,9 @@ from .common import digest, require, safe_id
 
 ALIASES = {
     "id": ["用例编号", "用例ID", "测试用例编号", "caseid", "编号"],
-    "title": ["用例名称", "用例标题", "测试用例", "测试点", "标题", "title", "name"],
+    "title": ["用例名称", "用例标题", "用例描述", "测试用例", "测试点", "标题", "title", "name"],
     "module": ["所属模块", "功能模块", "模块", "module"],
-    "priority": ["优先级", "用例等级", "等级", "priority"],
+    "priority": ["优先级", "用例级别", "用例等级", "等级", "priority"],
     "preconditions": ["前置条件", "前提条件", "预置条件", "preconditions"],
     "steps": ["操作步骤", "测试步骤", "执行步骤", "步骤", "steps"],
     "expected": ["预期结果", "期望结果", "预期", "expected", "expectedresult"],

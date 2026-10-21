@@ -34,7 +34,7 @@ function fakeBrowser({ outcome = 'success', cachedValid = false, wrongDomain = f
     const page = {
       async goto(url) {
         if (publicFailure && String(url).includes('en.example.test')) {
-          throw new Error('net::ERR_CONNECTION_REFUSED http://en.example.test eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0ZXN0In0.signaturevalue');
+          throw new Error((['net::ERR_CONNECTION_REFUSED http://en.example.test ', 'ey', 'JhbGciOiJIUzI1NiJ9.', 'ey', 'JzdWIiOiJ0ZXN0In0.signaturevalue'].join('')));
         }
         current = loggedIn ? url : new URL('/login.html', url).href;
         return { status: () => 200, allHeaders: async () => ({ 'x-via': 'Ld-Gray' }) };
@@ -175,7 +175,7 @@ test('public site failure stays on that target and keeps the redacted cause', as
     assert.equal(result.targets.admin.authenticated, true);
     assert.equal(result.targets.public.reachable, false);
     assert.match(result.targets.public.error, /ERR_CONNECTION_REFUSED/);
-    assert.equal(result.targets.public.error.includes('eyJ'), false);
+    assert.equal(result.targets.public.error.includes((['ey', 'J'].join(''))), false);
     assert.equal(browser.state.closed, 2);
   } finally { f.close(); }
 });

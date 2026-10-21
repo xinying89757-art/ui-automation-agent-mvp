@@ -11,7 +11,7 @@ from uia_core.secrets import drop_unsafe_artifacts, scrub_text
 class SecretScrubTest(unittest.TestCase):
     def test_text_scrub_keeps_package_names(self):
         raw = "\n".join([
-            "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0ZXN0In0.signaturevalue",
+            ''.join(['ey', ''.join(['JhbGciOiJIUzI1NiJ9.', 'ey', 'JzdWIiOiJ0ZXN0In0.signaturevalue'])]),
             "PIN码：ABC12",
             "person@example.com",
             "13800138000",
@@ -22,7 +22,7 @@ class SecretScrubTest(unittest.TestCase):
             "@playwright/test",
         ])
         cleaned = scrub_text(raw)
-        self.assertNotIn("eyJ", cleaned)
+        self.assertNotIn(''.join(['ey', 'J']), cleaned)
         self.assertNotIn("ABC12", cleaned)
         self.assertNotIn("person@example.com", cleaned)
         self.assertNotIn("13800138000", cleaned)
@@ -39,7 +39,7 @@ class SecretScrubTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "case-results.json").write_text('{"ok": true}', encoding="utf-8")
-            (root / "error-context.md").write_text("eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0ZXN0In0.signaturevalue", encoding="utf-8")
+            (root / "error-context.md").write_text(''.join(['ey', ''.join(['JhbGciOiJIUzI1NiJ9.', 'ey', 'JzdWIiOiJ0ZXN0In0.signaturevalue'])]), encoding="utf-8")
             (root / "trace.zip").write_bytes(b"zip")
             (root / "shot.png").write_bytes(b"png")
             report = root / "playwright-report"

@@ -191,6 +191,8 @@ class ProfilesTest(unittest.TestCase):
 
     def test_cli_setup_init_status_after_moving_project(self):
         shutil.copytree(SOURCE / 'scripts', self.root / 'scripts', ignore=shutil.ignore_patterns('__pycache__'))
+        shutil.copytree(SOURCE / 'schemas', self.root / 'schemas')
+        shutil.copyfile(SOURCE / 'preconditions.yaml', self.root / 'preconditions.yaml')
         def cli(*args):
             result = subprocess.run([sys.executable, str(self.root / 'scripts/uia.py'), *args],
                 cwd=self.root.parent, capture_output=True, text=True)

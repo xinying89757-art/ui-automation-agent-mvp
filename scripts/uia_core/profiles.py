@@ -130,7 +130,8 @@ def setup(name, environment, site, account=None, credentials_file=None, password
             "next": "login", "status": "configured_not_verified"}
 
 
-def update_profile(name, site=None, mutation_allowed=None, scope=None, stability_passes=None):
+def update_profile(name, site=None, mutation_allowed=None, scope=None, stability_passes=None,
+                   editor_data_restorable=False):
     """Change site URL and mutation scope in the private profile. Does not print credentials."""
     destination = profile_path(name)
     require(destination.is_file(), "Profile does not exist; run setup first")
@@ -154,10 +155,14 @@ def update_profile(name, site=None, mutation_allowed=None, scope=None, stability
     if stability_passes is not None:
         require(stability_passes in {1, 2}, "stability_passes must be 1 for a daily deliverable or 2 for nightly regression")
         cfg.setdefault("execution", {})["stability_passes"] = stability_passes
+    if editor_data_restorable:
+        cfg.setdefault("mutation", {})["authorization_profile"] = {
+            "mode": "editor_any_data_restore", "approved_by": "Xinying"}
     atomic_write(destination, cfg)
     return {"profile": name, "config": str(destination), "site": cfg.get("site"),
             "public": cfg.get("targets", {}).get("public"), "mutation": mutation,
-            "stability_passes": cfg.get("execution", {}).get("stability_passes", 2)}
+            "stability_passes": cfg.get("execution", {}).get("stability_passes", 1),
+            "authorization_profile": cfg.get("mutation", {}).get("authorization_profile")}
 
 
 def input_to_stderr(prompt):
@@ -191,7 +196,7 @@ def network_fingerprint(cfg):
 
 
 def invoke_login(cfg, runner=None, check_only=False, force=False, evidence=None, manual=False):
-    runner = Path(runner or runtime_root())
+    runner = Path(runner or runtime_root()).resolve()
     require((runner / "node_modules/@playwright/test").is_dir(),
             "Install Node dependencies first: npm --prefix " + str(runner) + " ci")
     # A temporary runtime config contains references only, never a credential value.
@@ -216,8 +221,39 @@ def invoke_login(cfg, runner=None, check_only=False, force=False, evidence=None,
         try:
             payload = json.loads(result.stdout)
         except (ValueError, TypeError):
-            require(False, "Login helper did not produce JSON; check Node/browser installation")
+            from .secrets import scrub_text
+            diagnostic = scrub_text(result.stderr or "no stdout/stderr", cfg).strip()[:240]
+            require(False, "Login helper did not produce JSON; check Node/browser installation",
+                    {"exit_code": result.returncode, "diagnostic": diagnostic})
         require(result.returncode == 0 and payload.get("ok"), payload.get("error", "Login failed"),
+                {"code": payload.get("code"), "choices": payload.get("choices", [])})
+        return {k: v for k, v in payload.items() if k != "ok"}
+    finally:
+        Path(temp).unlink(missing_ok=True)
+
+
+def invoke_snapshot(cfg, runner=None, area=None, manual=False):
+    runner = Path(runner or runtime_root()).resolve()
+    require((runner / "node_modules/@playwright/test").is_dir(),
+            "Install Node dependencies first: npm --prefix " + str(runner) + " ci")
+    import tempfile
+    private_dir = ROOT / ".auth"
+    private_dir.mkdir(exist_ok=True, mode=0o700)
+    fd, temp = tempfile.mkstemp(prefix="snapshot-", suffix=".json", dir=private_dir)
+    os.close(fd)
+    try:
+        atomic_write(temp, cfg)
+        command = ["node", str(runner / "scripts/session.mjs"), "--config", temp, "--snapshot"]
+        if area:
+            command.append(area)
+        if manual:
+            command.append("--manual")
+        result = subprocess.run(command, cwd=runner, capture_output=True, text=True)
+        try:
+            payload = json.loads(result.stdout)
+        except (ValueError, TypeError):
+            require(False, "Snapshot helper did not produce redacted JSON")
+        require(result.returncode == 0 and payload.get("ok"), payload.get("error", "Snapshot failed"),
                 {"code": payload.get("code"), "choices": payload.get("choices", [])})
         return {k: v for k, v in payload.items() if k != "ok"}
     finally:

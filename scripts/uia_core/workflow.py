@@ -30,12 +30,19 @@ def init(run_id, config_path):
     base = ROOT / "runs" / run_id
     require(not (base / "run.json").exists(), "Run already exists; use status/next to resume")
     cfg = run_config(base, config_path)
+    initial_specs = sorted("runner/" + str(p.relative_to(ROOT / "assets/playwright-runner")) for p in
+                           (ROOT / "assets/playwright-runner/tests").glob("*.spec.ts"))
+    from .metrics import assertion_signature
+    initial_assertions = {relative: assertion_signature(ROOT / relative) for relative in initial_specs}
     m = {"schema_version": "uia-run.v1", "run_id": run_id, "created_at": now(),
          "updated_at": now(), "config_path": str(Path(config_path).resolve()), "config": cfg,
          "config_hash": execution_config_fingerprint(cfg), "sources": [], "identity_map": {},
          "cases": {}, "archived_cases": [], "questions": {}, "exploration": [],
          "batches": [], "active_batch": None, "contaminated_fixtures": {},
-         "history": [], "delivery": {}, "preflight": None, "status": "active"}
+         "history": [], "delivery": {}, "preflight": None, "status": "active",
+         "initial_spec_files": initial_specs, "initial_assertion_signatures": initial_assertions,
+         "unplanned_interventions": 0,
+         "scope_violations": 0, "unreviewed_assertion_changes": 0}
     event(m, "initialized")
     atomic_write(base / "run.json", m)
     return {"run": str(base / "run.json"), "next": "import", "status": "not_executed"}
@@ -187,7 +194,8 @@ def import_excel(base, m, excel, mapping=None):
     from .preconditions import sync_preconditions
     preconditions = sync_preconditions(base, m)
     return {**counts, "total": len(new), "unresolved_sheets": sorted(incomplete_sheets),
-            "source_rows_preserved": True, "preconditions": preconditions, "next": "next"}
+            "source_rows_preserved": True, "preconditions": preconditions,
+            "next": "bind_existing_specs", "instruction": "Run `uia.py bind-specs` to index tests/*.spec.ts, then run runnable cases before creating new specs."}
 
 
 def bind(m, case_ids, flow_ids, fixture_ids, isolated):
@@ -243,19 +251,16 @@ def match(base, m, cid):
 
 def scaffold(base):
     dest = base / "runner"
-    for file in (ROOT / "assets/playwright-runner").rglob("*"):
-        relative = file.relative_to(ROOT / "assets/playwright-runner")
-        if (not file.is_file() or file.is_symlink() or
-                any(part in {"node_modules", ".auth", "results", "test-results", "playwright-report"} for part in relative.parts) or
-                ".local." in file.name):
-            continue
-        target = dest / relative
-        target.parent.mkdir(parents=True, exist_ok=True)
-        if not target.exists():
-            shutil.copyfile(file, target)
-    if not (dest / "cases.json").exists():
-        atomic_write(dest / "cases.json", {})
-    return {"runner": str(dest), "dependencies_installed": False, "next": "generate_final_scripts"}
+    source = ROOT / "assets/playwright-runner"
+    if not dest.exists():
+        dest.symlink_to(source, target_is_directory=True)
+    require(dest.is_symlink() and dest.resolve() == source.resolve(), "Run runner must point to the shared repository runner")
+    state = base / "state/cases.json"
+    if not state.exists():
+        atomic_write(state, {})
+    return {"runner": str(source), "run_binding_file": str(state),
+            "dependencies_installed": (source / "node_modules/@playwright/test").is_dir(),
+            "next": "bind_existing_specs_then_generate_final_scripts"}
 
 
 def code_files(base, registration):
@@ -290,7 +295,7 @@ def code_files(base, registration):
             resolved = next((x for x in options if x.is_file()), None)
             require(resolved is not None, "Local import cannot be resolved", {"file": str(file), "import": ref})
             pending.append(resolved)
-    return {str(p.relative_to(runner)): file_hash(p) for p in sorted(visited)}
+    return {str(p.relative_to(runner.resolve())): file_hash(p) for p in sorted(visited)}
 
 
 def case_version(base, m, c):
@@ -329,6 +334,14 @@ def register(base, m, cid, registration):
     require(script.is_file() and script.suffix == ".ts", "Final spec must exist inside runner/tests")
     require("[" + cid + "]" in script.read_text(), "Test title must contain [case_id]")
     previous = c.get("registration")
+    baseline = c.get("repair_baseline_script")
+    if baseline:
+        prior_spec = inside(base, baseline)
+        from .metrics import assertion_signature, locator_wait_only
+        if prior_spec.is_file() and locator_wait_only(prior_spec, script):
+            c["preserve_delivery"] = True
+        elif prior_spec.is_file() and assertion_signature(prior_spec) != assertion_signature(script):
+            m["unreviewed_assertion_changes"] = int(m.get("unreviewed_assertion_changes", 0)) + 1
     c["registration"] = registration
     try:
         errors, warnings = case_errors(base, c, m["config"], execution=True)
@@ -338,9 +351,13 @@ def register(base, m, cid, registration):
         c["registration"] = previous
         raise
     if c.get("version") != version:
-        reset_case(c, "script_or_dependency_version_changed", "execution")
+        if c.get("preserve_delivery"):
+            c.update(version=version, pass_streak=c.get("delivery_pass_streak", 0), result=None,
+                     stability="candidate" if c.get("delivery_pass_streak", 0) else "not_run")
+        else:
+            reset_case(c, "script_or_dependency_version_changed", "execution")
     c.update(version=version, stage="execution", work_status="runnable")
-    cases_file = base / "runner/cases.json"
+    cases_file = base / "state/cases.json"
     entries = read_json(cases_file) if cases_file.exists() else {}
     entries[cid] = {"case_id": cid, "hooks": registration["fixture"]["hooks"],
                     "mutates": registration["fixture"]["mutates"], "isolated": c["isolated"],
@@ -352,6 +369,11 @@ def register(base, m, cid, registration):
 
 def refresh(base, m):
     cfg = run_config(base, m["config_path"])
+    if cfg.get("mutation") != m.get("config", {}).get("mutation"):
+        m["scope_violations"] = int(m.get("scope_violations", 0)) + 1
+        event(m, "scope_change_rejected", source="profile_refresh")
+        atomic_write(base / "run.json", m)
+        require(False, "Mutation scope is locked after run initialization; update it only in the upfront checklist before init")
     new_hash = execution_config_fingerprint(cfg)
     if new_hash != m["config_hash"]:
         old = m["config"]
@@ -548,9 +570,11 @@ def bind_specs(base, m):
         entries[cid] = {"case_id": cid, "hooks": c["registration"]["fixture"]["hooks"],
                         "mutates": c["registration"]["fixture"]["mutates"], "isolated": c["isolated"],
                         "fixture_ids": c["fixture_ids"], "flow_ids": c["flow_ids"]}
-    atomic_write(runner / "cases.json", entries)
+    atomic_write(base / "state/cases.json", entries)
     event(m, "specs_bound", case_ids=sorted(found))
-    return {"bound": sorted(found), "reopened": bound}
+    return {"bound": sorted(found), "reopened": bound,
+            "next": "preflight_then_run_batch" if bound else "generate_missing_specs",
+            "instruction": "Run existing runnable specs before generating any new spec."}
 
 
 def absorb_locators(base, m):
@@ -563,7 +587,10 @@ def absorb_locators(base, m):
     batch_id = hits_path.parent.name
     passed = {cid for cid, c in m["cases"].items()
               if any(a.get("batch_id") == batch_id and a.get("result") == "passed" for a in c.get("attempts", []))}
-    knowledge_path = base / "runner/knowledge/llms-txt.json"
+    knowledge_path = base / "state/knowledge/llms-txt.json"
+    if not knowledge_path.is_file():
+        knowledge_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(base / "runner/knowledge/llms-txt.json", knowledge_path)
     knowledge = read_json(knowledge_path)
     environment = m["config"].get("environment", {}).get("id")
     updated = []
@@ -601,7 +628,6 @@ def absorb_locators(base, m):
     knowledge["environment"] = environment
     knowledge["updated_at"] = now()
     atomic_write(knowledge_path, knowledge)
-    atomic_write(ROOT / "assets/playwright-runner/knowledge/llms-txt.json", knowledge)
     event(m, "locators_absorbed", updated=updated, passed=sorted(passed))
     return {"updated": updated, "passed_cases": sorted(passed), "writeback": "passed_cases_only"}
 

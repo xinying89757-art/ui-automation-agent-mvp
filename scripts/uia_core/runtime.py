@@ -206,7 +206,14 @@ def begin_batch(base, m, case_ids):
                       "mutates": c["registration"]["fixture"]["mutates"], "isolated": c["isolated"],
                       "fixture_ids": c["fixture_ids"], "flow_ids": c["flow_ids"]}
                 for cid, c in m["cases"].items() if c.get("registration")}
-    atomic_write(base / "runner/cases.json", bindings)
+    cases_file = base / "state/cases.json"
+    atomic_write(cases_file, bindings)
+    knowledge_source = base / "runner/knowledge/llms-txt.json"
+    knowledge_overlay = base / "state/knowledge/llms-txt.json"
+    if knowledge_source.is_file() and not knowledge_overlay.is_file():
+        knowledge_overlay.parent.mkdir(parents=True, exist_ok=True)
+        import shutil
+        shutil.copyfile(knowledge_source, knowledge_overlay)
     if m["config"]["execution"]["workers"] > 1:
         require(all(c["isolated"] and c["registration"].get("isolation_evidence") and
                     inside(base, c["registration"]["isolation_evidence"]).is_file() for c in selected),
@@ -242,7 +249,7 @@ def begin_batch(base, m, case_ids):
     # Playwright compiles file and title filters with the unicode flag, which rejects escaped hyphens.
     pattern = lambda value: re.escape(value).replace("\\-", "-")
     escaped = "|".join(pattern("[" + cid + "]") for cid in case_ids)
-    selected_scripts = sorted({str(inside(base, c["registration"]["script"]).relative_to(base / "runner")).replace("\\", "/") for c in selected})
+    selected_scripts = sorted({str(inside(base, c["registration"]["script"]).relative_to((base / "runner").resolve())).replace("\\", "/") for c in selected})
     # Title grep cannot be anchored: Playwright joins the file suite title in front of the case title.
     command = ["node", str(cli), "test"] + [pattern(name) + "$" for name in selected_scripts] + ["--grep", "(?:" + escaped + ")\\s"]
     batch = {"id": batch_id, "case_ids": case_ids, "versions": versions,
@@ -257,7 +264,11 @@ def begin_batch(base, m, case_ids):
 def execute_process(base, batch, cfg):
     import threading
     directory = inside(base, batch["directory"])
+    cases_file = Path(base) / "state/cases.json"
+    knowledge_overlay = Path(base) / "state/knowledge/llms-txt.json"
     env = dict(os.environ, UIA_BATCH_ID=batch["id"], UIA_CONFIG=str(directory / "config.json"),
+               UIA_CASES_FILE=str(cases_file),
+               UIA_KNOWLEDGE_FILE=str(knowledge_overlay),
                UIA_RESULTS_DIR=str(directory), UIA_CONTAMINATION_DIR=str(base / "state/contaminated"))
     stop = threading.Event()
 
@@ -345,13 +356,21 @@ def consume_batch(base, m, exit_code=None):
         c["result"] = result
         if result == "passed":
             need = int(m["config"]["execution"]["stability_passes"])
-            c["pass_streak"] = (c["pass_streak"] + 1 if prior and prior["version"] == version and prior["result"] == "passed" else 1)
+            if c.get("preserve_delivery"):
+                c["pass_streak"] = max(c.get("pass_streak", 0), c.get("delivery_pass_streak", 0)) + 1
+                c.pop("preserve_delivery", None)
+                c.pop("delivery_pass_streak", None)
+                c.pop("repair_baseline_script", None)
+            else:
+                c["pass_streak"] = (c["pass_streak"] + 1 if prior and prior["version"] == version and prior["result"] == "passed" else 1)
             stable = c["pass_streak"] >= need
             c.update(stability="stable" if stable else "candidate", work_status="finished" if stable else "runnable",
                      stage="feedback" if stable else "execution")
             if not m.get("first_pass_at"):
                 m["first_pass_at"] = now()
         else:
+            if prior and prior.get("result") == "passed" and c.get("pass_streak", 0):
+                c["delivery_pass_streak"] = c["pass_streak"]
             c.update(pass_streak=0, stability="unstable", work_status="finished", stage="finished")
             if result in {"environment_blocked", "product_confirmation"}:
                 c["work_status"] = "waiting_human"
@@ -419,6 +438,19 @@ def repair(base, m, cid, evidence):
             "Restore the fixture before a repair rerun")
     require(c["repair_rounds"] < m["config"]["execution"]["repair_rounds"], "Repair budget exhausted")
     require(inside(base, evidence).is_file(), "Repair needs a saved diagnosis")
+    registration = c.get("registration") or {}
+    if registration.get("script"):
+        script = Path(registration["script"])
+        try:
+            relative = script.relative_to("runner")
+        except ValueError:
+            relative = script
+        previous = next((b for b in reversed(m.get("batches", []))
+                         if b.get("id") == c["attempts"][-1].get("batch_id")), None)
+        if previous:
+            snapshot = inside(base, previous["directory"]) / "snapshot/files" / relative
+            if snapshot.is_file():
+                c["repair_baseline_script"] = str(snapshot.relative_to(base))
     c["repair_rounds"] += 1
     c.update(stage="discovery", work_status="pending", pass_streak=0, result=None, stability="unstable")
     event(m, "repair_started", case_id=cid, round=c["repair_rounds"], evidence=evidence)

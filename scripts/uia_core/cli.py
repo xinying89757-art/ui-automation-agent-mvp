@@ -35,6 +35,7 @@ def parser():
     profile.add_argument("--read-only", action="store_true")
     profile.add_argument("--scope", nargs="*")
     profile.add_argument("--stability-passes", type=int, choices=[1, 2])
+    profile.add_argument("--editor-data-restorable", action="store_true")
     profile.add_argument("--run")
     login = commands.add_parser("login")
     source = login.add_mutually_exclusive_group(required=True)
@@ -44,6 +45,13 @@ def parser():
     login.add_argument("--force", action="store_true")
     login.add_argument("--check-only", action="store_true")
     login.add_argument("--manual", action="store_true")
+    snapshot = commands.add_parser("snapshot")
+    source = snapshot.add_mutually_exclusive_group(required=True)
+    source.add_argument("--profile")
+    source.add_argument("--config")
+    source.add_argument("--run")
+    snapshot.add_argument("--node", default="page", choices=["page", "content-admin", "editor"])
+    snapshot.add_argument("--manual", action="store_true")
     init = commands.add_parser("init")
     init.add_argument("--run-id", required=True)
     source = init.add_mutually_exclusive_group(required=True)
@@ -111,6 +119,7 @@ def dispatch(args, path, m):
     if hasattr(args, "case"):
         require(args.case in m["cases"], "Unknown case: " + args.case)
     if cmd == "import":
+        workflow.scaffold(base)
         return workflow.import_excel(base, m, args.excel, read_json(args.mapping) if args.mapping else None)
     if cmd == "next":
         return workflow.next_task(base, m)
@@ -207,6 +216,7 @@ def dispatch(args, path, m):
         event(m, "demo_replayed", question_id=q["id"])
         return {"question_id": q["id"], "replay": "verified"}
     if cmd == "bind-specs":
+        workflow.scaffold(base)
         return workflow.bind_specs(base, m)
     if cmd == "preconditions":
         from .preconditions import sync_preconditions
@@ -233,8 +243,15 @@ def execute(args):
         return profiles.setup(args.profile, args.environment, args.site, args.account, args.credentials_file, args.password_env)
     if args.command == "profile":
         require(not (args.mutation_allowed and args.read_only), "Choose either --mutation-allowed or --read-only")
+        if args.run and (args.scope is not None or args.mutation_allowed or args.read_only or args.site):
+            with locked_run(args.run) as (path, m):
+                m["scope_violations"] = int(m.get("scope_violations", 0)) + 1
+                event(m, "scope_change_rejected", profile=args.profile)
+                save(path, m)
+            raise UiaError("Site and mutation scope are locked for this run; update them only in the upfront checklist before init")
         allowed = True if args.mutation_allowed else False if args.read_only else None
-        result = profiles.update_profile(args.profile, args.site, allowed, args.scope, args.stability_passes)
+        result = profiles.update_profile(args.profile, args.site, allowed, args.scope, args.stability_passes,
+                                         args.editor_data_restorable)
         if not args.run:
             return result
         with locked_run(args.run) as (path, m):
@@ -275,6 +292,20 @@ def execute(args):
                 result["preflight"] = runtime.preflight(path.parent, m, str(evidence))
             save(path, m)
             return result
+    if args.command == "snapshot":
+        from .common import config
+        area = {"page": None, "content-admin": "内容管理", "editor": "编辑网站"}[args.node]
+        if args.run:
+            with locked_run(args.run) as (path, m):
+                snapshot_result = profiles.invoke_snapshot(m["config"], path.parent / "runner", area, args.manual)
+                known = any(c.get("registration") for c in m["cases"].values())
+                m.setdefault("exploration", []).append({"node": args.node, "known_page": known,
+                                                         "re_explored": known, "at": now()})
+                event(m, "snapshot_completed", node=args.node, known_page=known)
+                save(path, m)
+                return snapshot_result
+        cfg = config(profiles.profile_path(args.profile) if args.profile else args.config)
+        return profiles.invoke_snapshot(cfg, area=area, manual=args.manual)
     if args.command == "init":
         return workflow.init(args.run_id, profiles.profile_path(args.profile) if args.profile else args.config)
     if args.command == "validate" and not args.run:
@@ -310,6 +341,9 @@ def execute(args):
     with locked_run(args.run) as (path, m):
         require(not m.get("active_batch") or args.command in {"record-run", "recover", "validate", "report", "next"},
                 "An execution batch is active; recover it before changing the run")
+        if args.command in {"question", "repair", "classify", "resolve-fixture", "replay-demo", "login"}:
+            m["unplanned_interventions"] = int(m.get("unplanned_interventions", 0)) + 1
+            event(m, "unplanned_intervention", command=args.command)
         before = digest({k: m[k] for k in ("cases", "questions", "sources", "config", "preflight", "contaminated_fixtures")})
         result = dispatch(args, path, m)
         after = digest({k: m[k] for k in ("cases", "questions", "sources", "config", "preflight", "contaminated_fixtures")})

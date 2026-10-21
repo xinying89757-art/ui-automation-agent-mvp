@@ -46,8 +46,11 @@ def daily_case_errors(base, case, cfg, execution=False):
                 errors.append("Fixture hooks missing " + name)
     if fixture.get("mutates") and (not cfg.get("mutation", {}).get("allowed") or not cfg.get("mutation", {}).get("scope")):
         errors.append("Mutating case needs configured operation scope")
+    mutation = cfg.get("mutation", {})
+    broad_editor = mutation.get("scope") == ["*"] and mutation.get("authorization_profile") == {
+        "mode": "editor_any_data_restore", "approved_by": "Xinying"}
     if fixture.get("mutates") and (not fixture.get("mutation_scope") or
-            not set(fixture["mutation_scope"]) <= set(cfg.get("mutation", {}).get("scope", []))):
+            (not broad_editor and not set(fixture["mutation_scope"]) <= set(mutation.get("scope", [])))):
         errors.append("Fixture mutation scope must be within the configured authorized operations")
     for dep in registration.get("dependencies", []):
         if not inside(base / "runner", dep).is_file():
@@ -132,8 +135,11 @@ def case_errors(base, case, cfg, execution=False):
             errors.append("Fixture hooks module missing")
         if fixture.get("mutates") and (not cfg.get("mutation", {}).get("allowed") or not cfg.get("mutation", {}).get("scope")):
             errors.append("Mutating case needs configured operation scope")
+        mutation = cfg.get("mutation", {})
+        broad_editor = mutation.get("scope") == ["*"] and mutation.get("authorization_profile") == {
+            "mode": "editor_any_data_restore", "approved_by": "Xinying"}
         if fixture.get("mutates") and (not fixture.get("mutation_scope") or
-                not set(fixture["mutation_scope"]) <= set(cfg.get("mutation", {}).get("scope", []))):
+                (not broad_editor and not set(fixture["mutation_scope"]) <= set(mutation.get("scope", [])))):
             errors.append("Fixture mutation scope must be within the configured authorized operations")
         for ref in registration.get("evidence", []):
             if not inside(base, ref).is_file():

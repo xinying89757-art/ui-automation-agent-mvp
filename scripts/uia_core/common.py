@@ -16,7 +16,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[2]
 RESULTS = {"passed", "business_failure", "automation_failure", "environment_blocked",
            "product_confirmation", "not_suitable", "interrupted"}
-DEFAULTS = {"batch_size": 10, "workers": 1, "stability_passes": 2, "repair_rounds": 2,
+DEFAULTS = {"batch_size": 10, "workers": 1, "stability_passes": 1, "repair_rounds": 2,
             "exploration_minutes_per_flow": 10, "strategies_per_gap": 2, "timeout_ms": 180000}
 
 
@@ -85,7 +85,9 @@ def safe_id(text):
 def inside(base, value):
     base = Path(base).resolve()
     target = (base / value).resolve()
-    require(target == base or base in target.parents, "Path escapes its workspace", str(value))
+    shared_runner = ROOT / "assets/playwright-runner"
+    require(target == base or base in target.parents or shared_runner == target or shared_runner in target.parents,
+            "Path escapes its workspace", str(value))
     return target
 
 

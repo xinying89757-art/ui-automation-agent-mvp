@@ -1,8 +1,13 @@
 // Generated deterministically from case-spec.v1; edit the spec or explicitly review an AI repair.
 import { test, expect, businessAssertion } from '../../support/fixtures.js';
 import { openTarget } from '../../support/case-spec.js';
+import { delayRequests, doubleClick, attemptClick, observeOccurrences } from '../../flows/network-control.mjs';
+import { deferPublic, trackSave } from '../../support/remote-checks.mjs';
 
-test("[TC-0004] 从设置面板打开管理txt文件并显示默认页签", async ({ page }) => {
+test("[TC-0004] 从设置面板打开管理txt文件并显示默认页签", async ({ page, caseContext }) => {
+  const networks: Record<string, any> = {};
+  const observations: Record<string, any> = {};
+  try {
   // @step S1
   await openTarget(page, "settings");
   // Excel: 1. 网站设置面板显示“管理txt文件”。
@@ -25,4 +30,8 @@ test("[TC-0004] 从设置面板打开管理txt文件并显示默认页签", asyn
     await expect(page.locator("#backstage-dialog-customizeFile").locator("a[class*='customize_file_llms']")).toHaveText("保存");
     expect((await page.locator("#backstage-dialog-customizeFile").locator("a.backstage-dialog-cancel").boundingBox())!.x).toBeLessThan((await page.locator("#backstage-dialog-customizeFile").locator("a[class*='customize_file_llms']").boundingBox())!.x);
   });
+  } finally {
+    for (const network of Object.values(networks)) await network.dispose();
+    for (const observation of Object.values(observations)) await observation.dispose();
+  }
 });

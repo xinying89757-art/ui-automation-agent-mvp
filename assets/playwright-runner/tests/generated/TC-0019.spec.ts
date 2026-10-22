@@ -1,8 +1,13 @@
 // Generated deterministically from case-spec.v1; edit the spec or explicitly review an AI repair.
 import { test, expect, businessAssertion } from '../../support/fixtures.js';
 import { openTarget } from '../../support/case-spec.js';
+import { delayRequests, doubleClick, attemptClick, observeOccurrences } from '../../flows/network-control.mjs';
+import { deferPublic, trackSave } from '../../support/remote-checks.mjs';
 
-test("[TC-0019] 往返切换内容来源保留两侧已填内容且不覆盖自定义文本", async ({ page }) => {
+test("[TC-0019] 往返切换内容来源保留两侧已填内容且不覆盖自定义文本", async ({ page, caseContext }) => {
+  const networks: Record<string, any> = {};
+  const observations: Record<string, any> = {};
+  try {
   // @step S1
   await page.locator("#backstage-dialog-customizeFile").locator("label.llms-source-custom").click();
   // Excel: 1. 文本域显示已有自定义内容，不被自动生成内容覆盖。
@@ -25,4 +30,8 @@ test("[TC-0019] 往返切换内容来源保留两侧已填内容且不覆盖自�
   await businessAssertion('A3', async () => {
     await expect(page.locator("#backstage-dialog-customizeFile").locator("textarea.llms-custom-content")).toHaveValue("phase2-edited-custom");
   });
+  } finally {
+    for (const network of Object.values(networks)) await network.dispose();
+    for (const observation of Object.values(observations)) await observation.dispose();
+  }
 });

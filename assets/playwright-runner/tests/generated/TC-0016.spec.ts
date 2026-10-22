@@ -1,8 +1,13 @@
 // Generated deterministically from case-spec.v1; edit the spec or explicitly review an AI repair.
 import { test, expect, businessAssertion } from '../../support/fixtures.js';
 import { openTarget } from '../../support/case-spec.js';
+import { delayRequests, doubleClick, attemptClick, observeOccurrences } from '../../flows/network-control.mjs';
+import { deferPublic, trackSave } from '../../support/remote-checks.mjs';
 
-test("[TC-0016] 悬停问号显示自动生成规则说明", async ({ page }) => {
+test("[TC-0016] 悬停问号显示自动生成规则说明", async ({ page, caseContext }) => {
+  const networks: Record<string, any> = {};
+  const observations: Record<string, any> = {};
+  try {
   // @step S1
   await page.locator("#backstage-dialog-customizeFile").locator(".llms-rule-help").hover();
   // Excel: 1. 页面浮出说明面板。
@@ -18,4 +23,8 @@ test("[TC-0016] 悬停问号显示自动生成规则说明", async ({ page }) =>
     await expect(page.locator("#backstage-dialog-customizeFile").locator("#llms-rule-tooltip .llms-rule-list strong")).toHaveText(["网站标题", "网站概述", "扩展内容字段", "Contact Us", "Social Media", "Website Language Versions", "Website Navigation", "Product Category", "FAQ"]);
     await expect(page.locator("#backstage-dialog-customizeFile").locator("#llms-rule-tooltip .llms-rule-list strong")).toHaveCount(9);
   });
+  } finally {
+    for (const network of Object.values(networks)) await network.dispose();
+    for (const observation of Object.values(observations)) await observation.dispose();
+  }
 });

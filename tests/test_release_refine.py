@@ -53,3 +53,17 @@ class ReleaseAndRefineTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ChecklistResumeTests(unittest.TestCase):
+    def test_cases_parked_by_queued_checklist_resume_when_answered(self):
+        from uia_core import experience
+        m = {'cases': {cid: {'case_id': cid, 'work_status': 'pending', 'stage': 'spec', 'result': None} for cid in ('C1', 'C2')},
+             'questions': {}, 'history': [], 'config': {'mutation': {}}}
+        q = workflow.question(m, 'preconditions', 'run-preconditions', '清单', ['C1', 'C2'], key='pre')
+        self.assertEqual(m['cases']['C1']['work_status'], 'waiting_human')
+        q.update(status='answered', entries=[{'key': 'env:x', 'block': 'A', 'label': 'x', 'cases': ['C2']}],
+                 answer={'entries': {'env:x': False}})
+        experience.apply_checklist(m, q)
+        self.assertEqual(m['cases']['C1']['work_status'], 'pending')
+        self.assertEqual(m['cases']['C2']['work_status'], 'waiting_human')

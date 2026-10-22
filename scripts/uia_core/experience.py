@@ -163,7 +163,9 @@ def apply_checklist(m, q, extra_entries=()):
             c['checklist_wait'] = True
             c['work_status'] = 'waiting_human'
             c['classification'] = {'reason': '前置未满足：' + '、'.join(blocked[cid]), 'at': now()}
-        elif c.pop('checklist_wait', False) and c.get('result') is None:
+        elif (c.pop('checklist_wait', False) or q.get('status') == 'answered' and cid in q.get('case_ids', [])
+              and c.get('work_status') == 'waiting_human') and c.get('result') is None:
+            # Cases parked when the checklist was queued resume once it is answered and nothing blocks them.
             others = [x for x in m['questions'].values() if x is not q and x['status'] in {'open', 'deferred'} and cid in x['case_ids']]
             if not others:
                 c['work_status'] = 'runnable' if c.get('registration') and c['stage'] == 'execution' else 'pending'

@@ -25,6 +25,9 @@ For one more observed control use `uia.py hints target --run R --name <purpose.n
 never fabricate or edit generator reports.
 A confirmed entry closes deferred review items about that page automatically. Never end a turn while
 `next` returns an AI action (refine_specs, spec, discover, preflight, run-batch, repair); end only on `review`/done.
+Outcomes are earned by execution: classify product_confirmation/automation_failure/business_failure only
+after run-batch evidence; public-frontend assertions use defer_public + remote-check requests (remote_pending),
+never environment_blocked. Validation messages, re-edit, toolbars: explore them (snapshot/generator), do not park.
 Explore each node once: knowledge → snapshot --goto/--open-target/--step/--frame/--scope → generator_setup_page with tests/seed.spec.ts; Midscene only for visual expectations.
 Write named targets into page-map.yaml (+ routes into flows) before writing specs; keep writing/running other nodes while one is unknown.
 Demo requires a known entry, entry_reached evidence and generator-cli --entry failure on the requested --interaction; unknown entries join checklist D (later discoveries go to review).

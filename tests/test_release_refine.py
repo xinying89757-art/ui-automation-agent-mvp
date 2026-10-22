@@ -85,3 +85,21 @@ class PageMapSliceTests(unittest.TestCase):
             self.assertEqual(workflow.page_map_slice(base, c), first)
             write({'faq.add': {'selector': '.a', 'dialog': 'faq.dialog'}, 'faq.dialog': {'selector': '.changed'}})
             self.assertNotEqual(workflow.page_map_slice(base, c), first)
+
+
+class EarnedOutcomeTests(unittest.TestCase):
+    def test_unexecuted_verdicts_rejected_and_reopened(self):
+        c = {'case_id': 'C1', 'attempts': [], 'stage': 'finished', 'work_status': 'finished', 'result': 'product_confirmation'}
+        m = {'cases': {'C1': c, 'C2': {'case_id': 'C2', 'attempts': [{'result': 'automation_failure'}], 'stage': 'finished',
+                                       'work_status': 'finished', 'result': 'automation_failure'},
+                       'C3': {'case_id': 'C3', 'attempts': [], 'stage': 'finished', 'work_status': 'finished',
+                              'result': 'environment_blocked'}}, 'history': []}
+        for result in ('product_confirmation', 'automation_failure', 'environment_blocked'):
+            with self.assertRaises(common.UiaError):
+                workflow.classification_gate(Path('.'), m, {'attempts': []}, result)
+        workflow.classification_gate(Path('.'), m, {'attempts': [{}]}, 'automation_failure')
+        workflow.classification_gate(Path('.'), m, {'attempts': [], 'checklist_wait': True}, 'environment_blocked')
+        workflow.classification_gate(Path('.'), m, {'attempts': []}, 'not_suitable')
+        self.assertEqual(sorted(workflow.reopen_unearned(m)), ['C1', 'C3'])
+        self.assertEqual((c['stage'], c['work_status'], c['result']), ('spec', 'pending', None))
+        self.assertEqual(m['cases']['C2']['result'], 'automation_failure')

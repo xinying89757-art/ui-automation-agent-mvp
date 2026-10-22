@@ -336,6 +336,34 @@ def code_files(base, registration):
     return {str(p.relative_to(runner.resolve())): file_hash(p) for p in sorted(visited)}
 
 
+EXECUTED_RESULTS = {"product_confirmation", "business_failure", "save_not_persisted", "automation_failure"}
+
+
+def classification_gate(base, m, c, result):
+    """Outcomes are earned by running; public checks go to remote hand-off; human waits come from the checklist."""
+    if result in EXECUTED_RESULTS:
+        require(c.get("attempts"), "未执行不能下结论：先补全 case-spec（探索/hints target）并 run-batch；"
+                                   "product_confirmation 只用于执行后实际行为与期望不一致、需产品确认的情况")
+    if result == "environment_blocked" and not c.get("attempts") and not c.get("checklist_wait"):
+        require(False, "环境阻断只能来自清单中未满足的前置或执行证据；公开前台断言请在 spec 中用 defer_public，"
+                       "运行后台部分并生成 remote-check 请求（结果 remote_pending），不要直接判环境阻断")
+
+
+def reopen_unearned(m):
+    """Self-heal: earlier unexecuted verdicts go back to the AI queue instead of counting as outcomes."""
+    reopened = []
+    for cid, c in m["cases"].items():
+        if c.get("stage") == "finished" or c.get("work_status") == "finished":
+            if (c.get("result") in EXECUTED_RESULTS or c.get("result") == "environment_blocked" and not c.get("checklist_wait")) \
+                    and not c.get("attempts"):
+                previous = c.get("result")
+                c.update(result=None, stage="spec", work_status="pending", stability="not_run",
+                         classification={"reason": "重新打开：未执行的结论（" + str(previous) + "）不计为结果", "at": now()})
+                event(m, "case_reopened_unearned", case_id=cid, previous=previous)
+                reopened.append(cid)
+    return reopened
+
+
 def page_map_slice(base, c):
     """Only the page-map entries a case-spec references (transitively) version the case; new targets do not rerun it."""
     path = base / "runner/knowledge/page-map.yaml"
@@ -521,6 +549,7 @@ def refresh(base, m):
                 reset_case(c, "code_or_dependency_changed", "execution")
                 c.update(version=version, work_status="runnable")
     release_resolved(m)
+    reopen_unearned(m)
     for q in m["questions"].values():
         if q["status"] in {"open", "deferred"}:
             for cid in q["case_ids"]:

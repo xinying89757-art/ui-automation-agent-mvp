@@ -275,6 +275,8 @@ def dispatch(args, path, m):
         require(not m.get("active_batch"), "Recover the active batch first")
         require(inside(base, args.evidence).is_file(), "Classification requires evidence")
         c = m["cases"][args.case]
+        from .workflow import classification_gate
+        classification_gate(base, m, c, args.result)
         c.update(result=args.result, stage="finished", work_status="finished", pass_streak=0,
                  stability="not_run" if not c["attempts"] else "unstable",
                  classification={"reason": redact(args.reason, m["config"]), "evidence": args.evidence, "at": now()})

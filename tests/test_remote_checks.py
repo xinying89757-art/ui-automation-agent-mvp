@@ -154,7 +154,7 @@ class RemoteChecksTests(unittest.TestCase):
         self.check.update(saved_at=saved.isoformat(),max_latency_seconds=5,earliest_check_at=saved.isoformat(),deadline=(saved+dt.timedelta(hours=2)).isoformat())
         folder=self.base/'remote-checks/watch/w1'; folder.mkdir(parents=True,exist_ok=True)
         common.atomic_write(folder/'request.json',{'schema_version':'uia-remote-watch.v1','run_id':'R','watch_id':'w1',
-          'max_latency_seconds':5,'url':self.check['url'],'conditions':self.check['conditions']})
+          'max_latency_seconds':5,'interval_ms':1000,'timeout_ms':10000,'url':self.check['url'],'conditions':self.check['conditions']})
         self.m['remote_watches']={'w1':{'watch_id':'w1','case_id':'C','assertion_id':'A2','status':'armed','armed_at':(saved-dt.timedelta(minutes=1)).isoformat(),'request_file':'remote-checks/watch/w1/request.json','request_sha256':common.file_hash(folder/'request.json'),'box_clock_offset_ms':None}}
         first=saved-dt.timedelta(seconds=1)
         times=[0,1000,2000,3000,4000]
@@ -178,7 +178,10 @@ class RemoteChecksTests(unittest.TestCase):
             # First present after the window but no absent sample after the window: not proof of a slow update.
             payload['first_present_at']=(saved+dt.timedelta(seconds=8)).isoformat(); payload['last_absent_at']=(saved-dt.timedelta(seconds=1)).isoformat()
         elif verdict=='not_met':
-            payload['first_present_at']=(saved+dt.timedelta(seconds=8)).isoformat(); payload['last_absent_at']=(saved+dt.timedelta(seconds=6)).isoformat()
+            payload.update(poll_count=7,error_count=0,max_gap_ms=17000,first_present_at=(saved+dt.timedelta(seconds=8)).isoformat(),
+              last_absent_at=(saved+dt.timedelta(seconds=18)).isoformat(),confirmed_present=True,
+              polls=[{'t_ms':t,'ok':True,'present':t>=19000} for t in (0,17000,18000,18500,19000,20000,21000)],
+              timeline=[{'t_ms':0,'state':'absent'},{'t_ms':19000,'state':'present'}])
         path=self.base/'watch-results.json'; common.atomic_write(path,payload); return path
 
     def test_watch_ingest_verdicts_and_idempotence(self):
@@ -191,6 +194,84 @@ class RemoteChecksTests(unittest.TestCase):
                 self.assertEqual(result['latency_ms'],8000 if kind in {'not_met','late_present_unproven'} else None if kind=='gap' else 1000)
                 self.assertTrue(remote.ingest_watch(self.base,self.m,path)['duplicate'])
                 self.assertEqual(len(self.m['remote_checks']['check1']['history']),1)
+
+    def real_watch_payload(self, basis=None):
+        saved=dt.datetime.fromisoformat('2026-10-22T06:27:37.010+00:00')
+        self.setUpCaseForWatch(); self.check['saved_at']=saved.isoformat()
+        folder=self.base/'remote-checks/watch/w1'; folder.mkdir(parents=True,exist_ok=True)
+        request={'schema_version':'uia-remote-watch.v1','run_id':'R','watch_id':'w1','interval_ms':1000,'timeout_ms':10000,
+                 'max_latency_seconds':5,'max_clock_offset_ms':1000,'url':self.check['url'],'conditions':self.check['conditions']}
+        common.atomic_write(self.base/'remote-checks/watch/w1/request.json',request)
+        self.m['remote_watches']={'w1':{'watch_id':'w1','case_id':'C','assertion_id':'A2','status':'armed',
+          'armed_at':(saved-dt.timedelta(minutes=1)).isoformat(),'request_file':'remote-checks/watch/w1/request.json',
+          'request_sha256':common.file_hash(self.base/'remote-checks/watch/w1/request.json'),'box_clock_offset_ms':None}}
+        first=dt.datetime.fromisoformat('2026-10-22T06:08:34.971+00:00')
+        values=list(range(0,872000,1600))+[872978,1233371]+list(range(1235088,1714000,1600))+[1714006]
+        polls=[{'t_ms':t,'ok':t!=1233371,'present':False} for t in values]
+        states=[{'t_ms':polls[0]['t_ms'],'state':'absent'}, {'t_ms':1233371,'state':'error'},
+                {'t_ms':next(t for t in values if t>1233371),'state':'absent'}]
+        payload={'schema_version':'uia-remote-watch-results.v1','run_id':'R','watch_id':'w1','request_sha256':common.file_hash(self.base/'remote-checks/watch/w1/request.json'),
+          'first_poll_at':first.isoformat(),'last_poll_at':'2026-10-22T06:37:09.950+00:00','poll_count':len(polls),'error_count':1,
+          'max_gap_ms':max((b['t_ms']-a['t_ms'] for a,b in zip(polls,polls[1:])),default=0),'baseline_absent':True,
+          'last_absent_at':'2026-10-22T06:37:08.977+00:00','first_present_at':None,'confirmed_present':False,'clock_offset_ms':306,
+          'evidence':None,'timeline':states,'polls':polls}
+        if basis: payload['t_ms_basis']=basis
+        return payload
+
+    def test_real_long_hang_still_proves_immediate_failure_for_both_time_bases(self):
+        for basis in (None,'request_start'):
+            with self.subTest(basis=basis):
+                payload=self.real_watch_payload(basis)
+                path=self.base/'watch-results.json'; common.atomic_write(path,payload)
+                with patch.object(remote,'restore',return_value=None): result=remote.ingest_watch(self.base,self.m,path)
+                self.assertEqual((result['reason'],result['status']),('immediate_not_met','fail'))
+                self.assertIn('572 秒',result['report']); self.assertIn('时限 5 秒',result['report'])
+
+    def test_absence_continuous_from_before_save_through_end_is_not_met(self):
+        payload=self.real_watch_payload('request_start'); request=common.read_json(self.base/'remote-checks/watch/w1/request.json')
+        values=list(range(0,1714000,1600))
+        payload['polls']=[{'t_ms':t,'ok':True,'present':False} for t in values]
+        payload.update(poll_count=len(values),error_count=0,max_gap_ms=1600,timeline=[{'t_ms':0,'state':'absent'}])
+        code,status,_,report=remote.judge_watch(payload,request,self.check['saved_at'],None)
+        self.assertEqual((code,status),('immediate_not_met','fail')); self.assertIn('仍未出现新内容',report)
+        # A trailing error poll means the absent run no longer reaches the end; stay undecided.
+        payload['polls'][-1]={'t_ms':values[-1],'ok':False,'present':False}
+        self.assertEqual(remote.judge_watch(payload,request,self.check['saved_at'],None)[0],'watch_gap')
+
+    def test_gap_present_with_no_dense_tail_remains_unreachable(self):
+        payload=self.real_watch_payload('request_start'); request=common.read_json(self.base/'remote-checks/watch/w1/request.json')
+        payload['polls']=[{'t_ms':0,'ok':True,'present':False},{'t_ms':600000,'ok':False,'present':False},
+                          {'t_ms':700000,'ok':True,'present':True}]
+        payload.update(poll_count=3,error_count=1,max_gap_ms=100000,confirmed_present=False,first_present_at='2026-10-22T06:27:37.010+00:00',
+                       evidence={'excerpt':'new','section_sha256':hashlib.sha256(b'new').hexdigest()})
+        self.assertEqual(remote.judge_watch(payload,request,self.check['saved_at'],None)[:2],('watch_gap','unreachable'))
+
+    def test_late_present_after_dense_absence_is_not_met(self):
+        payload=self.real_watch_payload('request_start'); request=common.read_json(self.base/'remote-checks/watch/w1/request.json')
+        saved=dt.datetime.fromisoformat(self.check['saved_at']); first=dt.datetime.fromisoformat(payload['first_poll_at'])
+        t=lambda sec: int((saved+dt.timedelta(seconds=sec)-first).total_seconds()*1000)
+        payload['polls']=[{'t_ms':t(sec),'ok':True,'present':False} for sec in (10,11,12)]+[
+          {'t_ms':t(sec),'ok':True,'present':True} for sec in (30,31,32)]
+        payload.update(poll_count=6,error_count=0,max_gap_ms=19000,confirmed_present=True,
+          first_present_at=(saved+dt.timedelta(seconds=30)).isoformat(),last_absent_at=(saved+dt.timedelta(seconds=12)).isoformat(),
+          timeline=[{'t_ms':payload['polls'][0]['t_ms'],'state':'absent'},{'t_ms':t(30),'state':'present'}],
+          evidence={'excerpt':'new','section_sha256':hashlib.sha256(b'new').hexdigest()})
+        code,status,_,report=remote.judge_watch(payload,request,self.check['saved_at'],None)
+        self.assertEqual((code,status),('immediate_not_met','fail')); self.assertIn('首次出现',report)
+
+    def test_reevaluate_watch_updates_archived_gap_without_restore_and_is_idempotent(self):
+        payload=self.real_watch_payload('request_start')
+        path=self.base/'watch-results.json'; common.atomic_write(path,payload)
+        # Ingest once to establish the immutable result archive, then model the earlier verdict.
+        remote.ingest_watch(self.base,self.m,path)
+        watch=self.m['remote_watches']['w1']; entry=self.m['remote_checks']['check1']
+        watch['verdict']='watch_gap'; entry['status']='unreachable'; entry['watch_verdict']['reason']='watch_gap'
+        with patch.object(remote,'restore',side_effect=AssertionError('restore must not run')):
+            first=remote.reevaluate_watch(self.base,self.m,'w1')
+            second=remote.reevaluate_watch(self.base,self.m,'w1')
+        self.assertFalse(first['results'][0]['duplicate']); self.assertTrue(second['results'][0]['duplicate'])
+        self.assertEqual(watch['verdict'],'immediate_not_met'); self.assertEqual(entry['status'],'fail')
+        self.assertEqual(entry['history'][-1]['variant'],'watch_reevaluation')
 
     def setUpCaseForWatch(self):
         # Restore the common fixture between verdict scenarios without recreating temp paths.

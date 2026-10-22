@@ -67,24 +67,28 @@ function evidenceFor(body, condition) {
 function cacheBust(url, identity, clock) {
   url.searchParams.set('uia_cb', String(clock()) + '-' + encodeURIComponent(identity));
 }
-export async function checkOne(check, fetcher = fetch, clock = () => Date.now()) {
+async function requestBody(fetcher, url, options, timeout, timer = setTimeout, clear = clearTimeout) {
+  const controller = new AbortController();
+  let timerId;
+  const deadline = new Promise((_, reject) => {
+    timerId = timer(() => { controller.abort(); reject(new Error('Request deadline')); }, timeout);
+  });
+  try {
+    return await Promise.race([(async () => {
+      const response = await fetcher(url, { ...options, signal: controller.signal });
+      return { response, body: await boundedBody(response) };
+    })(), deadline]);
+  } finally { clear(timerId); }
+}
+export async function checkOne(check, fetcher = fetch, clock = () => Date.now(), timer = setTimeout, clear = clearTimeout) {
   const checked_at = new Date(clock()).toISOString();
   const row = { id: check.id, checked_at, status: 'unreachable', http_status: null, conditions: [], reason: 'network', variant: check.cache_bust ? 'cache_busted' : 'default' };
   try {
     const url = new URL(check.url);
     if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search) throw new Error('Unsafe URL');
     if (check.cache_bust) cacheBust(url, check.id, clock);
-    const response = await fetcher(url, { method: check.method, credentials: 'omit', redirect: 'error', signal: AbortSignal.timeout(check.timeout_ms) });
+    const { response, body } = await requestBody(fetcher, url, { method: check.method, credentials: 'omit', redirect: 'error' }, check.timeout_ms, timer, clear);
     row.http_status = response.status;
-    // Bounded stream; never save/print response text or headers.
-    let body = '', size = 0;
-    const decoder = new TextDecoder();
-    for await (const chunk of response.body) {
-      size += chunk.length;
-      if (size > 1024 * 1024) throw new Error('Oversized public file');
-      body += decoder.decode(chunk, { stream: true });
-    }
-    body += decoder.decode();
     row.conditions = check.conditions.map(c => evaluate(body, c));
     row.evidence = check.conditions.map(c => evidenceFor(body, c));
     if (clock() > Date.parse(check.deadline)) row.reason = 'deadline';
@@ -107,54 +111,76 @@ async function boundedBody(response) {
   }
   return body + decoder.decode();
 }
-export async function runWatch(request, fetcher = fetch, clock = () => Date.now(), sleeper = ms => new Promise(resolve => setTimeout(resolve, ms))) {
-  const start = clock(), polls = [], offsets = [], timeline = [];
-  let first_poll_at = null, last_poll_at = null, last_absent_at = null, first_present_at = null;
-  let confirmed_present = false, consecutive = 0, error_count = 0, evidence = null, previous = null, max_gap_ms = 0, priorT = null;
+export async function runWatch(request, fetcher = fetch, clock = () => Date.now(), sleeper = ms => new Promise(resolve => setTimeout(resolve, ms)), timer = setTimeout, clear = clearTimeout) {
+  const start = clock(), records = [], offsets = [];
   const stopAt = Date.parse(request.watch_until);
-  while (clock() <= stopAt) {
-    const before = clock();
-    if (first_poll_at === null) first_poll_at = new Date(before).toISOString();
-    last_poll_at = new Date(before).toISOString();
-    let ok = false, present = false;
+  const cap = Math.ceil(request.timeout_ms / request.interval_ms) + 1;
+  let tick = 0, stoppedPresent = false;
+  const dispatch = (before) => {
+    const index = records.length;
+    const record = { t_ms: Math.max(0, Math.round(before - start)), started: before, ended: before, ok: false, present: false, evidence: null, done: false, promise: null };
+    records.push(record);
+    record.promise = (async () => {
     try {
       const url = new URL(request.url);
       if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search) throw new Error('Unsafe URL');
-      cacheBust(url, request.watch_id + '-' + polls.length, () => before);
-      const response = await fetcher(url, { method: 'GET', credentials: 'omit', redirect: 'error', signal: AbortSignal.timeout(request.timeout_ms) });
-      const responseAt = clock();
-      const body = await boundedBody(response);
-      ok = response.ok;
+      cacheBust(url, request.watch_id + '-' + index, () => before);
+      const { response, body } = await requestBody(fetcher, url, { method: 'GET', credentials: 'omit', redirect: 'error' }, request.timeout_ms, timer, clear);
+      record.ended = clock(); record.ok = response.ok;
       const outcomes = request.conditions.map(c => evaluate(body, c));
-      present = ok && outcomes.length > 0 && outcomes.every(Boolean);
+      record.present = record.ok && outcomes.length > 0 && outcomes.every(Boolean);
+      if (record.present) record.evidence = evidenceFor(body, request.conditions[0]);
       const date = response.headers?.get?.('Date');
       // Date has 1 s resolution (truncated); +500 ms centres the estimate.
-      if (date) { const parsed = Date.parse(date); if (Number.isFinite(parsed)) offsets.push(parsed + 500 - (before + responseAt) / 2); }
-      if (present && !evidence) evidence = evidenceFor(body, request.conditions[0]);
-      if (!ok) error_count++;
-    } catch { error_count++; }
-    const at = clock(), t_ms = Math.max(0, Math.round(at - start));
-    if (priorT !== null) max_gap_ms = Math.max(max_gap_ms, t_ms - priorT);
-    priorT = t_ms;
-    polls.push({ t_ms, ok, present });
-    const state = !ok ? 'error' : present ? 'present' : 'absent';
-    if (state !== previous) { timeline.push({ t_ms, state }); previous = state; }
-    const iso = new Date(at).toISOString(); last_poll_at = iso;
-    // Conservative: absent is only proven up to request start; present by response end.
-    if (ok && !present) last_absent_at = new Date(before).toISOString();
-    if (present) { if (!first_present_at) first_present_at = iso; consecutive++; }
-    else consecutive = 0;
-    if (consecutive >= 3) { confirmed_present = true; break; }
-    const remaining = stopAt - clock();
-    if (remaining <= 0) break;
-    await sleeper(Math.min(request.interval_ms, remaining));
+      if (date) { const parsed = Date.parse(date); if (Number.isFinite(parsed)) offsets.push(parsed + 500 - (before + record.ended) / 2); }
+    } catch { record.ended = clock(); }
+    finally { record.done = true; }
+    })();
+    record.promise.then(() => {
+      const sorted = records.slice().sort((a,b) => a.t_ms - b.t_ms);
+      let n = 0;
+      for (const p of sorted) { n = p.ok && p.present ? n + 1 : 0; if (n >= 3) { stoppedPresent = true; break; } }
+    });
+  };
+  while (!stoppedPresent) {
+    const due = start + tick * request.interval_ms;
+    const delay = due - clock();
+    if (delay > 0) await sleeper(Math.min(delay, Math.max(0, stopAt - clock())));
+    const at = clock();
+    if (at > stopAt) break;
+    if (records.filter(p => !p.done).length < cap) dispatch(at);
+    tick = Math.max(tick + 1, Math.floor((at - start) / request.interval_ms) + 1);
+    await new Promise(resolve => timer(resolve, 0));
+    const next = start + tick * request.interval_ms;
+    if (next > stopAt) break;
+    await sleeper(Math.max(0, next - clock()));
   }
+  await Promise.all(records.map(p => p.promise));
+  records.sort((a,b) => a.t_ms - b.t_ms);
+  const polls = records.map(({t_ms,ok,present}) => ({t_ms,ok,present}));
+  const first_poll_at = records.length ? new Date(records[0].started).toISOString() : null;
+  const last_poll_at = records.length ? new Date(Math.max(...records.map(p=>p.ended))).toISOString() : null;
+  const absent = records.filter(p => p.ok && !p.present);
+  const presents = records.filter(p => p.ok && p.present);
+  const last_absent_at = absent.length ? new Date(absent[absent.length-1].started).toISOString() : null;
+  const first_present_at = presents.length ? new Date(presents[0].ended).toISOString() : null;
+  const evidence = presents[0]?.evidence ?? null;
+  const confirmed_present = polls.some((_,i) => i+2<polls.length && polls.slice(i,i+3).every(p=>p.ok&&p.present));
+  let error_count = polls.filter(p=>!p.ok).length, max_gap_ms = 0, previous = null;
+  const timeline = [];
+  for (const poll of polls) {
+    if (previous !== null) max_gap_ms = Math.max(max_gap_ms, poll.t_ms - previous);
+    previous = poll.t_ms;
+    const state = !poll.ok ? 'error' : poll.present ? 'present' : 'absent';
+    if (timeline.at(-1)?.state !== state) timeline.push({t_ms:poll.t_ms,state});
+  }
+  const firstOk = polls.find(p=>p.ok);
   offsets.sort((a,b)=>a-b);
   const middle = Math.floor(offsets.length / 2);
   const clock_offset_ms = offsets.length ? Math.round(offsets.length % 2 ? offsets[middle] : (offsets[middle - 1] + offsets[middle]) / 2) : null;
-  return { schema_version: 'uia-remote-watch-results.v1', run_id: request.run_id, watch_id: request.watch_id,
+  return { schema_version: 'uia-remote-watch-results.v1', t_ms_basis: 'request_start', run_id: request.run_id, watch_id: request.watch_id,
     request_sha256: request.request_sha256, first_poll_at, last_poll_at, poll_count: polls.length, error_count,
-    max_gap_ms, baseline_absent: polls.some(p => p.ok) && !polls.find(p => p.ok).present,
+    max_gap_ms, baseline_absent: !!firstOk && !firstOk.present,
     last_absent_at, first_present_at, confirmed_present, clock_offset_ms, evidence, timeline, polls };
 }
 export async function main(dir = directory) {

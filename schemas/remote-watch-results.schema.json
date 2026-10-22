@@ -5,6 +5,7 @@
   "additionalProperties": false,
   "required": ["schema_version", "run_id", "watch_id", "request_sha256", "first_poll_at", "last_poll_at", "poll_count", "error_count", "max_gap_ms", "baseline_absent", "last_absent_at", "first_present_at", "confirmed_present", "clock_offset_ms", "evidence", "timeline", "polls"],
   "properties": {
+    "t_ms_basis": {"enum": ["request_start"]},
     "schema_version": {"const": "uia-remote-watch-results.v1"}, "run_id": {"type": "string"}, "watch_id": {"type": "string"},
     "request_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
     "first_poll_at": {"type": ["string", "null"], "format": "date-time"}, "last_poll_at": {"type": ["string", "null"], "format": "date-time"},

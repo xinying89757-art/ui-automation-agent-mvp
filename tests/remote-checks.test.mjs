@@ -70,3 +70,24 @@ test('watch records a polling gap without exposing response data',async()=>{
  const result=await runWatch(request,async()=>new Response('old'),()=>now,async()=>{now+=6000;});
  assert.equal(result.poll_count,2); assert.equal(result.max_gap_ms,6000); assert.deepEqual(result.polls.map(p=>Object.keys(p)),[['t_ms','ok','present'],['t_ms','ok','present']]);
 });
+test('watch body stream is hard-bounded by timeout',async()=>{
+ const never=()=>new Response(new ReadableStream({start(c){c.enqueue(new TextEncoder().encode('old'));}}));
+ const t=Date.now(); const result=await checkOne({...check,timeout_ms:50},never,()=>start+1000);
+ assert.equal(result.status,'unreachable'); assert.ok(Date.now()-t<500);
+});
+test('watch dispatches later polls while a prior request hangs',async()=>{
+ const request={schema_version:'uia-remote-watch.v1',run_id:'R',watch_id:'H',request_sha256:'c'.repeat(64),url:'http://example.test/file',
+   conditions:[{op:'contains',value:'new'}],watch_until:new Date(Date.now()+125).toISOString(),interval_ms:25,timeout_ms:200};
+ let calls=0;
+ const result=await runWatch(request,()=>{calls++;return new Promise(()=>{});});
+ assert.ok(calls>=4); assert.ok(result.error_count>=4);
+});
+test('watch output uses request-start offsets and sorts completed polls',async()=>{
+ const now=Date.now(); const request={schema_version:'uia-remote-watch.v1',run_id:'R',watch_id:'S',request_sha256:'d'.repeat(64),url:'http://example.test/file',
+   conditions:[{op:'contains',value:'new'}],watch_until:new Date(now+180).toISOString(),interval_ms:30,timeout_ms:100};
+ let call=0;
+ const result=await runWatch(request,async()=>{const n=call++; await new Promise(r=>setTimeout(r,n===0?70:2)); return new Response('old');});
+ assert.equal(result.t_ms_basis,'request_start');
+ assert.deepEqual(result.polls.map(p=>p.t_ms),result.polls.map(p=>p.t_ms).slice().sort((a,b)=>a-b));
+ assert.ok(result.poll_count>=3);
+});

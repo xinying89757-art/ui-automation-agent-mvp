@@ -216,14 +216,72 @@ def wait_for_watch(base, watch, clock=None, sleeper=None, heartbeat=None):
         sleeper(min(5, remaining))
 
 
+WATCH_EVALUATOR_VERSION = '1'
+
+def judge_watch(payload, request, saved_at, box_clock_offset_ms):
+    """Purely judge archived watch evidence; no manifest mutation or I/O."""
+    saved = timestamp(saved_at)
+    first = timestamp(payload['first_poll_at']) if payload['first_poll_at'] else None
+    latency_ms = request.get('max_latency_seconds', 0) * 1000
+    latency = int((timestamp(payload['first_present_at']) - saved).total_seconds() * 1000) if payload.get('first_present_at') else None
+    code = None; status = 'unreachable'
+    if first is None: code = 'watch_gap'
+    elif first > saved: code = 'watch_started_late'
+    elif not any(p['ok'] for p in payload['polls']): code = 'watch_gap'
+    elif not payload['baseline_absent']: code = 'baseline_present'
+    elif payload['clock_offset_ms'] is None or abs(payload['clock_offset_ms']) > request.get('max_clock_offset_ms', 1000): code = 'clock_offset'
+    elif box_clock_offset_ms is not None and abs(box_clock_offset_ms) > request.get('max_clock_offset_ms', 1000): code = 'clock_offset'
+    if code is None:
+        start_ms = first.timestamp() * 1000
+        basis = payload.get('t_ms_basis')
+        absent = [p for p in payload['polls'] if p['ok'] and not p['present']]
+        proven = {id(p): start_ms + p['t_ms'] - (0 if basis == 'request_start' else request['timeout_ms']) for p in absent}
+        deadline = saved + dt.timedelta(milliseconds=latency_ms)
+        threshold = max(3 * request['interval_ms'], request['timeout_ms'] + request['interval_ms'])
+        polls = payload['polls']
+        first_present_index = next((i for i, p in enumerate(polls) if p['ok'] and p['present']), len(polls))
+        deadline_ms = deadline.timestamp() * 1000
+        # Dense absence: consecutive ok+absent polls (no gap > threshold) whose tail reaches the watch end
+        # or the first present poll, with >= 3 of them proven absent after save + max_latency.
+        dense = False
+        run_start = None
+        for i in range(first_present_index):
+            poll = polls[i]
+            if not (poll['ok'] and not poll['present']):
+                run_start = None; continue
+            if run_start is None or poll['t_ms'] - polls[i - 1]['t_ms'] > threshold: run_start = i
+        if run_start is not None and first_present_index > 0 and polls[first_present_index - 1]['ok'] and not polls[first_present_index - 1]['present']:
+            dense = sum(proven[id(p)] > deadline_ms for p in polls[run_start:first_present_index]) >= 3
+        if payload['confirmed_present'] and payload.get('first_present_at') and latency < -request.get('max_clock_offset_ms', 1000):
+            code = 'clock_offset'
+        elif payload['confirmed_present'] and payload.get('first_present_at') and latency <= latency_ms:
+            code, status = 'immediate_met', 'pass'
+        elif dense:
+            code, status = 'immediate_not_met', 'fail'
+        else: code = 'watch_gap'
+    chinese = {'immediate_met':'立即生效已确认', 'immediate_not_met':'保存后仍未出现新内容',
+               'watch_started_late':'监听启动晚于保存，无法验证立即生效', 'baseline_present':'首个有效采样已包含新内容，无法验证变化时间',
+               'clock_offset':'时钟偏差超出允许范围，无法验证立即生效', 'watch_gap':'保存后的时效窗口内没有有效采样，无法验证立即生效'}
+    if code == 'immediate_not_met':
+        if latency is None:
+            last = next((p for p in reversed(payload['polls']) if p['ok'] and not p['present']), None)
+            end = timestamp(payload['last_absent_at']).timestamp() * 1000 if payload.get('last_absent_at') else (start_ms + last['t_ms'] if payload.get('t_ms_basis') == 'request_start' else start_ms + last['t_ms'] - request['timeout_ms'])
+            n = int(round((end - saved.timestamp() * 1000) / 1000))
+            report = f'保存后 {n} 秒前台仍未出现新内容（时限 {request.get("max_latency_seconds", 0)} 秒）'
+        else: report = f'保存后 {int(round(latency / 1000))} 秒才首次出现新内容（时限 {request.get("max_latency_seconds", 0)} 秒）'
+    else: report = chinese[code]
+    return code, status, latency, report
+
+
 def ingest_watch(base, m, file):
     require(not m.get('active_batch'), 'Wait for the active batch before ingesting')
     payload = read_json(file)
     required = {'schema_version', 'run_id', 'watch_id', 'request_sha256', 'first_poll_at', 'last_poll_at',
                 'poll_count', 'error_count', 'max_gap_ms', 'baseline_absent', 'last_absent_at',
                 'first_present_at', 'confirmed_present', 'clock_offset_ms', 'evidence', 'timeline', 'polls'}
-    require(isinstance(payload, dict) and set(payload) == required and payload.get('schema_version') == 'uia-remote-watch-results.v1' and
+    require(isinstance(payload, dict) and set(payload) in (required, required | {'t_ms_basis'}) and payload.get('schema_version') == 'uia-remote-watch-results.v1' and
             payload.get('run_id') == m['run_id'], 'Invalid watch result envelope')
+    require(payload.get('t_ms_basis') in (None, 'request_start'), 'Invalid t_ms_basis')
     watch_id = payload.get('watch_id'); watches = m.get('remote_watches', {})
     require(watch_id in watches, 'Unknown watch_id')
     watch = watches[watch_id]
@@ -279,39 +337,9 @@ def ingest_watch(base, m, file):
     key, entry = entries[-1]; req = entry['request']; saved = timestamp(req['saved_at'])
     require(req.get('max_latency_seconds') == request.get('max_latency_seconds') and req.get('url') == request.get('url') and
             req.get('conditions') == request.get('conditions'), 'Watch does not match the regular remote assertion')
-    first = timestamp(payload['first_poll_at']) if payload['first_poll_at'] else None
-    latency_ms = req.get('max_latency_seconds', 0) * 1000
-    latency = int((timestamp(payload['first_present_at']) - saved).total_seconds() * 1000) if payload.get('first_present_at') else None
-    code = None; status = 'unreachable'
-    if first is None: code = 'watch_gap'
-    elif first > saved: code = 'watch_started_late'
-    elif not any(p['ok'] for p in payload['polls']): code = 'watch_gap'
-    elif not payload['baseline_absent']: code = 'baseline_present'
-    elif payload['clock_offset_ms'] is None or abs(payload['clock_offset_ms']) > request.get('max_clock_offset_ms', 1000): code = 'clock_offset'
-    elif watch.get('box_clock_offset_ms') is not None and abs(watch['box_clock_offset_ms']) > request.get('max_clock_offset_ms', 1000): code = 'clock_offset'
-    elif watch.get('box_clock_offset_ms') is None:
+    code, status, latency, reason = judge_watch(payload, request, saved.isoformat(), watch.get('box_clock_offset_ms'))
+    if watch.get('box_clock_offset_ms') is None and code not in {'watch_started_late', 'watch_gap', 'baseline_present', 'clock_offset'}:
         watch['clock_offset_note'] = 'box_clock_offset_unavailable'
-    if code is None:
-        first_ms = first.timestamp() * 1000; saved_ms = saved.timestamp() * 1000
-        # Poll t_ms is measured from the first poll start; any successful sample inside (saved, saved+window] counts.
-        in_window = any(p['ok'] and 0 < (first_ms + p['t_ms'] - saved_ms) <= latency_ms for p in payload['polls'])
-        if not in_window and not payload['confirmed_present']:
-            code = 'watch_gap'
-        elif payload['confirmed_present'] and payload.get('first_present_at'):
-            if latency < -request.get('max_clock_offset_ms', 1000): code = 'clock_offset'
-            elif latency <= latency_ms: code, status = 'immediate_met', 'pass'
-            elif payload.get('last_absent_at') and timestamp(payload['last_absent_at']) > saved + dt.timedelta(milliseconds=latency_ms):
-                code, status = 'immediate_not_met', 'fail'
-            else: code = 'watch_gap'  # late first-present without an absent sample after the window is not proof
-        elif payload.get('last_absent_at') and timestamp(payload['last_absent_at']) > saved + dt.timedelta(milliseconds=latency_ms):
-            code, status = 'immediate_not_met', 'fail'
-        else:
-            code = 'watch_gap'
-    chinese = {'immediate_met':'立即生效已确认', 'immediate_not_met':'最终内容在 {n} 秒后生效',
-               'watch_started_late':'监听启动晚于保存，无法验证立即生效', 'baseline_present':'首个有效采样已包含新内容，无法验证变化时间',
-               'clock_offset':'时钟偏差超出允许范围，无法验证立即生效', 'watch_gap':'保存后的时效窗口内没有有效采样，无法验证立即生效'}
-    reason = ('最终 ' + str(round(latency/1000, 3)) + ' 秒后生效' if code == 'immediate_not_met' and latency is not None
-              else '超过时效窗口仍未出现新内容' if code == 'immediate_not_met' else chinese[code])
     archive = base / 'remote-checks' / 'watch' / watch_id / ('ingested-' + receipt + '.json')
     row = {'id': key, 'checked_at': payload['last_poll_at'] or now(), 'status': status, 'http_status': None,
            'conditions': [bool(payload['confirmed_present'])] * len(req.get('conditions', [])),
@@ -328,6 +356,47 @@ def ingest_watch(base, m, file):
     event(m, 'remote_watch_ingested', case_id=req['case_id'], watch_id=watch_id, verdict=code)
     return {'ingested': 1, 'duplicate': False, 'case_id': req['case_id'], 'status': status, 'reason': code,
             'report': reason, 'latency_ms': latency, 'cleanup': cleanup}
+
+
+def reevaluate_watch(base, m, watch_id=None):
+    require(not m.get('active_batch'), 'Wait for the active batch before reevaluating')
+    candidates = [(wid, w) for wid, w in m.get('remote_watches', {}).items()
+                  if w.get('result_sha256') and (watch_id is None or wid == watch_id)]
+    require(candidates, 'No archived watch result to reevaluate')
+    results = []
+    for wid, watch in candidates:
+        archive = base / 'remote-checks' / 'watch' / wid / ('ingested-' + watch['result_sha256'] + '.json')
+        require(archive.is_file() and file_hash(archive) == watch['result_sha256'], 'Archived watch result hash mismatch')
+        payload = read_json(archive)
+        req = read_json(base / watch['request_file'])
+        matches = [(key, row) for key, row in m.get('remote_checks', {}).items()
+                   if row.get('request', {}).get('case_id') == watch['case_id'] and
+                   row.get('request', {}).get('assertion_id') == watch['assertion_id'] and
+                   row.get('active', True) and row.get('request', {}).get('saved_at') and
+                   timestamp(row['request']['saved_at']) >= timestamp(watch['armed_at'])]
+        require(matches, 'No matching remote check for archived watch')
+        key, entry = matches[-1]; check_req = entry['request']
+        code, status, latency, report = judge_watch(payload, req, check_req['saved_at'], watch.get('box_clock_offset_ms'))
+        prior = watch.get('watch_reevaluation')
+        if prior and prior.get('reason') == code and prior.get('status') == status and prior.get('latency_ms') == latency:
+            results.append({'watch_id': wid, 'duplicate': True, 'reason': code, 'status': status})
+            continue
+        row = {'id': key, 'checked_at': now(), 'status': status, 'http_status': None,
+               'conditions': [bool(payload['confirmed_present'])] * len(check_req.get('conditions', [])),
+               'reason': code, 'variant': 'watch_reevaluation', 'evaluator_version': WATCH_EVALUATOR_VERSION,
+               'latency_ms': latency, 'watch_result_sha256': watch['result_sha256'],
+               'watch_result_file': str(archive.relative_to(base))}
+        entry.setdefault('history', []).append(row); entry['status'] = status
+        entry['watch_verdict'] = {'reason': code, 'report': report, 'latency_ms': latency,
+                                  'receipt_sha256': watch['result_sha256'], 'evaluator_version': WATCH_EVALUATOR_VERSION}
+        reevaluated_at = now()
+        watch.update(verdict=code, reevaluated_at=reevaluated_at,
+                     watch_reevaluation={'reason': code, 'status': status, 'latency_ms': latency,
+                                         'evaluator_version': WATCH_EVALUATOR_VERSION, 'reevaluated_at': reevaluated_at})
+        fold(m, check_req['case_id'])
+        event(m, 'remote_watch_reevaluated', case_id=check_req['case_id'], watch_id=wid, verdict=code)
+        results.append({'watch_id': wid, 'duplicate': False, 'reason': code, 'status': status, 'report': report})
+    return {'reevaluated': len(results), 'results': results}
 
 
 def environment_key(m):

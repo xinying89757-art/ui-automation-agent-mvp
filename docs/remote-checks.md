@@ -50,6 +50,8 @@ node /path/to/remote-checks/check.mjs
 3. `arm-watch` 后立即在 box 运行 `.venv/bin/python scripts/uia.py go cases.xlsx --profile PROFILE --cases TC-0036`；该命令到该用例时会自行等待至 `save_not_before`（等待超过 60 分钟会拒绝），再执行保存流程。
 4. 将生成的 `watch-results.json` 带回 box，并运行 `.venv/bin/python scripts/uia.py remote-checks ingest-watch --run RUN /path/to/watch-results.json`。
 
+旧版 `watch_gap` 可用 `.venv/bin/python scripts/uia.py remote-checks reevaluate-watch --run RUN [--watch WATCH_ID]` 对已归档并校验 SHA-256 的监听结果重新判定。此操作只更新本地判定历史，不访问前台或恢复站点数据；相同判定重复执行不会重复追加历史。
+
 监听结果按 `schemas/remote-watch-results.schema.json` 校验；请求格式见 `schemas/remote-watch-request.schema.json`。仅保存每次采样的时刻、HTTP 成功标志和条件匹配标志、状态变化时间线及首次出现时限长脱敏证据，不保存响应头或完整正文。`ingest-watch` 将 verdict 写入同一 regular remote check 并经现有 case folding / cleanup 流程结案；重复导入幂等。
 
 回到本机导入：

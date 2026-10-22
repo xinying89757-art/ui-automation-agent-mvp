@@ -131,6 +131,10 @@ test('entry replay treats a navigation click as satisfied when the next target i
   const browser = await chromium.launch({ headless: true });
   try {
     const page = await browser.newPage();
+    await page.setContent('<button id="target">Edit</button><button onclick="document.body.innerHTML=\'reloaded\'">Products</button>');
+    const pre = await navigateSnapshot(page, cfg, { steps: ['click:text=Products', 'click:#target'], entrySteps: 3 });
+    assert.equal(pre.failed_step, null);
+    assert.deepEqual(pre.steps[0], { index: 1, skipped: 'already_satisfied' });
     await page.setContent('<button id="target">Edit</button>');
     const ok = await navigateSnapshot(page, cfg, { steps: ['click:text=Products', 'click:#target'], entrySteps: 2 });
     assert.equal(ok.failed_step, null);

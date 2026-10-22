@@ -132,7 +132,7 @@ export function parseStep(action) {
   }
   return { verb, target: value, value };
 }
-async function alreadyThere(page, actions, index, entrySteps, options) {
+async function alreadyThere(page, actions, index, entrySteps, options, waitMs = 3000) {
   const [kind, action] = actions[index] ?? [];
   const [nextKind, nextAction] = actions[index + 1] ?? [];
   if (kind !== 'step' || index >= entrySteps || !/^(click|hover):/u.test(action ?? '')) return false;
@@ -140,12 +140,12 @@ async function alreadyThere(page, actions, index, entrySteps, options) {
   try {
     const next = parseStep(nextAction);
     const nextOptions = index + 1 < entrySteps ? { ...options, frame: undefined, scope: undefined } : options;
-    const deadline = Date.now() + 3000;
-    while (Date.now() < deadline) {
+    const deadline = Date.now() + waitMs;
+    do {
       const matched = await resolveActionTarget(page, next.target, nextOptions);
       if (matched && await matched.locator.isVisible().catch(() => false)) return true;
       await new Promise(resolve => setTimeout(resolve, 200));
-    }
+    } while (Date.now() < deadline);
   } catch { /* fall through to the original failure */ }
   return false;
 }
@@ -162,6 +162,12 @@ export async function navigateSnapshot(page, cfg, { goto, openTarget: named, ste
     context.on('page', onPage);
     let timer;
     const budget = kind === 'open' ? 60000 : 10000;
+    // Entry routes are idempotent: skip a navigation click whose destination is already showing (it may reload the area).
+    if (index + 1 < entrySteps && await alreadyThere(page, actions, index, entrySteps, options, 1500)) {
+      results.push({ index: index + 1, skipped: 'already_satisfied' });
+      context.off('page', onPage);
+      continue;
+    }
     try {
       await Promise.race([(async () => {
         if (kind === 'goto') await page.goto(allowedURL(action, cfg), { timeout: 10000, waitUntil: 'domcontentloaded' });

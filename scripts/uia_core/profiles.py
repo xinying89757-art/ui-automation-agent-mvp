@@ -232,7 +232,7 @@ def invoke_login(cfg, runner=None, check_only=False, force=False, evidence=None,
         Path(temp).unlink(missing_ok=True)
 
 
-def invoke_snapshot(cfg, runner=None, area=None, manual=False, frame=None, scope=None, open_target=None, hover=None, clicks=None, goto=None, steps=None):
+def invoke_snapshot(cfg, runner=None, area=None, manual=False, frame=None, scope=None, open_target=None, hover=None, clicks=None, goto=None, steps=None, entry_steps=None):
     runner = Path(runner or runtime_root()).resolve()
     require((runner / "node_modules/@playwright/test").is_dir(),
             "Install Node dependencies first: npm --prefix " + str(runner) + " ci")
@@ -251,6 +251,8 @@ def invoke_snapshot(cfg, runner=None, area=None, manual=False, frame=None, scope
                 command.extend([flag, value])
         if manual:
             command.append("--manual")
+        if entry_steps is not None:
+            command.extend(['--entry-steps', str(entry_steps)])
         for selector in clicks or []:
             command.extend(["--click", selector])
         for step in steps or []:

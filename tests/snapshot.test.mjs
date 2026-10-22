@@ -105,3 +105,24 @@ test('named page paths and target aliases share the generated-test opener', asyn
     assert.match(result.failed_step.reason, /unknown named/u);
   } finally { await browser.close(); }
 });
+
+test('semantic text action reveals a nested row link before clicking passive duplicate text', async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.setContent('<iframe id="outer"></iframe>');
+    const outer = page.frames().find(frame => frame !== page.mainFrame());
+    await outer.setContent('<iframe id="list"></iframe>');
+    const inner = page.frames().find(frame => frame.parentFrame() === outer);
+    for (const label of ['title="编辑">✎', '><i>✎</i><span>编辑</span>']) {
+      await inner.setContent(`<style>tr a {visibility:hidden} tr:hover a {visibility:visible}</style>
+        <span>编辑</span><table><tr><td><a href="#" onclick="this.dataset.clicked='yes';return false" ${label}</a></td></tr></table>`);
+      const result = await navigateSnapshot(page, cfg, { map: {}, steps: ['click:text=编辑'] });
+      assert.equal(result.failed_step, null);
+      assert.equal(await inner.locator('a').getAttribute('data-clicked'), 'yes');
+      assert.equal(result.steps[0].frame.selector, '#list');
+    }
+    const structure = await scopedStructure(page, { frame: '#list' });
+    assert.equal(structure.nodes.some(node => node.tag === 'a'), true);
+  } finally { await browser.close(); }
+});

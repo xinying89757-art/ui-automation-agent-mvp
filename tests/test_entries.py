@@ -118,15 +118,15 @@ class EntryHintsTests(unittest.TestCase):
         self.assertEqual(experience.sync_checklist(self.base, self.m)['question_count'], 0)
 
     def test_explicit_precondition_page_overrides_heuristic(self):
-        self.case('C1', raw='使用新控制台并打开旧页面')
+        self.case('C1', raw='使用新控制台页面并打开旧页面')
         row = preconditions.triage(self.base, self.m)[0]
         args = cli.parser().parse_args(['preconditions', 'classify', '--run', 'R', '--key', row['key'],
-                                       '--as', 'ai_prepare', '--label', '准备数据', '--page', '新控制台'])
+                                       '--as', 'ai_prepare', '--label', '准备数据', '--page', '新控制台页面'])
         result = cli.dispatch(args, self.base / 'run.json', self.m)
         self.assertEqual(result['entry_question_count'], 1)
         q = self.m['questions'][preconditions.QUESTION_KEY]
-        self.assertEqual([r['page'] for r in q['entries'] if r['block'] == 'D'], ['新控制台'])
-        self.assertEqual(self.m['precondition_tasks'][0]['page'], '新控制台')
+        self.assertEqual([r['page'] for r in q['entries'] if r['block'] == 'D'], ['新控制台页面'])
+        self.assertEqual(self.m['precondition_tasks'][0]['page'], '新控制台页面')
 
     def test_raw_phrases_are_conservative(self):
         self.assertEqual(entries.phrases('打开商品详情页面；进入内容编辑器；准备三条记录'), ['商品详情页面', '内容编辑器'])

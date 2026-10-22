@@ -1,6 +1,7 @@
 """Shared, non-secret page entry hints; run.json alone owns run progress."""
 import json
 import re
+import shlex
 from pathlib import Path
 
 from . import common
@@ -45,8 +46,9 @@ def parse(text):
         require(len(pair) == 2 and all(x.strip() for x in pair), '入口提示格式：页面=大概路径')
         label, path = (x.strip() for x in pair)
         require(key(label), '入口页面名称不能为空')
-        frame = re.search(r'(?:frame\s*[:=：]\s*|在\s*|[（(]\s*)(#[\w-]+)(?:\s*里|\s*[)）]|\s*$)', path, re.I)
+        frame = re.search(r'(?<![\w.])([#.][\w-]+)', path)
         result.append({'label': label.lstrip('?？'), 'path_text': path,
+                       **({'not_a_page': True} if re.search(r'不是(?:后台)?页面|非页面', path) else {}),
                        **({'frame': frame.group(1)} if frame else {})})
     require(result, '入口提示不能为空')
     return result
@@ -80,6 +82,7 @@ def store(m, hints, source='handoff', confirmed=False):
     safe(hints, m['config'])
     data = load()
     for hint in hints:
+        hint = dict(hint, not_a_page=bool(re.search(r'不是(?:后台)?页面|非页面', hint['path_text'])))
         existing = resolve(hint['label'])
         name = existing['key'] if existing and existing['source'] != 'page-map' else key(hint['label'])
         old = data['entries'].get(name, {})
@@ -140,6 +143,10 @@ def phrases(text):
 
 
 def page_rows(base, m):
+    path = knowledge_path('page-map.yaml')
+    pages = (read_yaml(path) if path.is_file() else {}).get('pages', {})
+    page_names = {key(n) for name, row in pages.items()
+                  for n in [name, row.get('label', ''), row.get('entry', ''), *row.get('aliases', [])] if n}
     candidates = list(m.get('entry_pages', {}).items())
     for row in m.get('precondition_triage', []):
         if row['classification'] in {'explore', 'ai_prepare', 'unclassified'}:
@@ -148,12 +155,13 @@ def page_rows(base, m):
     for cid, case in m['cases'].items():
         path = base / case.get('case_spec', f'cases/{cid}/case-spec.yaml')
         spec = read_yaml(path) if path.is_file() else {}
-        nodes = [spec.get('start_page')] + [s.get('target') for s in spec.get('steps', [])]
-        nodes += [c.get('target') for a in spec.get('assertions', []) for c in a.get('checks', [])]
+        nodes = [spec.get('start_page')]
         candidates += [(p.lstrip('?？'), [cid]) for p in nodes if isinstance(p, str) and p.strip()]
     grouped = []
     for page, cases in candidates:
         safe(page, m['config'])
+        if key(page) not in page_names and not re.search(r'(页面|页|编辑器|弹窗|面板|列表|后台|详情)$', page):
+            continue
         if resolve(page):
             continue
         row = next((r for r in grouped if matches(page, r['page'])), None)
@@ -187,18 +195,56 @@ def request(m, page, cases, base=None):
         q['case_ids'] = sorted(set(q['case_ids']) | set(cases))
 
 
+def navigation_hint(hint):
+    """Project a handoff into navigation without persisting guessed selectors."""
+    hint = dict(hint)
+    if hint.get('not_a_page') or hint.get('steps') or hint.get('open_target'):
+        return hint
+    parts = re.split(r'→|->|>|＞', hint.get('path_text', ''))
+    def label(text):
+        return re.sub(r'（[^）]*）|\([^)]*\)', '', text).split('，')[0].split(',')[0].strip()
+    first = label(parts[0])
+    node = {'内容管理': 'content-admin', '编辑网站': 'editor', '网站编辑': 'editor'}.get(first)
+    if node:
+        hint['node'] = node
+    else:
+        known = resolve(first)
+        if not known or not known.get('open_target'):
+            return hint
+        hint['open_target'] = known['open_target']
+    hint['steps'] = ['click:text=' + label(p) for p in parts[1:] if label(p)]
+    hint['route_source'] = 'path_text'
+    return hint
+
+
+def confirmation(run, page, hint):
+    steps = list(hint.get('steps', []))
+    # Named page-map areas are valid targets for the shared navigator.
+    if hint.get('open_target') or hint.get('node'):
+        steps.insert(0, 'click:' + (hint.get('open_target') or hint['node']))
+    command = ['python3', 'scripts/uia.py', 'hints', 'confirm', '--run', run, '--page', page]
+    for step in steps:
+        command += ['--step', step]
+    if hint.get('frame'):
+        command += ['--frame', hint['frame']]
+    return shlex.join(command)
+
+
 def snapshot_route(args, cfg):
-    """Prepend concrete entry navigation, leaving free text for the reasoning agent."""
     hint = resolve(args.entry)
     require(hint, '页面入口未知：请走入口提示问题（清单 D 块），不要请求演示')
     safe({'hint': hint, 'entry': args.entry, 'purpose': args.purpose}, cfg)
+    hint = navigation_hint(hint)
+    if hint.get('not_a_page'):
+        return hint, None
     steps = list(hint.get('steps', []))
-    if not steps and not hint.get('open_target'):
+    if not steps and not hint.get('open_target') and not hint.get('node'):
         return hint, None
     require(not args.goto and not args.open_target and not args.click and not args.hover,
             '--entry 的后续动作请使用 --step；入口导航由知识提供')
     args.goto = steps.pop(0)[5:] if steps and steps[0].startswith('goto:') else None
     args.open_target = hint.get('open_target')
+    args.node = hint.get('node', 'page')
     args.frame = args.frame or hint.get('frame')
     count = len(steps) + bool(args.goto) + bool(args.open_target)
     args.step = steps + args.step

@@ -293,7 +293,26 @@ export async function authenticatedSession(browser, cfg, { force = false, allowL
 
 /** Visible-only bounded DOM summaries. Never include form values or session refs. */
 export async function scopedStructure(page, { frame, scope } = {}) {
-  const root = frame ? page.frameLocator(frame).locator(scope || 'body') : page.locator(scope || 'body');
+  let root = frame ? page.frameLocator(frame).locator(scope || 'body') : page.locator(scope || 'body');
+  // Entry hints may name an editor iframe nested inside a backend list frame.
+  if (frame && /^[#.][\w-]+$/u.test(frame)) {
+    const deadline = Date.now() + 10000;
+    let matched;
+    while (!matched && Date.now() < deadline) {
+      for (const candidate of page.frames()) {
+        if (candidate === page.mainFrame()) continue;
+        try {
+          const element = await candidate.frameElement();
+          if (await element.isVisible() && await element.evaluate((el, selector) => el.matches(selector), frame)) {
+            matched = candidate; break;
+          }
+        } catch { /* Frames can detach during navigation. */ }
+      }
+      if (!matched) await new Promise(resolve => setTimeout(resolve, 150));
+    }
+    if (!matched) throw new Error('Snapshot frame not reached');
+    root = matched.locator(scope || 'body');
+  }
   await root.waitFor({ state: 'visible', timeout: 10000 });
   return root.evaluate(container => {
     const visible = node => {
@@ -336,7 +355,8 @@ export async function snapshotSession(browser, cfg, { area, manual = false, fram
     try { structure = await scopedStructure(page, { frame, scope }); }
     catch { structure = { nodes: [], unavailable: true }; }
     Object.assign(structure, { frame: frame || null, scope: scope || 'body', path: urlPath(page.url()),
-      failed_step: reached.failed_step, popups: reached.popups });
+      ...(frame ? { frame_reached: !structure.unavailable } : {}),
+      failed_step: reached.failed_step, steps: reached.steps, popups: reached.popups });
     structure.dialogs = [];
     structure.iframes = [];
     for (const candidate of page.frames()) {

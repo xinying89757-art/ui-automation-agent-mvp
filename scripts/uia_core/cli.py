@@ -422,7 +422,6 @@ def execute(args):
             return result
     if args.command == "snapshot":
         from .common import config
-        area = {"page": None, "content-admin": "内容管理", "editor": "编辑网站"}[args.node]
         require(not args.save_as or args.run, "--save-as requires --run")
         require(not args.entry or args.run, "--entry requires --run")
         if args.run:
@@ -434,10 +433,14 @@ def execute(args):
                     entry_hint, entry_count = snapshot_route(args, m['config'])
                     if entry_count is None:
                         return {'entry': args.entry, 'entry_hint': entry_hint, 'entry_reached': False,
-                                'instruction': '将入口路径翻译为 --goto/--step 后执行 snapshot；再用 uia.py hints confirm --run R --page P --step ... [--frame ...] 保存具体步骤。'}
+                                'not_a_page': bool(entry_hint.get('not_a_page')),
+                                'instruction': '该项不是页面，跳过导航。' if entry_hint.get('not_a_page') else
+                                '将入口路径翻译为 --goto/--step 后执行 snapshot；再用 uia.py hints confirm --run R --page P --step ... [--frame ...] 保存具体步骤。'}
+                area = {"page": None, "content-admin": "内容管理", "editor": "编辑网站"}[args.node]
                 started, t0 = now(), _time.monotonic()
                 try:
-                    snapshot_result = profiles.invoke_snapshot(m["config"], path.parent / "runner", area, args.manual, args.frame, args.scope, args.open_target, args.hover, args.click, args.goto, args.step)
+                    snapshot_result = profiles.invoke_snapshot(m["config"], path.parent / "runner", area, args.manual, args.frame, args.scope, args.open_target, args.hover, args.click, args.goto, args.step,
+                                                              **({'entry_steps': entry_count} if args.entry else {}))
                 except UiaError:
                     from .secrets import scrub_text
                     m.setdefault('exploration', []).append({'at': now(), 'method': 'snapshot', 'purpose': scrub_text(args.purpose, m['config']),
@@ -447,8 +450,16 @@ def execute(args):
                 failed = snapshot_result.get('structure', {}).get('failed_step')
                 failed_index = failed.get('index') if isinstance(failed, dict) else failed
                 entry_reached = bool(args.entry and (not failed or isinstance(failed_index, int) and failed_index > entry_count))
+                if entry_hint and entry_hint.get('frame') and snapshot_result.get('structure', {}).get('frame_reached') is False:
+                    entry_reached = False
                 if args.entry:
-                    snapshot_result.update(entry=args.entry, entry_hint=entry_hint, entry_reached=entry_reached)
+                    from .entries import confirmation
+                    snapshot_result.update(entry=args.entry, entry_hint=entry_hint, entry_reached=entry_reached,
+                                           route_used={'node': args.node, 'goto': args.goto, 'open_target': args.open_target,
+                                                       'steps': args.step[:entry_count - bool(args.goto) - bool(args.open_target)]},
+                                           frame_hint=entry_hint.get('frame'), failed_step=failed)
+                    if entry_reached:
+                        snapshot_result['confirm_command'] = confirmation(args.run, args.entry, entry_hint)
                 known = any(c.get("registration") for c in m["cases"].values())
                 # Exploration baseline: one row per snapshot (method/where/how long); no page content.
                 m.setdefault("exploration", []).append({"node": args.node, "known_page": known,
@@ -467,6 +478,7 @@ def execute(args):
                 save(path, m)
                 return snapshot_result
         cfg = config(profiles.profile_path(args.profile) if args.profile else args.config)
+        area = {"page": None, "content-admin": "内容管理", "editor": "编辑网站"}[args.node]
         return profiles.invoke_snapshot(cfg, area=area, manual=args.manual, frame=args.frame, scope=args.scope, open_target=args.open_target, hover=args.hover, clicks=args.click, goto=args.goto, steps=args.step)
     if args.command == "init":
         return workflow.init(args.run_id, profiles.profile_path(args.profile) if args.profile else args.config)

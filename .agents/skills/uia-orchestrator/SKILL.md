@@ -14,6 +14,9 @@ API-backed agent server. Read and follow stage skills in the current conversatio
 do not invoke Claude Code `Task()` or assume a shell script can invoke the model.
 
 Before presenting the checklist, classify every unmatched workbook precondition; ai_prepare/explore are AI tasks, human_env joins the single upfront question block.
+For any page with an entry hint, always begin with `snapshot --entry` / `generator --entry`.
+Follow the hinted backend area first; never start component exploration in another area.
+A generator failure classified `subagent_start` is infrastructure failure and never a demo rung.
 Explore each node once: knowledge → snapshot --goto/--open-target/--step/--frame/--scope → generator_setup_page with tests/seed.spec.ts; Midscene only for visual expectations.
 Write named targets into page-map.yaml (+ routes into flows) before writing specs; keep writing/running other nodes while one is unknown.
 Demo requires a known entry, entry_reached evidence and generator-cli --entry failure on the requested --interaction; unknown entries join checklist D (later discoveries go to review).

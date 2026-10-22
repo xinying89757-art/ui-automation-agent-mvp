@@ -10,7 +10,10 @@ Input: selected cases/flow, validated case-specs (legacy Intents/plans remain re
 saved runtime facts. Use available browser/Playwright tools to gather real UI evidence;
 the Python CLI manages state and subprocesses, not autonomous UI reasoning.
 Use `uia.py snapshot --run RUN --node editor` for bounded redacted visible-only
-DOM evidence. Scope with `--frame '#backstage-innerpage'` or `--scope '#dialog'`;
+DOM evidence. For any page with an entry hint, always begin with `snapshot --entry` /
+`generator --entry`; follow the hinted backend area before component exploration. Never
+start component exploration in another area. Free-text routes are projected into entry
+clicks; frame_hint applies only to later caller actions. Scope with `--frame '#backstage-innerpage'` or `--scope '#dialog'`;
 `--open-target llms` opens that known node first. Do not use explore.mjs in the default flow.
 
 ## Preflight and discovery

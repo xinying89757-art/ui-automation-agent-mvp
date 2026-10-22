@@ -26,6 +26,7 @@ def demo_gate(m, node, cases, interaction=None, base=None, page=None):
     require(any(r.get('entry_reached') is True for r in rows),
             '演示被拒绝：先用 snapshot --entry / generator --entry 到达页面入口')
     generators = [r for r in rows if r.get('method') == 'generator' and r.get('source') == 'generator-cli'
+                  and r.get('failure_class') != 'subagent_start'
                   and r.get('reached_entry') is True and r.get('result') == 'failed' and r.get('failed_interaction')]
     require(generators, '演示被拒绝：需要 uia.py generator --entry 在到达入口后报告具体交互失败')
     require(interaction and re.fullmatch(r'drag|clipboard|gesture|file-dialog|canvas|other:.+', interaction),
@@ -92,7 +93,9 @@ GENERATOR_PROMPT = """You are a Playwright Test Agents generator used ONLY for e
 Node: {purpose}
 Goal / plan: {plan}
 Starting entry (reach this route before exploring the interaction): {entry_hint}
-Rules: call generator_setup_page with seedFile "tests/seed.spec.ts" first (the page is the authenticated editor), then
+Rules: call generator_setup_page with seedFile "tests/seed.spec.ts" first (the page is the authenticated backend area), then
+follow Starting entry's node/open_target and ordered steps FIRST. The seed already opens its node area;
+do not switch to another area. Entry clicks run outside frame_hint; use that frame only after reaching entry.
 use browser_* tools to reach the node and its observable completion signal. Read-only: do not click save/publish/delete,
 do not type credentials, do not print cookies/storage. Do not edit files except writing the generated test via
 generator_write_test to tests/explore/{slug}.spec.ts if you get that far. Stop after at most {max_actions} browser actions.
@@ -114,7 +117,10 @@ def codex_binary():
 
 
 def generator_command(binary, cwd, env, prompt, model):
-    command = ['timeout', '2h', binary, 'exec', '-C', cwd, '-s', 'workspace-write', '-m', model,
+    import os
+    sandboxed = any(os.environ.get(k) for k in ('CODEX_SANDBOX', '__CURSOR_SANDBOX_ENV_RESTORE'))
+    sandbox = ['--dangerously-bypass-approvals-and-sandbox'] if sandboxed else ['-s', 'workspace-write']
+    command = ['timeout', '2h', binary, 'exec', '-C', cwd, *sandbox, '-m', model,
                '-c', 'model_reasoning_effort="high"', '-c', 'sandbox_workspace_write.network_access=true',
                '-c', 'mcp_servers.playwright-test.command="npx"',
                '-c', 'mcp_servers.playwright-test.args=["playwright","run-test-mcp-server"]',
@@ -155,11 +161,15 @@ def run_generator(base, m, purpose, plan, minutes=20, model=None, max_actions=40
     from .common import atomic_write
     from .profiles import agent_env
     require(purpose and purpose.strip() and plan and plan.strip(), 'generator requires --purpose and --plan')
-    from .entries import resolve, safe
+    from .entries import resolve, safe, navigation_hint
     hint = resolve(entry) if entry else None
     require(not entry or hint, '页面入口未知：请走入口提示问题（清单 D 块），不要请求演示')
+    require(not hint or not hint.get('not_a_page'), '该入口不是页面，跳过导航')
+    hint = navigation_hint(hint) if hint else None
     safe({'purpose': purpose, 'plan': plan, 'entry': entry, 'hint': hint}, m['config'])
     setup = agent_env(base, m)
+    if hint and hint.get('node'):
+        setup['env']['UIA_SEED_ENTRY'] = hint['node']
     slug = re.sub(r'[^A-Za-z0-9_.-]+', '-', purpose).strip('-')[:60] or 'node'
     prompt = GENERATOR_PROMPT.format(purpose=purpose, plan=plan, slug=slug, max_actions=max_actions,
                                      entry_hint=json.dumps(hint, ensure_ascii=False) if hint else 'No entry supplied; cannot request a demo.')
@@ -167,12 +177,23 @@ def run_generator(base, m, purpose, plan, minutes=20, model=None, max_actions=40
     command = generator_command(codex_binary(), setup['cwd'], setup['env'], prompt, model)
     started, t0 = now(), time.monotonic()
     runner = runner or (lambda cmd, timeout: subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, stdin=subprocess.DEVNULL))
+    startup_error = ''
     try:
         result = runner(command, minutes * 60)
         output, code = result.stdout, result.returncode
+        startup_error = getattr(result, 'stderr', '') or ''
     except subprocess.TimeoutExpired as exc:
         output, code = (exc.stdout or b'').decode() if isinstance(exc.stdout, bytes) else (exc.stdout or ''), 124
+    except OSError as exc:
+        output, code, startup_error = '', 127, str(exc)
     final, usage, route = parse_generator_output(output)
+    start_failure = (code not in (0, 124) and not usage and not route) or bool(re.search(
+        r'(?:sandbox.*(?:failed to start|failed|not permitted)|failed to (?:start|initialize).*sandbox|permission denied.*(?:codex|session)|(?:codex|session).*permission denied)',
+        startup_error + output + final, re.I))
+    failure_class = 'subagent_start' if start_failure else None
+    if start_failure:
+        route = None
+        final = 'Sub-agent failed to start or initialize its sandbox/runtime. ' + scrub_text(startup_error, m['config'])[:500]
     reached = bool(route and route.get('reached'))
     reached_entry = bool(entry and route and route.get('reached_entry') is True)
     failed_interaction = route.get('failed_interaction') if route and reached_entry and not reached else None
@@ -184,12 +205,14 @@ def run_generator(base, m, purpose, plan, minutes=20, model=None, max_actions=40
     out_dir = base / 'exploration'
     out_dir.mkdir(parents=True, exist_ok=True)
     report = {'purpose': purpose, 'plan': plan, 'model': model, 'exit_code': code, 'reached': reached,
+              'failure_class': failure_class,
               'entry': entry, 'reached_entry': reached_entry, 'failed_interaction': failed_interaction,
               'route': json.loads(clean(route)) if route else None, 'final_message': scrub_text(final, m['config'])[-4000:]}
     atomic_write(out_dir / ('generator-' + slug + '.json'), report)
     row = {'at': now(), 'started_at': started, 'method': 'generator', 'source': 'generator-cli', 'purpose': purpose,
            'result': 'ok' if reached else 'failed', 'duration_ms': int((time.monotonic() - t0) * 1000),
            'model': model, 'exit_code': code,
+           'failure_class': failure_class,
            'entry': entry, 'entry_reached': reached_entry, 'reached_entry': reached_entry,
            'failed_interaction': failed_interaction,
            'tokens': {k: usage.get(k) for k in ('input_tokens', 'cached_input_tokens', 'output_tokens') if k in usage},

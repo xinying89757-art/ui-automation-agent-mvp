@@ -62,7 +62,7 @@ export async function main(args = process.argv.slice(2)) {
       ? args[snapshotAt + 1] : undefined;
     const result = snapshotAt >= 0
       ? { status: 'snapshot', structure: await snapshotSession(browser, cfg, {
-        area: snapshotArea, manual: args.includes('--manual'), frame: option('--frame'), scope: option('--scope'), openTarget: option('--open-target'), goto: option('--goto'), steps: args.flatMap((arg, index) => arg === '--step' ? [args[index + 1]] : []), hover: option('--hover'), clicks: args.flatMap((arg, index) => arg === '--click' ? [args[index + 1]] : []) }) }
+        entrySteps: Number(option('--entry-steps') ?? 0), area: snapshotArea, manual: args.includes('--manual'), frame: option('--frame'), scope: option('--scope'), openTarget: option('--open-target'), goto: option('--goto'), steps: args.flatMap((arg, index) => arg === '--step' ? [args[index + 1]] : []), hover: option('--hover'), clicks: args.flatMap((arg, index) => arg === '--click' ? [args[index + 1]] : []) }) }
       : await runSession(cfg, browser, { checkOnly: args.includes('--check-only'), force: args.includes('--force'), manual: args.includes('--manual') });
     if (option('--output')) privateWrite(path.resolve(option('--output')), result);
     console.log(JSON.stringify({ ok: true, ...result }));

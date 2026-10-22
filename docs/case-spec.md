@@ -24,9 +24,11 @@ assertions:
     checks:
       - {target: txt.title, op: text, value: 管理txt文件}
 questions: []
+read_back:
+  - {id: R1, after: S2, target: txt.overview, value: intended text, reopen: [settings, txt.entry], save_target: network.llms.save}
 ```
 
-字段均必填，不接受额外字段；`yes` 必须加引号避免 YAML 1.1 布尔转换。
+基础字段均必填，不接受未定义字段；可选 `read_back` 用于保存后读回。`yes` 必须加引号避免 YAML 1.1 布尔转换。
 `automatable.status` 为 yes/needs-env/manual 并附 reason。required_env 只引用根目录
 preconditions.yaml。data_prep 引用 runner/knowledge/data-prep.yaml，例如 `faq.count: 5`；
 没有 handler 的条目保持 TODO，不能伪造准备成功。mutation_scope 为已授权的功能名列表。
@@ -53,6 +55,11 @@ coverage 从 `// @step S1` 和 `await businessAssertion('A1', ...)` 的实际行
 一律 `timeout 2h codex exec ... < /dev/null`。快照 ref 只在会话内使用，知识回写和 lint 拒绝它。
 
 AI 完成未知步骤后，用 `register --run ID --case CASE --file registration.json`，文件仅需 case_id/script；其 fixture、变更声明和 coverage 从 case-spec 与代码标记推导。交付包携带不含认证信息的 cases.json 投影，重新配置环境/登录即可消费同一 fixture。
+
+可选顶层 `read_back` 用 R 编号声明保存后的持久化字段核验，包含保存步骤、字段目标、预期值、重开目标序列及关联网络规则目标。
+生成器等待保存响应并检查业务码，再通过命名目标重开并读取字段；脱敏后的 intended/actual 值会写入用例结果。
+读回不一致或保存业务码失败归类为 `save_not_persisted`（保存未生效（后台读回不一致）），标记为疑似产品缺陷。
+存在变更保存步骤但缺少读回声明时，lint 发出警告；关联公开检查显示“前置保存未生效，公开检查不判定”。
 
 
 禁用态是已有的 `checks.op: disabled/enabled`，模板生成 `toBeDisabled/toBeEnabled`，同时支持原生和 aria-disabled。

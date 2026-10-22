@@ -97,6 +97,33 @@ class CaseSpecTests(unittest.TestCase):
         self.assertIn('new RegExp', expression)
         self.assertNotIn(chr(0xE001), expression)
 
+    def test_save_read_back_lints_as_warning_and_generator_renders_block(self):
+        import yaml
+        with tempfile.TemporaryDirectory() as temp:
+            base = Path(temp); folder = base / 'cases/T1'; folder.mkdir(parents=True)
+            (base / 'runner/tests/generated').mkdir(parents=True)
+            common.atomic_write(folder / 'source.json', self.source)
+            self.spec['mutation_scope'] = ['llms.txt']
+            self.spec['steps'] = [{'id':'S1','verb':'fill','target':'txt.overview','value':'wanted'},
+                                  {'id':'S2','verb':'click','target':'txt.save'}]
+            self.spec['assertions'] = [{'id':'A1','after':'S2','excel':self.source['expected'][0],
+                                        'checks':[{'target':'txt.saved','op':'visible'}]}]
+            common.atomic_write(folder / 'case-spec.yaml', self.spec, as_yaml=True)
+            case = {'case_id':'T1','source':'cases/T1/source.json','case_spec':'cases/T1/case-spec.yaml','source_hash':'hash','attempts':[]}
+            manifest = {'cases':{'T1':case},'config':{'mutation':{'allowed':True,'scope':['llms.txt']}},'questions':{},'history':[]}
+            linted = specs.lint(base, manifest, ['T1'], record=False)
+            self.assertTrue(linted['valid'])
+            self.assertIn('保存步骤缺少读回检查', linted['cases']['T1']['warnings'])
+            self.spec['read_back'] = [{'id':'R1','after':'S2','target':'txt.overview','value':'wanted',
+                                      'reopen':['settings','txt.entry'],'save_target':'network.llms.save'}]
+            common.atomic_write(folder / 'case-spec.yaml', self.spec, as_yaml=True)
+            with patch.object(specs, 'register_script', return_value={'script':'runner/tests/generated/T1.spec.ts'}):
+                specs.generate(base, manifest, 'T1')
+            generated = (base / 'runner/tests/generated/T1.spec.ts').read_text()
+            self.assertIn('verifyPersisted(page, caseContext', generated)
+            self.assertIn('readFieldValue(', generated)
+            self.assertIn('await page.reload()', generated)
+
     def test_lint_records_true_first_pass_and_cross_case_duplicates(self):
         import yaml
         with tempfile.TemporaryDirectory() as temp:

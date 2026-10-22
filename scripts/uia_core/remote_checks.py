@@ -185,6 +185,9 @@ def arm_watch(base, m, cid, lead_minutes=20, watch_minutes=40, interval_ms=1000)
                'save_not_before': save_not_before.isoformat(), 'watch_until': until.isoformat(),
                'interval_ms': interval_ms, 'timeout_ms': 10000, 'max_latency_seconds': latency,
                'max_clock_offset_ms': 1000}
+    prior = m['cases'][cid].get('attempts') or []
+    if prior and isinstance(prior[-1].get('read_back'), dict):
+        request['read_back'] = prior[-1]['read_back']
     serialized = __import__('json').dumps(request, ensure_ascii=False)
     require(scrub_text(serialized, m['config']) == serialized, 'Watch request contains sensitive data')
     parsed_url = __import__('urllib.parse', fromlist=['urlsplit']).urlsplit(url)
@@ -218,8 +221,10 @@ def wait_for_watch(base, watch, clock=None, sleeper=None, heartbeat=None):
 
 WATCH_EVALUATOR_VERSION = '1'
 
-def judge_watch(payload, request, saved_at, box_clock_offset_ms):
+def judge_watch(payload, request, saved_at, box_clock_offset_ms, save_not_persisted=False):
     """Purely judge archived watch evidence; no manifest mutation or I/O."""
+    if save_not_persisted:
+        return 'save_not_persisted', 'unreachable', None, '前置保存未生效，公开检查不判定'
     saved = timestamp(saved_at)
     first = timestamp(payload['first_poll_at']) if payload['first_poll_at'] else None
     latency_ms = request.get('max_latency_seconds', 0) * 1000
@@ -270,6 +275,9 @@ def judge_watch(payload, request, saved_at, box_clock_offset_ms):
             report = f'保存后 {n} 秒前台仍未出现新内容（时限 {request.get("max_latency_seconds", 0)} 秒）'
         else: report = f'保存后 {int(round(latency / 1000))} 秒才首次出现新内容（时限 {request.get("max_latency_seconds", 0)} 秒）'
     else: report = chinese[code]
+    read_back = request.get('read_back')
+    if isinstance(read_back, dict) and read_back.get('ok') is True:
+        report += '；后台读回：' + str(read_back.get('actual', '')) + ' ✓'
     return code, status, latency, report
 
 
@@ -337,7 +345,8 @@ def ingest_watch(base, m, file):
     key, entry = entries[-1]; req = entry['request']; saved = timestamp(req['saved_at'])
     require(req.get('max_latency_seconds') == request.get('max_latency_seconds') and req.get('url') == request.get('url') and
             req.get('conditions') == request.get('conditions'), 'Watch does not match the regular remote assertion')
-    code, status, latency, reason = judge_watch(payload, request, saved.isoformat(), watch.get('box_clock_offset_ms'))
+    code, status, latency, reason = judge_watch(payload, request, saved.isoformat(), watch.get('box_clock_offset_ms'),
+                                                m['cases'][watch['case_id']].get('result') == 'save_not_persisted')
     if watch.get('box_clock_offset_ms') is None and code not in {'watch_started_late', 'watch_gap', 'baseline_present', 'clock_offset'}:
         watch['clock_offset_note'] = 'box_clock_offset_unavailable'
     archive = base / 'remote-checks' / 'watch' / watch_id / ('ingested-' + receipt + '.json')
@@ -376,7 +385,8 @@ def reevaluate_watch(base, m, watch_id=None):
                    timestamp(row['request']['saved_at']) >= timestamp(watch['armed_at'])]
         require(matches, 'No matching remote check for archived watch')
         key, entry = matches[-1]; check_req = entry['request']
-        code, status, latency, report = judge_watch(payload, req, check_req['saved_at'], watch.get('box_clock_offset_ms'))
+        code, status, latency, report = judge_watch(payload, req, check_req['saved_at'], watch.get('box_clock_offset_ms'),
+                                                    m['cases'][watch['case_id']].get('result') == 'save_not_persisted')
         prior = watch.get('watch_reevaluation')
         if prior and prior.get('reason') == code and prior.get('status') == status and prior.get('latency_ms') == latency:
             results.append({'watch_id': wid, 'duplicate': True, 'reason': code, 'status': status})
@@ -439,6 +449,10 @@ def fold(m, cid):
     c = m['cases'][cid]
     entries = [r for r in m.get('remote_checks', {}).values() if r.get('active', True) and r['request']['case_id'] == cid]
     if not entries:
+        return
+    if c.get('result') == 'save_not_persisted':
+        c['remote_status'] = 'unreachable'
+        c['classification'] = {'reason': '前置保存未生效，公开检查不判定', 'at': now()}
         return
     statuses = {r['status'] for r in entries}
     failures = [r for r in entries if r['status'] == 'fail']

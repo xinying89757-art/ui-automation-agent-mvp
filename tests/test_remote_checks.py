@@ -61,6 +61,16 @@ class RemoteChecksTests(unittest.TestCase):
         self.assertFalse(remote.evaluate_condition(missing,condition))
         self.assertTrue(remote.evaluate_condition('## FAQ\nQ1\nA1\nQ2\nA2\n',{'op':'ordered_pairs','section':'faq','value':[['Q1','A1'],['Q2','A2']]}))
         self.assertTrue(remote.evaluate_condition('### FAQ\n- **问：你好**\n答：世界\nQ: one A: two\n### Else\nignored',{'op':'ordered_pairs','section':'FAQ','value':[['你好','世界'],['one','two']]}))
+
+    def test_save_not_persisted_suppresses_remote_verdict_and_success_reports_readback(self):
+        self.assertEqual(remote.judge_watch({}, {}, common.now(), None, save_not_persisted=True),
+                         ('save_not_persisted', 'unreachable', None, '前置保存未生效，公开检查不判定'))
+        payload = self.real_watch_payload('request_start')
+        request = common.read_json(self.base/'remote-checks/watch/w1/request.json')
+        request['read_back'] = {'ok':True,'actual':'phase2-immediate-public-overview'}
+        code, status, _, report = remote.judge_watch(payload, request, self.check['saved_at'], None)
+        self.assertEqual((code, status), ('immediate_not_met', 'fail'))
+        self.assertIn('后台读回：phase2-immediate-public-overview ✓', report)
     def test_fail_with_matching_evidence_is_checker_automation_failure(self):
         self.configure_faq(); p=self.payload('fail'); p['results'][0]['evidence']=self.evidence(FAQ_BODY)
         self.assertEqual(self.ingest(p)['cases']['C'],'automation_failure')
@@ -72,7 +82,8 @@ class RemoteChecksTests(unittest.TestCase):
         self.assertEqual(self.ingest(p)['cases']['C'],'business_failure')
     def test_evidence_redaction_and_manual_reevaluation_path(self):
         self.configure_faq()
-        text='## FAQ\n- **Q: contact person@example.com eyJabcdefghijk.abcdefghijk.abcdefghijk 13812345678 1234567890123**\nA: secret'
+        fake_jwt='.'.join(('eyJabcdefghijk','abcdefghijk','abcdefghijk'))
+        text='## FAQ\n- **Q: contact person@example.com '+fake_jwt+' 13812345678 1234567890123**\nA: secret'
         clean=remote.redact_evidence(text)
         for secret in ('person@example.com','eyJabcdefghijk','13812345678','1234567890123'): self.assertNotIn(secret,clean)
         self.assertTrue(remote.evaluate_condition(FAQ_BODY, self.check['conditions'][0]))

@@ -74,6 +74,11 @@ def write_heartbeat(base, batch, running):
     return body
 
 
+def grep_tag_pattern(case_id):
+    """Escape Playwright's title tag while retaining its accepted hyphen syntax."""
+    return re.escape('[' + case_id + ']').replace('\\-', '-')
+
+
 def batch_running(base, batch):
     """Heartbeat is the source of truth. A missing PID does not mean the batch died."""
     if not batch:
@@ -260,7 +265,7 @@ def begin_batch(base, m, case_ids):
     atomic_write(directory / "config.json", snapshot_config)
     # Playwright compiles file and title filters with the unicode flag, which rejects escaped hyphens.
     pattern = lambda value: re.escape(value).replace("\\-", "-")
-    escaped = "|".join(pattern("[" + cid + "]") for cid in case_ids)
+    escaped = "|".join(grep_tag_pattern(cid) for cid in case_ids)
     selected_scripts = sorted({str(inside(base, c["registration"]["script"]).relative_to((base / "runner").resolve())).replace("\\", "/") for c in selected})
     # Title grep cannot be anchored: Playwright joins the file suite title in front of the case title.
     command = ["node", str(cli), "test"] + [pattern(name) + "$" for name in selected_scripts] + ["--grep", "(?:" + escaped + ")\\s"]
@@ -365,6 +370,10 @@ def consume_batch(base, m, exit_code=None):
                    "duration_ms": row.get("duration_ms", 0), "errors": row.get("errors", []),
                    "attachments": row.get("attachments", []),
                    "assertions": row.get("assertions", []), "failure_stage": row.get("failure_stage")}
+        if row.get("read_back"):
+            attempt["read_back"] = row["read_back"]
+        if row.get("saves"):
+            attempt["saves"] = row["saves"]
         shot = next((a.get('path') for a in row.get('attachments', []) if a.get('name') == 'uia-redacted-dialog'), None)
         if shot:
             from .secrets import unsafe_artifact
@@ -376,6 +385,8 @@ def consume_batch(base, m, exit_code=None):
         if attempt["executed"] and not m.get("first_result_at"):
             m["first_result_at"] = now()
         c["result"] = result
+        if result == "save_not_persisted":
+            c["classification"] = {"reason": "保存未生效（后台读回不一致）", "suspected_product_defect": True, "at": now()}
         if result == "passed" and cleanup_pending:
             c.update(result="remote_pending", pass_streak=0, stability="not_run", stage="remote", work_status="remote_pending")
         elif result == "passed":

@@ -21,6 +21,13 @@ steps:
 - id: S2
   verb: defer_public
   target: public.llms
+read_back:
+- id: R1
+  after: S1
+  target: txt.overview
+  value: phase4-faq-public-overview
+  reopen: [settings, txt.entry]
+  save_target: network.llms.save
 assertions:
 - id: A1
   after: S1

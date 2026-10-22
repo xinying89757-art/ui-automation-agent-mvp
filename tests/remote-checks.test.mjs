@@ -1,11 +1,33 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { checkOne, evaluate, runWatch } from '../scripts/templates/remote-check.mjs';
+import { businessSaveResult, persistedResult, trackSave } from '../assets/playwright-runner/support/remote-checks.mjs';
 const start=Date.parse('2026-01-01T00:00:00Z');
 const check={id:'c', url:'http://example.test/file',method:'GET',timeout_ms:100,
  saved_at:new Date(start).toISOString(),earliest_check_at:new Date(start+3600000).toISOString(),
  deadline:new Date(start+7200000).toISOString(),conditions:[{op:'contains',value:'new'}]};
 const response=(body,status=200)=>async()=>new Response(body,{status});
+test('save response business codes and persisted values are independently classified',()=>{
+ assert.deepEqual(businessSaveResult(true,{code:0}),{businessCode:'code:0',businessOk:true});
+ assert.deepEqual(businessSaveResult(true,{status:'FAILED'}),{businessCode:'status:FAILED',businessOk:false});
+ assert.equal(businessSaveResult(true,{success:false}).businessOk,false);
+ assert.equal(businessSaveResult(true,{code:201},[201]).businessOk,true);
+ assert.equal(persistedResult({business_ok:true},'wanted','wanted'),true);
+ assert.equal(persistedResult({business_ok:true},'wanted','stale'),false);
+ assert.equal(persistedResult({business_ok:false},'wanted','wanted'),false);
+});
+test('only business-successful tracked saves set savedAt and observations omit bodies',async()=>{
+ let listener; const page={on:(_event,fn)=>{listener=fn},off:(_event,fn)=>{assert.equal(listener,fn)}};
+ const ctx={caseId:'C'};
+ const tracking=trackSave(page,ctx,{method:'POST',path:'/save'});
+ listener({url:()=> 'https://example.test/save',request:()=>({method:()=> 'POST'}),ok:()=>true,status:()=>200,json:async()=>({code:409,body:'private'})});
+ await Promise.all(ctx.saveTasks);
+ assert.equal(ctx.savedAt,undefined); assert.equal(ctx.saves[0].business_ok,false);
+ assert.deepEqual(Object.keys(ctx.saves[0]).sort(),['at','business_code','business_ok','http_status','path']);
+ listener({url:()=> 'https://example.test/save',request:()=>({method:()=> 'POST'}),ok:()=>true,status:()=>200,json:async()=>({code:0})});
+ await Promise.all(ctx.saveTasks); assert.equal(typeof ctx.savedAt,'string'); assert.equal(ctx.saves[1].business_ok,true);
+ await tracking.dispose();
+});
 test('fetch + semantic checks distinguish pass, cached, failure and unreachable',async()=>{
  assert.equal((await checkOne(check,response('new'),()=>start+1000)).status,'pass');
  assert.equal((await checkOne(check,response('old'),()=>start+1000)).status,'still-cached');
@@ -46,7 +68,8 @@ test('exact markdown FAQ fixture parses in order; reordered and missing pairs fa
  assert.equal(evaluate('### FAQ\n1. **问：你好**\n答：世界\nQ: one A: two\n### Other\nignored\n',{op:'ordered_pairs',section:' faq ',value:[['你好','世界'],['one','two']]}),true);
 });
 test('checker evidence is bounded and redacts contact and credential patterns',async()=>{
- const body='safe target person@example.com eyJabcdefghijk.abcdefghijk.abcdefghijk 13812345678';
+ const jwt=['eyJabcdefghijk','abcdefghijk','abcdefghijk'].join('.');
+ const body='safe target person@example.com '+jwt+' 13812345678';
  const result=await checkOne({...check,conditions:[{op:'contains',value:'safe target'}]},response(body),()=>start+1000);
  assert.equal(result.evidence.length,1); assert.ok(result.evidence[0].excerpt.length<=2000);
  assert.doesNotMatch(result.evidence[0].excerpt,/person@example\.com|eyJabcdefghijk|13812345678/);

@@ -2,18 +2,19 @@
 import { test, expect, businessAssertion } from '../../support/fixtures.js';
 import { openTarget } from '../../support/case-spec.js';
 import { delayRequests, doubleClick, attemptClick, observeOccurrences } from '../../flows/network-control.mjs';
-import { deferPublic, trackSave } from '../../support/remote-checks.mjs';
+import { deferPublic, trackSave, verifyPersisted, readFieldValue, assertSaveBusinessOk } from '../../support/remote-checks.mjs';
 
 test("[TC-0055] 保存处理中禁用重复提交、取消和关闭", async ({ page, caseContext }) => {
   const networks: Record<string, any> = {};
   const observations: Record<string, any> = {};
   try {
+  observations["save-clock:R1"] = trackSave(page, caseContext, {"method": "POST", "path": "/phoenix/customizeFile/llms/save", "ok_codes": [0, 200, "0", "200", "SUCCESS"], "capabilities": ["delay", "count", "release"], "evidence": "docs/phase4-verification.md"});
   // @step S1
   await page.locator("#backstage-dialog-customizeFile").locator("input.llms-overview").fill("phase2-save-in-progress");
   // @step S2
   observations["txt.saved"] = await observeOccurrences(page, "llms.txt 配置已保存");
   // @step S3
-  networks["network.llms.save"] = await delayRequests(page, {"method": "POST", "path": "/phoenix/customizeFile/llms/save", "capabilities": ["delay", "count", "release"], "evidence": "docs/phase4-verification.md"}, 12000);
+  networks["network.llms.save"] = await delayRequests(page, {"method": "POST", "path": "/phoenix/customizeFile/llms/save", "ok_codes": [0, 200, "0", "200", "SUCCESS"], "capabilities": ["delay", "count", "release"], "evidence": "docs/phase4-verification.md"}, 12000);
   // @step S4
   await doubleClick(page, page.locator("#backstage-dialog-customizeFile").locator("a[class*='customize_file_llms']"));
   // Excel: 1. 保存按钮立即变为不可用并显示“保存中…”。
@@ -41,6 +42,11 @@ test("[TC-0055] 保存处理中禁用重复提交、取消和关闭", async ({ p
     await expect.poll(() => observations["txt.saved"].count()).toBe(1);
     await expect.poll(() => networks["network.llms.save"].count()).toBe(1);
   });
+  await page.reload();
+  await openTarget(page, "settings");
+  await page.locator("#site_customize_txt a").click();
+  await verifyPersisted(page, caseContext, {"id": "R1", "after": "S8", "target": "txt.overview", "value": "phase2-save-in-progress", "reopen": ["settings", "txt.entry"], "save_target": "network.llms.save"}, {"method": "POST", "path": "/phoenix/customizeFile/llms/save", "ok_codes": [0, 200, "0", "200", "SUCCESS"], "capabilities": ["delay", "count", "release"], "evidence": "docs/phase4-verification.md"}, async () => await readFieldValue(page.locator("#backstage-dialog-customizeFile").locator("input.llms-overview")));
+  await assertSaveBusinessOk(caseContext);
   } finally {
     for (const network of Object.values(networks)) await network.dispose();
     for (const observation of Object.values(observations)) await observation.dispose();

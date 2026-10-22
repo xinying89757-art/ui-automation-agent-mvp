@@ -43,7 +43,7 @@ def case_text(base, case):
 
 
 def _protected(case):
-    if case.get("result") in {"passed", "business_failure", "automation_failure", "interrupted"}:
+    if case.get("result") in {"passed", "business_failure", "save_not_persisted", "automation_failure", "interrupted"}:
         return True
     return any(attempt.get("result") == "passed" for attempt in case.get("attempts") or [])
 

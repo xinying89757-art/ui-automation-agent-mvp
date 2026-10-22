@@ -14,7 +14,7 @@ from .secrets import drop_unsafe_artifacts, scrub_text, unsafe_attachment
 from . import metrics as run_metrics
 
 
-STATUS_ZH = {"remote_pending": "待远程检查", "remote_cached": "公开文件仍在缓存期", "remote_unreachable": "远程不可达或无法验证","passed": "通过", "business_failure": "业务失败", "automation_failure": "自动化失败",
+STATUS_ZH = {"remote_pending": "待远程检查", "remote_cached": "公开文件仍在缓存期", "remote_unreachable": "远程不可达或无法验证","passed": "通过", "business_failure": "业务失败", "save_not_persisted": "保存未生效（后台读回不一致）", "automation_failure": "自动化失败",
              "environment_blocked": "环境阻断", "product_confirmation": "待业务确认", "not_suitable": "不适合自动化",
              "interrupted": "已中断", "stable": "已稳定", "unstable": "未稳定", "candidate": "待复验",
              "not_run": "未执行", "pending": "待处理", "runnable": "可执行", "running": "执行中",
@@ -86,6 +86,7 @@ def make_report(base, m):
                        "flow_ids", "fixture_ids", "repair_rounds", "attempts", "feedback", "classification", "case_spec", "spec_first_lint", "spec_lint", "remote_status")})
         records[-1]['result_label'] = zh(c.get('result'))
         records[-1]['script_binding'] = c.get('script_binding')
+        records[-1]['read_back'] = (c.get('attempts') or [{}])[-1].get('read_back')
         records[-1]['duplicate_script_warning'] = c.get('duplicate_script_warning')
         records[-1]['work_status_label'] = zh(c.get('work_status'))
         records[-1]['stability_label'] = zh(c.get('stability'))
@@ -93,13 +94,18 @@ def make_report(base, m):
         attempt = c["attempts"][-1] if c.get("attempts") else None
         classification = c.get("classification") or {}
         records[-1]["reason"] = classification.get("reason", "") if isinstance(classification, dict) else ""
-        if attempt and attempt.get("executed") and c.get("result") == "passed":
+        if c.get("result") == "save_not_persisted":
+            records[-1]["reason"] = "保存未生效（后台读回不一致）"
+        elif attempt and attempt.get("executed") and c.get("result") == "passed":
             records[-1]["reason"] = brief_error(attempt, m["config"])
-        elif attempt and attempt.get("executed") and c.get("result") in {"business_failure", "automation_failure", "interrupted"}:
+        elif attempt and attempt.get("executed") and c.get("result") in {"business_failure", "save_not_persisted", "automation_failure", "interrupted"}:
             records[-1]["reason"] = brief_error(attempt, m["config"]) or records[-1]["reason"]
         elif not records[-1]["reason"] and attempt:
             records[-1]["reason"] = brief_error(attempt, m["config"])
         records[-1]["reason"] = scrub_text(records[-1]["reason"], m["config"])
+        evidence = records[-1].get('read_back')
+        if evidence and evidence.get('ok'):
+            records[-1]["reason"] = (records[-1]["reason"] + "；" if records[-1]["reason"] else "") + "后台读回：" + str(evidence.get("actual", "")) + " ✓"
         records[-1]["media"] = ['../' + a['redacted_screenshot'] for a in c.get('attempts', []) if a.get('redacted_screenshot')]
     m["final_report_at"] = now()
     m["leak_hits"] = run_metrics.leak_scan(base, m["config"])

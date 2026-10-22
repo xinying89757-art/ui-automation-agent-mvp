@@ -1,5 +1,7 @@
 # Codex 阶段工作流
 
+Excel 导入接受常见中英文表头别名并跳过无用例内容的行；缺少用例 ID 时使用模块和标题生成稳定 AUTO ID。非 ASCII 原始 ID 在报告中保留，路径和 Playwright grep 使用 ASCII case ID。
+
 ## 入口和职责
 
 `uia-orchestrator` 是总入口。所有技能都由当前 Codex 会话按约定读取和执行，Python

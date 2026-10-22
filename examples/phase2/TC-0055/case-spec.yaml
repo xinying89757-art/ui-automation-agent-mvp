@@ -38,6 +38,13 @@ steps:
 - id: S8
   verb: wait
   target: txt.saved
+read_back:
+- id: R1
+  after: S8
+  target: txt.overview
+  value: phase2-save-in-progress
+  reopen: [settings, txt.entry]
+  save_target: network.llms.save
 assertions:
 - id: A1
   after: S4

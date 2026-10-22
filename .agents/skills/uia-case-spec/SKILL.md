@@ -29,6 +29,11 @@ Assertions have A-number, after S-number, exact imported expectation cell/line i
 and nonempty checks. Preserve numbering, punctuation, all business clauses and blank
 negative inputs. Never replace public-file expectations with editor-value assertions.
 Absent/ambiguous expectations become questions in the upfront checklist. Locator
+For each mutating save, add an optional top-level read_back entry with an R-number, the
+save step, field target and intended value, a named reopen target sequence, and save_target
+that references its network rule. The generated test checks the save business response,
+reopens the editor and records redacted intended/actual evidence; mismatches are classified
+as save_not_persisted. Lint warns when a mutating save has no read-back declaration.
 uncertainty goes to exploration, not business questions. Cross-case duplicate checks
 are invalid. Close steps require hidden assertions; technical teardown stays in fixtures.
 

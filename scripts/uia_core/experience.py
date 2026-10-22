@@ -233,11 +233,15 @@ def review(base, m):
                 detail['instructions'] = '受保护变量 UIA_CODEGEN_STATE 指向已认证状态；复用登录后录制，只提交脱敏动作脚本，勿录制密码或导出登录态。'
             add_review(m, kind, q['case_ids'], q['prompt'], **detail)
     for cid, c in m['cases'].items():
-        if c.get('result') == 'business_failure':
+        if c.get('result') in {'business_failure', 'save_not_persisted'}:
             source = read_json(base / c['source'])
             attempt = c['attempts'][-1]
+            read_back = attempt.get('read_back') or {}
+            actual = scrub_text('\n'.join(attempt.get('errors', [])), m['config'])
+            if read_back:
+                actual += ('\n' if actual else '') + '后台读回：' + str(read_back.get('actual', '')) + '；预期：' + str(read_back.get('intended', ''))
             add_review(m, 'suspected_defect', [cid], c['title'], reproduction=source.get('steps'),
-                       expected=source.get('expected'), actual=scrub_text('\n'.join(attempt.get('errors', [])), m['config']) or ('远程文件条件不符合；见 remote_checks 回执' if c.get('remote_status') == 'fail' else ''),
+                       expected=source.get('expected'), actual=actual or ('远程文件条件不符合；见 remote_checks 回执' if c.get('remote_status') == 'fail' else ''),
                        evidence=attempt['evidence'], screenshot=attempt.get('redacted_screenshot'),
                        screenshot_status='已脱敏' if attempt.get('redacted_screenshot') else '未采集，禁止附原始截图')
         if c.get('stage') == 'discovery' and c.get('work_status') != 'waiting_human':

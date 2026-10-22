@@ -64,6 +64,7 @@ export default class UiaReporter implements Reporter {
     const passed = result.status === 'passed' && lifecycle.setup_verified === true && (lifecycle.cleanup_verified === true || lifecycle.cleanup_pending === true);
     const status = passed ? 'passed' : /UIA_ENVIRONMENT_BLOCKED/u.test(message) ? 'environment_blocked'
       : /UIA_PRODUCT_CONFIRMATION/u.test(message) ? 'product_confirmation'
+      : /UIA_SAVE_NOT_PERSISTED/u.test(message) ? 'save_not_persisted'
       : /UIA_SETUP_FAILED/u.test(message) ? 'automation_failure'
       : this.locatorNeverResolved(message) ? 'automation_failure'
       : /UIA_BUSINESS_FAILURE/u.test(message) ? 'business_failure'
@@ -73,10 +74,22 @@ export default class UiaReporter implements Reporter {
       setup_started: result.attachments.some(a => a.name === 'uia-setup-started'),
       duration_ms: result.duration, retry: result.retry, errors, lifecycle,
       assertions: this.assertions.get(test.id) ?? [],
-      failure_stage: passed ? null : /UIA_ENVIRONMENT_BLOCKED/u.test(message) ? "environment_or_session" : /UIA_SETUP_FAILED/u.test(message) ? "data_preparation" : this.locatorNeverResolved(message) ? "locator_resolution" : /UIA_BUSINESS_FAILURE/u.test(message) ? "business_assertion" : "locator_or_timing",
+      failure_stage: passed ? null : /UIA_SAVE_NOT_PERSISTED/u.test(message) ? "save_not_persisted" : /UIA_ENVIRONMENT_BLOCKED/u.test(message) ? "environment_or_session" : /UIA_SETUP_FAILED/u.test(message) ? "data_preparation" : this.locatorNeverResolved(message) ? "locator_resolution" : /UIA_BUSINESS_FAILURE/u.test(message) ? "business_assertion" : "locator_or_timing",
+      read_back: this.readBack(caseId),
+      saves: this.saveObservations(caseId),
       script: test.location.file, line: test.location.line,
       attachments: result.attachments.filter(a => this.keepAttachment(a)).map(a => ({ name: a.name, path: a.path })) });
     this.flush('running', false);
+  }
+  private readBack(caseId: string | undefined): unknown {
+    if (!caseId || !process.env.UIA_RESULTS_DIR) return null;
+    try { return JSON.parse(fs.readFileSync(path.join(process.env.UIA_RESULTS_DIR, `read-back-${caseId}.json`), 'utf8')); }
+    catch { return null; }
+  }
+  private saveObservations(caseId: string | undefined): unknown {
+    if (!caseId || !process.env.UIA_RESULTS_DIR) return [];
+    try { return JSON.parse(fs.readFileSync(path.join(process.env.UIA_RESULTS_DIR, `save-observations-${caseId}.json`), 'utf8')); }
+    catch { return []; }
   }
   private flush(status: string, complete: boolean): void {
     fs.mkdirSync(path.dirname(this.output), { recursive: true });

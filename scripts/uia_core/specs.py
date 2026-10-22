@@ -54,7 +54,7 @@ def schema_errors(spec, source, env, data, pages):
         if not condition:
             errors.append(message)
     required = set(SCHEMA['required'])
-    fail(set(spec) == required, 'case-spec fields must match v1 schema')
+    fail(required <= set(spec) and not (set(spec) - set(SCHEMA['properties'])), 'case-spec fields must match v1 schema')
     fail(spec.get('schema_version') == 'case-spec.v1', 'schema_version must be case-spec.v1')
     fail(spec.get('case_id') == source.get('case_id'), 'case_id differs from imported source')
     fail(isinstance(spec.get('intent'), str) and bool(spec['intent'].strip()), 'intent is required')
@@ -155,6 +155,19 @@ def schema_errors(spec, source, env, data, pages):
                 fail(type(check.get('value')) is int if check.get('op') == 'count' else (isinstance(check.get('value'), str) or check.get('op') == 'text' and isinstance(check.get('value'), list) and all(isinstance(x, str) for x in check['value'])), 'invalid assertion value type')
             if check.get('op') == 'attribute':
                 fail(isinstance(check.get('attribute'), str), 'attribute name required')
+    read_ids = set()
+    for rb in spec.get('read_back', []):
+        fail(isinstance(rb, dict) and set(rb) == {'id', 'after', 'target', 'value', 'reopen', 'save_target'}, 'read_back needs id/after/target/value/reopen/save_target')
+        if not isinstance(rb, dict):
+            continue
+        fail(isinstance(rb.get('id'), str) and bool(re.fullmatch(r'R[1-9]\d*', rb['id'])) and rb['id'] not in read_ids, 'unique R-number required')
+        read_ids.add(rb.get('id'))
+        fail(rb.get('after') in step_ids, 'read_back.after must name its save step')
+        target(rb.get('target'))
+        fail(isinstance(rb.get('value'), str), 'read_back.value must be a string')
+        fail(isinstance(rb.get('reopen'), list) and bool(rb['reopen']), 'read_back.reopen must be a nonempty target sequence')
+        for name in rb.get('reopen', []): target(name)
+        fail(bool(pages['targets'].get(rb.get('save_target'), {}).get('network')), 'read_back.save_target must reference a network-rule target')
     fail(bool(spec['steps']) or auto['status'] == 'manual', 'automatable case needs steps')
     fail(bool(spec['assertions']) or bool(spec['questions']) or auto['status'] == 'manual', 'missing Excel expectations must become a question')
     for step in spec['steps']:
@@ -278,6 +291,12 @@ def lint(base, m, case_ids=None, record=True, check_scripts=True):
         results[cid] = {'errors': errors, 'automatable': auto.get('status', 'invalid') if isinstance(auto, dict) else 'invalid'}
         if errors:
             continue
+        saves = [s for s in spec['steps'] if s.get('verb') in {'click', 'double_click', 'attempt_click'} and
+                 (pages['targets'].get(s.get('target'), {}).get('mutation') or re.search(r'save|保存|submit|提交', s.get('target', ''), re.I))]
+        tracked_save = any(pages['targets'].get(s.get('target'), {}).get('resource', {}).get('saved_by')
+                           for s in spec['steps'] if s.get('verb') == 'defer_public')
+        if not spec.get('read_back') and (tracked_save or saves and (spec['mutation_scope'] or any(s.get('verb') == 'fill' for s in spec['steps']))):
+            results[cid]['warnings'] = ['保存步骤缺少读回检查']
         for target in unknown:
             explore.setdefault(target, []).append(cid)
         for text in spec['questions']:
@@ -367,13 +386,23 @@ def generate(base, m, cid):
              "import { test, expect, businessAssertion } from '../../support/fixtures.js';",
              "import { openTarget } from '../../support/case-spec.js';",
              "import { delayRequests, doubleClick, attemptClick, observeOccurrences } from '../../flows/network-control.mjs';",
-             "import { deferPublic, trackSave } from '../../support/remote-checks.mjs';", '',
+             "import { deferPublic, trackSave, verifyPersisted, readFieldValue, assertSaveBusinessOk } from '../../support/remote-checks.mjs';", '',
              'test(' + json.dumps('[' + cid + '] ' + spec['intent'], ensure_ascii=False) + ', async ({ page, caseContext }) => {', '  const networks: Record<string, any> = {};', '  const observations: Record<string, any> = {};', '  try {']
+    tracked_rules = set()
     for name in dict.fromkeys(s['target'] for s in spec['steps'] if s['verb'] == 'defer_public'):
         resource = pages['targets'].get(name, {}).get('resource', {})
         if resource.get('saved_by'):
             rule = pages['targets'][resource['saved_by']]['network']
-            lines.append('  observations[' + json.dumps('save-clock:' + name) + '] = trackSave(page, caseContext, ' + json.dumps(rule) + ');')
+            key = (rule['method'], rule['path'])
+            if key not in tracked_rules:
+                tracked_rules.add(key)
+                lines.append('  observations[' + json.dumps('save-clock:' + name) + '] = trackSave(page, caseContext, ' + json.dumps(rule) + ');')
+    for rb in spec.get('read_back', []):
+        rule = pages['targets'][rb['save_target']]['network']
+        key = (rule['method'], rule['path'])
+        if key not in tracked_rules:
+            tracked_rules.add(key)
+            lines.append('  observations[' + json.dumps('save-clock:' + rb['id']) + '] = trackSave(page, caseContext, ' + json.dumps(rule) + ');')
     todos = []
     def todo(label):
         todos.append(label)
@@ -386,6 +415,7 @@ def generate(base, m, cid):
         if verb == 'observe':
             lines.append('  observations[' + json.dumps(name) + '] = await observeOccurrences(page, ' + json.dumps(pages['targets'][name]['observe_text'], ensure_ascii=False) + ');')
         elif verb == 'defer_public':
+            lines.append('  await assertSaveBusinessOk(caseContext);')
             lines.append('  // Public assertions are handed off after the editor save.')
         elif verb == 'network_delay':
             rule = pages['targets'][name]['network']
@@ -444,7 +474,21 @@ def generate(base, m, cid):
                     args.append(check['value'])
                 lines.append('    await expect(' + loc + ').' + method + '(' + ', '.join(json.dumps(x, ensure_ascii=False) for x in args) + ');')
             lines.append('  });')
-    lines += ['  } finally {', '    for (const network of Object.values(networks)) await network.dispose();', '    for (const observation of Object.values(observations)) await observation.dispose();', '  }', '});', '']
+        for rb in (item for item in spec.get('read_back', []) if item['after'] == sid):
+            lines.append('  await page.reload();')
+            for index, target_name in enumerate(rb['reopen']):
+                entry = pages['targets'][target_name]
+                if index == 0 and entry.get('open'):
+                    lines.append('  await openTarget(page, ' + json.dumps(entry['open']) + ');')
+                else:
+                    reopen_loc = locator_expression(target_name, pages)
+                    if not reopen_loc:
+                        todo(rb['id'] + ' ' + target_name)
+                    else:
+                        lines.append('  await ' + reopen_loc + '.click();')
+            field_loc = locator_expression(rb['target'], pages)
+            lines.append('  await verifyPersisted(page, caseContext, ' + json.dumps(rb, ensure_ascii=False) + ', ' + json.dumps(pages['targets'][rb['save_target']]['network']) + ', async () => await readFieldValue(' + field_loc + '));')
+    lines += ['  await assertSaveBusinessOk(caseContext);', '  } finally {', '    for (const network of Object.values(networks)) await network.dispose();', '    for (const observation of Object.values(observations)) await observation.dispose();', '  }', '});', '']
     body = '\n'.join(lines)
     require(not locator_errors(body, pages), 'Generated locator lint failed', locator_errors(body, pages))
     relative = 'tests/generated/' + cid + '.spec.ts'
@@ -518,6 +562,8 @@ def render(base, m, cid):
     lines += ['', '## Excel expectations', '']
     lines += [f"- {a['id']} after {a['after']}: {a['excel']}" for a in spec['assertions']]
     lines += ['', '## Business questions', ''] + ['- ' + q for q in spec['questions']]
+    if spec.get('read_back'):
+        lines += ['', '## Save read-back', ''] + [f"- {row['id']} after {row['after']}: {row['target']} = {row['value']}; reopen {' → '.join(row['reopen'])}" for row in spec['read_back']]
     target = spec_path(base, m['cases'][cid]).with_suffix('.md')
     target.write_text('\n'.join(line.rstrip() for line in lines) + '\n')
     return {'markdown':str(target.relative_to(base))}

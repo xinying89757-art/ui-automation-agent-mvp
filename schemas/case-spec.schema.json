@@ -90,9 +90,24 @@
         "type": "string",
         "minLength": 1
       }
+    },
+    "read_back": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/read_back"}
     }
   },
   "$defs": {
+    "read_back": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "after", "target", "value", "reopen", "save_target"],
+      "properties": {
+        "id": {"type":"string", "pattern":"^R[1-9][0-9]*$"},
+        "after": {"type":"string", "pattern":"^S[1-9][0-9]*$"},
+        "target": {"type":"string", "minLength":1}, "value": {"type":"string"},
+        "reopen": {"type":"array", "minItems":1, "items":{"type":"string"}},
+        "save_target": {"type":"string", "minLength":1}
+      }
+    },
     "step": {
       "type": "object",
       "additionalProperties": false,

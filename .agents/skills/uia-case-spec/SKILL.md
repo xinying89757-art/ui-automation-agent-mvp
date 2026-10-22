@@ -47,3 +47,15 @@ Run with run-batch/wait; triage environment → session → data → locator/tim
 Only locator/timing changes may be repaired automatically. Never relax assertions.
 Xinying authorizes test-site editing, saving and publishing; restore practical baselines
 for repeatability. Never print credentials, tokens, cookies, storage or account names.
+
+## Public files, network controls and FAQ
+
+Read docs/remote-checks.md. Use defer_public + remote_file with a catalog public
+resource; quote the complete Excel expectation unchanged. @deferred markers record
+handoff coverage only, never a local assertion pass. Resolve FAQ conditions from the
+prepared list. Preserve immediate-update expectations separately from cache grace.
+Use network_delay/network_release and request_count from knowledge/network.yaml.
+double_click and attempt_click send real pointer events; observe + occurrence_count
+count transient visible results. visible_text observes displayed loading text.
+Use faq.count from data-prep.yaml, preserving original IDs/order/content and verifying
+restoration; do not delete baseline records to force a smaller count.

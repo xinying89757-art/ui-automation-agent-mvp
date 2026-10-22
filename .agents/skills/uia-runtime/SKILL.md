@@ -92,3 +92,13 @@ DOM evidence. Scope with `--frame '#backstage-innerpage'` or `--scope '#dialog'`
 Output: real case results/evidence, registered scripts, reusable local flows and remaining
 gaps. Return to the orchestrator after each batch. Do not silently mark unexecuted cases
 passed, relabel one PASS as stable, or mutate the long-term knowledge bases here.
+
+## Deferred checks and cleanup leases
+
+Case-spec defer_public resources do not require local public_frontend reachability.
+Run all local operations first. A cleanup_pending lease is explicitly unverified,
+never a clean pass. Snapshot before mutation under protected run-local state.
+remote-checks ingest restores overlapping snapshots in reverse order after final
+results. On deadline/cancellation invoke remote-checks restore; verify its evidence.
+Do not start another batch while leases remain. still-cached/unreachable stay
+pending remote rather than waiting for a human or becoming PASS. Keep all attempts.

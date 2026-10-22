@@ -99,3 +99,14 @@ Long-term asset write-back is a consolidated review step after successful execut
 new verified functions may be reused inside the current run immediately.
 
 Test-site editing, saving and publishing are authorized by Xinying. Restore practical baselines for repeatability. Every external invocation uses `timeout 2h codex exec ... < /dev/null`. Never persist snapshot refs.
+
+## Remote public checks
+
+Read docs/remote-checks.md. Checklist A states public-file checks run remotely rather
+than suspending backend cases. Run data preparation/editor saves locally; defer_public
+creates a credential-free request.json/check.mjs. Pending remote assertions are not PASS.
+Keep prepared data and protected fixture snapshots until final remote receipts;
+remote-checks ingest validates receipts, restores in reverse order and verifies cleanup.
+Use remote-checks restore on deadline/cancellation; go also restores expired leases.
+Do not rerun mutations while remote cleanup is pending. TC-0002 still requires a
+restricted account. Never send .auth, run.json or state to the remote executor.

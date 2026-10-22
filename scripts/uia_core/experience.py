@@ -290,6 +290,16 @@ def session_turn(m, turn_id, kind):
     return {'session_turns': sum(x['kind'] == 'session_turn' for x in events)}
 
 
+def checklist_notice(checklist):
+    """Tell testers why nothing was asked; never claim memory answered an empty checklist."""
+    entries = checklist.get('entry_count', 0)
+    if checklist.get('question_count'):
+        return None
+    if not entries:
+        return '本次无清单项，0 问'
+    return '清单全部来自环境记忆（' + str(entries) + ' 项），本次 0 问' if entries == checklist.get('memory_answer_count', 0) else None
+
+
 def go(excel, profile=None, cases=None):
     from . import workflow, specs, profiles, runtime, reports
     source = Path(excel).resolve()
@@ -410,8 +420,7 @@ def go(excel, profile=None, cases=None):
     with locked_run(manifest) as (manifest, m):
         output = reports.make_report(manifest.parent, m)
         save(manifest, m)
-        memory_note = ('清单全部来自环境记忆（' + str(checklist.get('memory_answer_count', 0)) + ' 项），本次 0 问'
-                       if checklist.get('entry_count', 0) == checklist.get('memory_answer_count', 0) and checklist.get('question_count') == 0 else None)
+        memory_note = checklist_notice(checklist)
         return {'run_id': m['run_id'], 'run_reused': bool(matches),
                 'run_selection': '复用同一工作簿与环境的 run；用例子集已更新' if matches else '新建 run；当前环境和工作簿没有匹配的既有 run',
                 'checklist_message': memory_note, **checklist, 'spec_tasks': tasks, 'report': output,

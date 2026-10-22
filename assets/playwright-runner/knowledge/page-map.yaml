@@ -1,8 +1,11 @@
 schema_version: page-map.v1
 pages:
-  editor: {entry: 编辑网站}
-  content-admin: {entry: 内容管理}
-  public: {public: true}
+  editor:
+    entry: 编辑网站
+  content-admin:
+    entry: 内容管理
+  public:
+    public: true
 targets:
   settings:
     selector: li.backstage-siteTool-setting .backstage-siteTool-inner
@@ -57,6 +60,7 @@ targets:
     selector: .llms-extra-item
   txt.saved:
     selector: text=llms.txt 配置已保存
+    observe_text: llms.txt 配置已保存
   txt.rule.help:
     dialog: txt.dialog
     scope: '#backstage-dialog-customizeFile'
@@ -89,10 +93,65 @@ targets:
     dialog: txt.dialog
     scope: '#backstage-dialog-customizeFile'
     selector: input.llms-extra-value:visible
+  txt.close:
+    dialog: txt.dialog
+    scope: '#backstage-dialog-customizeFile'
+    selector: a.customize_file_manage_close
+  network.llms.save:
+    network_rule: llms.save
+  public.llms:
+    resource:
+      path: /llms.txt
+      saved_by: network.llms.save
+  public.llms.immediate:
+    resource:
+      path: /llms.txt
+      max_latency_seconds: 5
+      saved_by: network.llms.save
+  faq.entry:
+    selector: '#nav_faq a'
+  faq.list:
+    frame: '#faq'
+    selector: '#content'
+  faq.add:
+    frame: '#faq'
+    scope: .top-title
+    role: link
+    name: 添加FAQ
+  faq.title:
+    frame: '#faq'
+    selector: '#msgTitle'
+  faq.save:
+    frame: '#faq'
+    selector: .topBts_menu_save
+  faq.rows:
+    frame: '#faq'
+    selector: '#content tr:has(input.news_chk)'
+  faq.answer:
+    frame: '#faq'
+    selector: .tiptap.ProseMirror
+    nested_frames:
+    - '#tiptap-iframe-faq'
+    - iframe.tiptap-iframe
+  faq.edit:
+    frame: '#faq'
+    scope: '#content tr'
+    selector: .edItem
+  faq.delete:
+    frame: '#faq'
+    scope: '#content tr'
+    selector: .edDel
 observations:
   duplicate_names:
-    - role: link
-      name: Contact Us
-      frame: '#backstage-innerpage'
-      matches: 2
-      evidence: spike-phase0.md section 1.2 (header and footer)
+  - role: link
+    name: Contact Us
+    frame: '#backstage-innerpage'
+    matches: 2
+    evidence: spike-phase0.md section 1.2 (header and footer)
+  faq:
+    evidence: docs/phase4-verification.md
+    navigation: '内容管理 → #nav_faq a → iframe#faq'
+    baseline_count: 1
+    editor: 旧记录读取保存字段 textarea#faqContent；新建兼容 CKEditor 与双层 Tiptap iframe；按 link 角色等待异步导航
+    preserve: existing IDs, order, answer HTML and visible metadata; remove owner-created
+      rows only

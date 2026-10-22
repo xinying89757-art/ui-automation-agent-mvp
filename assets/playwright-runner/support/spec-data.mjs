@@ -5,8 +5,11 @@ export async function openForm(page) {
   const box = page.locator('#backstage-dialog-customizeFile');
   if (!(await box.isVisible())) {
     await openSettings(page);
-    await page.locator('#site_customize_txt a').click();
-    await box.waitFor({ state: 'visible' });
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await page.locator('#site_customize_txt a').click();
+      if (await box.waitFor({ state: 'visible', timeout: 8000 }).then(() => true).catch(() => false)) break;
+    }
+    await box.waitFor({ state: 'visible', timeout: 15000 });
   }
   // The container becomes visible before the asynchronous saved configuration arrives.
   await page.waitForFunction(() => {

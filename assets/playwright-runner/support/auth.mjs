@@ -116,9 +116,12 @@ export async function selectTargetSite(page, cfg) {
   if (!cfg.site) fail('SITE_REQUIRED', '请提供目标网站域名');
   const targetHost = host(cfg.site);
   // Slow accounts may render the shell before asynchronously loading site cards.
-  await page.waitForFunction(target => [...document.querySelectorAll('.contentShow a[href]')].some(link => {
-    try { return new URL(link.href).host.toLowerCase() === target; } catch { return false; }
-  }), targetHost, { timeout: 90000 }).catch(() => {});
+  await page.waitForFunction(target =>
+    [...document.querySelectorAll('.contentShow a[href]')].some(link => {
+      try { return new URL(link.href).host.toLowerCase() === target; } catch { return false; }
+    }) || [...document.querySelectorAll('*')].some(node => node.children.length === 0 && node.textContent?.trim() === '网页编辑' && node.getClientRects().length) ||
+    document.querySelector('.webSite-show-bottom')?.textContent?.trim().includes(target),
+  targetHost, { timeout: 90000 }).catch(() => {});
   const cardMatches = await page.locator('.contentShow').evaluateAll((cards, target) => cards.flatMap((card, cardIndex) => {
     const domains = [...card.querySelectorAll('a[href]')].flatMap(link => {
       try { return [new URL(link.href).host.toLowerCase().replace(/\.$/u, '')]; } catch { return []; }
@@ -199,6 +202,19 @@ export async function selectTargetSite(page, cfg) {
   }
   return selected;
 }
+async function areaReady(page, area, cfg) {
+  try {
+    await page.locator(area === '编辑网站' ? 'li.backstage-siteTool-setting' : '#topNavigator').waitFor({state:'visible',timeout:60000});
+  } catch {
+    if (process.env.UIA_RESULTS_DIR) {
+      const {scrubText} = await import('./redact.mjs');
+      let safe = scrubText(JSON.stringify(await scopedStructure(page).catch(()=>({unavailable:true}))));
+      for (const secret of Object.values(credentials(cfg))) if (typeof secret === 'string' && secret) safe=safe.split(secret).join('[REDACTED]');
+      fs.writeFileSync(path.join(process.env.UIA_RESULTS_DIR,'area-failure.json'), safe);
+    }
+    fail('SITE_AREA_NOT_READY', '站点管理页尚未显示所需入口', ['重新执行预检']);
+  }
+}
 export async function openSiteArea(page, cfg, area) {
   if (!['内容管理', '编辑网站'].includes(area)) fail('UNKNOWN_SITE_AREA', '站点入口仅支持内容管理或编辑网站');
   const selected = await selectTargetSite(page, cfg);
@@ -212,18 +228,25 @@ export async function openSiteArea(page, cfg, area) {
     let destination;
     try { destination = await popupPromise; }
     catch { fail('EDITOR_POPUP_MISSING', '网页编辑没有打开编辑器窗口', ['确认账号有编辑权限', '暂停相关用例']); }
+    await destination.waitForURL(url => ['http:', 'https:'].includes(url.protocol), {timeout:30000});
     await destination.waitForLoadState('domcontentloaded');
+    await areaReady(destination, area, cfg);
     return destination;
   }
   const popup = page.context().waitForEvent('page', { timeout: 10000 }).catch(() => null);
   const before = page.url();
   const navigation = page.waitForURL(url => url.href !== before, { timeout: 10000 }).then(() => page).catch(() => null);
   await action.click();
-  const destination = await Promise.race([popup, navigation]) ?? page;
+  const destination = await Promise.any([popup, navigation].map(async pending => {
+    const found = await pending;
+    if (!found) throw new Error('No navigation');
+    return found;
+  })).catch(() => fail('SITE_AREA_NOT_READY', '站点管理窗口未完成导航', ['重新执行预检']));
   if (destination !== page) await destination.waitForURL(url => ['http:', 'https:'].includes(url.protocol), { timeout: 30000 });
   await destination.waitForLoadState('domcontentloaded');
   // Recheck language/domain after entering a card's default management area.
   if (await visible(destination.locator('.wrap-webSite').first())) await selectTargetSite(destination, cfg);
+  await areaReady(destination, area, cfg);
   return destination;
 }
 export async function authenticatedSession(browser, cfg, { force = false, allowLogin = true, manual = false } = {}) {
@@ -285,7 +308,7 @@ export async function scopedStructure(page, { frame, scope } = {}) {
       node.getAttribute('placeholder') || ownText(node) || '')
       .replace(/[\ue000-\uf8ff]/gu, '').trim().replace(/\s+/gu, ' ').slice(0, 120);
     const nodes = [container, ...container.querySelectorAll('*')].filter(node => visible(node) &&
-      !['SCRIPT', 'STYLE', 'NOSCRIPT', 'IFRAME'].includes(node.tagName)).slice(0, 300).map(node => ({
+      !['SCRIPT', 'STYLE', 'NOSCRIPT'].includes(node.tagName)).slice(0, 300).map(node => ({
         tag: node.tagName.toLowerCase(), role: role(node), name: name(node), id: node.id || undefined,
         classes: typeof node.className === 'string' ? node.className.split(/\s+/u).filter(Boolean).slice(0, 6) : [],
         attributes: Object.fromEntries(['role', 'aria-checked', 'aria-disabled', 'data-llms-enabled', 'data-enabled', 'data-value', 'type'].flatMap(key => node.hasAttribute(key) ? [[key, node.getAttribute(key)]] : []))
@@ -307,19 +330,22 @@ export async function snapshotSession(browser, cfg, { area, manual = false, fram
     let page = session.page;
     if (area) page = await openSiteArea(page, cfg, area);
     await page.waitForLoadState('domcontentloaded').catch(() => {});
-    if (area === '编辑网站') {
-      await page.waitForFunction(() => {
-        try { return !!document.querySelector('#backstage-innerpage')?.contentWindow?.jQuery; }
-        catch { return false; }
-      }, null, { timeout: 60000 });
-    }
+    if (area === '编辑网站') await page.locator('li.backstage-siteTool-setting').waitFor({state:'visible',timeout:60000});
     if (openTarget) {
       const { openLlms, openSettings } = await import('../flows/llms-txt.mjs');
       if (openTarget === 'llms') await openLlms(page);
       else if (openTarget === 'settings') await openSettings(page);
     }
-    for (const selector of clicks) await page.locator(selector).click();
+    for (const selector of clicks) {
+      await page.locator(selector).click();
+      // Admin navigation replaces an iframe after the parent click resolves.
+      if (area === '内容管理') await page.waitForTimeout(1800);
+    }
     if (hover) await page.locator(hover).hover();
+    if (area === '内容管理' && frame) {
+      const loading = page.frameLocator(frame).locator('#load');
+      await loading.waitFor({ state: 'hidden', timeout: 30000 });
+    }
     const structure = { ...await scopedStructure(page, { frame, scope }), frame: frame || null, scope: scope || 'body' };
     if (!frame && !scope && await page.locator('#backstage-innerpage').count()) {
       try { structure.iframe = await scopedStructure(page, { frame: '#backstage-innerpage' }); }

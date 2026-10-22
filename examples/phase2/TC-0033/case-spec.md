@@ -2,13 +2,13 @@
 
 Start: editor
 
-Environment: public_frontend
-Data: {"llms.enabled": true, "llms.source": "system", "faq.count": 5}
+Environment:
+Data: {"llms.enabled": true, "llms.source": "system", "faq.count": 5, "llms.overview": "phase4-faq-public-overview"}
 
 ## Steps
 
 - S1: click txt.save
-- S2: open ?public.llms.faq
+- S2: defer_public public.llms
 
 ## Excel expectations
 

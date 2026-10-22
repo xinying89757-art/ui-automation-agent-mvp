@@ -152,6 +152,17 @@ export const test = base.extend<{ caseContext: CaseContext; lifecycle: void; adm
 export async function businessAssertion(id: string, assertion: () => Promise<void>): Promise<void> {
   await test.step(`assert:${id}`, async () => {
     try { await assertion(); }
-    catch (error) { throw new Error(`UIA_BUSINESS_FAILURE [${id}]: ${String(error)}`); }
+    catch (error) {
+      const message = String(error);
+      // Locator resolution failures remain automation failures even when the
+      // action sits inside a business assertion wrapper.
+      const resolved = /locator resolved to (?:<|\d+ elements?)/iu.test(message);
+      const neverResolved = /strict mode violation|resolved to 0 elements|locator.*not found/iu.test(message) ||
+        (/waiting for locator/iu.test(message) && !resolved);
+      if (neverResolved) {
+        throw new Error(`UIA_LOCATOR_MISS [${id}]: ${message}`);
+      }
+      throw new Error(`UIA_BUSINESS_FAILURE [${id}]: ${message}`);
+    }
   });
 }

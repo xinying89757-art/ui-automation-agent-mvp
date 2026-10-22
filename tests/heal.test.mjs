@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { bestCandidate, gateProposal, scoreCandidate } from '../assets/playwright-runner/support/heal.mjs';
+import { bestCandidate, classifyFailure, gateProposal, scoreCandidate } from '../assets/playwright-runner/support/heal.mjs';
 
 const fingerprint = { tag: 'a', name: '管理txt文件', ancestors: ['#site_customize_txt'] };
 
@@ -14,6 +14,9 @@ test('fingerprint score prefers the named control and rejects a tie', () => {
 });
 
 test('healer accepts a locator diff and refuses an assertion edit', () => {
+  assert.equal(classifyFailure('UIA_LOCATOR_MISS [A1]: Timeout waiting for locator inside UIA_BUSINESS_FAILURE').kind, 'locator_or_wait');
+  assert.equal(classifyFailure('UIA_BUSINESS_FAILURE expected text mismatch; locator resolved to 1 element').kind, 'suspected_product_bug');
+  assert.equal(classifyFailure('UIA_BUSINESS_FAILURE expected text mismatch; waiting for locator; locator resolved to <div>').kind, 'suspected_product_bug');
   const spec = [
     "await page.locator('#stale').click();",
     "await businessAssertion('title', async () => {",

@@ -51,15 +51,17 @@ export function bestCandidate(candidates, fingerprint, threshold = 0.72) {
 
 export function classifyFailure(message) {
   const text = String(message || '');
+  const resolved = /locator resolved to (?:<|\d+ elements?)/iu.test(text);
+  if (/UIA_LOCATOR_MISS|strict mode violation|resolved to 0 elements/iu.test(text) ||
+      (/waiting for locator/iu.test(text) && !resolved)) {
+    return { kind: 'locator_or_wait', accept: true, change: 'locator', action: '只允许更换定位器或等待，不改断言' };
+  }
   if (/UIA_BUSINESS_FAILURE|UIA_PRODUCT_CONFIRMATION|Expected substring|Expected string/.test(text)) {
     return { kind: 'suspected_product_bug', accept: false, change: 'assertion',
       action: '不修改断言或期望值，保留失败并提交审核' };
   }
   if (/UIA_ENVIRONMENT_BLOCKED|CAPTCHA_REQUIRED|AUTH_REQUIRED/.test(text)) {
     return { kind: 'environment', accept: false, change: 'none', action: '环境或登录阻塞，不改脚本' };
-  }
-  if (/UIA_LOCATOR_MISS|TimeoutError|locator\.|waiting for/.test(text)) {
-    return { kind: 'locator_or_wait', accept: true, change: 'locator', action: '只允许更换定位器或等待，不改断言' };
   }
   return { kind: 'unknown', accept: false, change: 'none', action: '不自动修改脚本' };
 }

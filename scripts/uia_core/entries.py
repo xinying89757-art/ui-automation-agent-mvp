@@ -64,7 +64,7 @@ def resolve(page):
             choices.append((any(key(page) == key(x) for x in names), len(key(name)), name, hint))
     if choices:
         _, _, name, hint = max(choices, key=lambda x: x[:3])
-        return dict(hint, key=name)
+        return literal_route(dict(hint, key=name))
     path = knowledge_path('page-map.yaml')
     catalog = read_yaml(path) if path.is_file() else {}
     for section in ('pages', 'targets'):
@@ -76,6 +76,15 @@ def resolve(page):
                 return {'key': name, 'label': page, 'path_text': row.get('path') or row.get('entry') or name,
                         'open_target': name, 'steps': [], 'frame': row.get('frame'), 'source': 'page-map', 'confirmed': True}
     return None
+
+
+def literal_route(hint):
+    """Entry routes replay without inputs: cut at the first ${INPUT} placeholder (the page before it is the entry)."""
+    steps = hint.get('steps') or []
+    cut = next((i for i, x in enumerate(steps) if '${INPUT}' in x), None)
+    if cut is not None:
+        hint = dict(hint, steps=steps[:cut], route_truncated_at=steps[cut].split('=')[0])
+    return hint
 
 
 def store(m, hints, source='handoff', confirmed=False):
@@ -120,6 +129,8 @@ def confirm(m, page, steps, frame=None):
     require(hint, '页面入口未知：请先 hints add')
     require(steps and all(re.match(r'^(goto|click|hover|fill|press|wait):.+', x) for x in steps), '请提供具体 --step 动作')
     require(all(not x.startswith('goto:') for x in steps[1:]), 'goto 仅允许作为首个入口步骤')
+    steps = literal_route({'steps': steps})['steps']
+    require(steps, '入口路线不能以需要输入的步骤开头')
     return store(m, [{'label': page, 'path_text': hint['path_text'], 'steps': steps,
                       **({'frame': frame or hint.get('frame')} if frame or hint.get('frame') else {})}], 'explored', True)
 

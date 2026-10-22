@@ -106,3 +106,10 @@ class AddTargetTests(PromoteTests):
             entries.add_target(self.base, self.m, 'faq-editor.add', '{"css": ".x"}', 'exploration/generator-faq-editor.entry.json')
         with self.assertRaises(common.UiaError):
             entries.add_target(self.base, self.m, 'faq-editor.other', '{"css": ".x"}', 'exploration/missing.json')
+
+
+class LiteralRouteTests(unittest.TestCase):
+    def test_input_placeholder_truncates_entry_route(self):
+        h = entries.literal_route({'steps': ['goto:/a', 'click:x', 'fill:y=${INPUT}', 'click:text=FAQ']})
+        self.assertEqual(h['steps'], ['goto:/a', 'click:x'])
+        self.assertEqual(h['route_truncated_at'], 'fill:y')

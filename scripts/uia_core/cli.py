@@ -387,6 +387,9 @@ def execute(args):
         code = runtime.execute_process(path.parent, batch, cfg)
         with locked_run(args.run) as (path, m):
             result = runtime.consume_batch(path.parent, m, code)
+            from .remote_checks import finalize
+            if any(row.get('active', True) for row in m.get('remote_checks', {}).values()):
+                finalize(path.parent, m)
             save(path, m)
         return result
     with locked_run(args.run) as (path, m):

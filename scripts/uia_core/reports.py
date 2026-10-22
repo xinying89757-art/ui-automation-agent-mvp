@@ -32,6 +32,10 @@ def opening(m, metrics, review):
     counts = Counter(zh(c.get('result')) if c.get('work_status') != 'waiting_human' else '等待前置' for c in m['cases'].values())
     conclusion = '本次共 ' + str(len(m['cases'])) + ' 条：' + '，'.join(str(n) + ' 条' + label for label, n in counts.items()) + '。'
     waiting = [cid + '：' + c.get('classification', {}).get('reason', '见审核单') for cid, c in m['cases'].items() if c.get('work_status') == 'waiting_human']
+    duplicates = [cid + '：' + c['duplicate_script_warning'] + ' 执行 ' + (c.get('registration') or {}).get('script', '')
+                  for cid, c in m['cases'].items() if c.get('duplicate_script_warning')]
+    if duplicates:
+        waiting.append('重复脚本选择：' + '；'.join(duplicates))
     remote = [cid for cid, c in m['cases'].items() if c.get('work_status') == 'remote_pending']
     if remote:
         waiting.append('公开文件待远程验证：' + '、'.join(remote) + '；见 remote-checks/request.json，不计通过。')
@@ -40,6 +44,10 @@ def opening(m, metrics, review):
                     f"计划外人工介入 {metrics['unplanned_interventions']}，会话轮次 {metrics['session_turns']}；"
                     f"脚本实际执行覆盖率 {metrics['script_coverage']['ratio']:.1%}；"
                     f"越权 {metrics['scope_violations']}，泄露 {metrics['leak_hits']}，未审核断言变更 {metrics['unreviewed_assertion_changes']}。")
+    checklist = m.get('questions', {}).get('run-preconditions', {})
+    if (checklist.get('entry_count', 0) and checklist.get('memory_answer_count') == checklist.get('entry_count')
+            and checklist.get('status') == 'answered' and metrics['checklist_questions'] == 0):
+        metrics_text += f" 清单全部来自环境记忆（{checklist['memory_answer_count']} 项），本次 0 问。"
     return [{'title': '结论', 'text': conclusion}, {'title': '需要你处理', 'text': '\n'.join(needs) or '无。'},
             {'title': '流程指标', 'text': metrics_text}]
 
@@ -77,6 +85,8 @@ def make_report(base, m):
                        "sheet", "rows", "stage", "work_status", "result", "stability", "pass_streak",
                        "flow_ids", "fixture_ids", "repair_rounds", "attempts", "feedback", "classification", "case_spec", "spec_first_lint", "spec_lint", "remote_status")})
         records[-1]['result_label'] = zh(c.get('result'))
+        records[-1]['script_binding'] = c.get('script_binding')
+        records[-1]['duplicate_script_warning'] = c.get('duplicate_script_warning')
         records[-1]['work_status_label'] = zh(c.get('work_status'))
         records[-1]['stability_label'] = zh(c.get('stability'))
         records[-1]["script"] = (c.get("registration") or {}).get("script")

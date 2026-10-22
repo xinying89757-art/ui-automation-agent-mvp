@@ -184,7 +184,6 @@ def preflight(base, m, evidence):
 
 
 def begin_batch(base, m, case_ids):
-    require(not any(c.get('attempts') and c['attempts'][-1].get('cleanup_pending') for c in m['cases'].values()), 'Remote data is held; ingest results or remote-checks restore before another batch')
     require(not m.get("active_batch"), "Recover the active batch before starting another")
     refresh(base, m)
     require(case_ids and len(case_ids) == len(set(case_ids)), "Select distinct case IDs")
@@ -200,6 +199,13 @@ def begin_batch(base, m, case_ids):
     require(cli.is_file(), "Install runner dependencies with npm ci before execution")
     require(all(cid in m["cases"] for cid in case_ids), "Unknown selected case ID")
     selected = [m["cases"][cid] for cid in case_ids]
+    from .remote_checks import hold_path
+    hold_file = hold_path(m)
+    if hold_file.is_file():
+        hold = read_json(hold_file)
+        if hold.get('run_id') != m['run_id']:
+            require(not any((c.get('registration') or {}).get('fixture', {}).get('mutates') for c in selected),
+                    'Another run holds environment data for remote verification; only read-only cases may run')
     caps = (m.get("preflight") or {}).get("capabilities") or {}
     for c in selected:
         require(c["work_status"] == "runnable", "Case is not runnable", c["case_id"])
@@ -259,6 +265,7 @@ def begin_batch(base, m, case_ids):
     # Title grep cannot be anchored: Playwright joins the file suite title in front of the case title.
     command = ["node", str(cli), "test"] + [pattern(name) + "$" for name in selected_scripts] + ["--grep", "(?:" + escaped + ")\\s"]
     batch = {"id": batch_id, "case_ids": case_ids, "versions": versions,
+             "scripts": {c['case_id']: c['registration']['script'] for c in selected},
              "owner_pid": os.getpid(),
              "started_at": now(), "directory": str(directory.relative_to(base)),
              "report": str((directory / "case-results.json").relative_to(base)), "command": command}
@@ -350,6 +357,7 @@ def consume_batch(base, m, exit_code=None):
         if result == "passed" and (not prepared or not (clean or cleanup_pending) or lifecycle.get("batch_id") != batch["id"] or row.get("retry") != 0):
             result = "automation_failure"
         attempt = {"batch_id": batch["id"], "at": now(), "version": version, "result": result,
+                   "script": batch.get("scripts", {}).get(cid),
                    "evidence": batch["report"], "evidence_sha256": file_hash(report_path),
                    "executed": cid in by_id and row.get("playwright_status") not in {"skipped", None},
                    "setup_verified": prepared, "cleanup_verified": clean, "cleanup_pending": cleanup_pending,

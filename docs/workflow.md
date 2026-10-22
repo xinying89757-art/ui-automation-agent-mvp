@@ -79,4 +79,4 @@ fixtures 可继续。清理恢复需要实际证据，通过 `resolve-fixture` �
 
 Xinying 已授权测试站及账号自由修改、保存、发布；实际可行时恢复数据以便复跑。
 
-公开文件采用远程交接时，后台操作仍在本机执行。进入 `remote`/`remote_pending` 后不是人工前置阻断；清理快照保留在本机，远程最终回执后按准备反序恢复。只有远程断言和本机恢复核验都通过才计通过/稳定。缓存结果保持等待；不可达不会冒充业务失败。到期通过 go 或 `remote-checks restore` 恢复，详细协议见 [remote-checks.md](remote-checks.md)。
+公开文件采用远程交接时，先运行不需要 hold 的用例，再准备 deferred 用例并最后生成请求。hold 写在环境私有记忆 `.auth/remote-holds/`；同环境的其他 run/clone 会阻止数据修改，但可运行只读用例。清理快照保留在本机，远程最终回执后按准备反序恢复。只有远程断言和本机恢复核验都通过才计通过/稳定。缓存结果保持等待；不可达不会冒充业务失败。到期通过 go 或 `remote-checks restore` 恢复，详细协议见 [remote-checks.md](remote-checks.md)。

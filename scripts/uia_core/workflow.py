@@ -555,20 +555,65 @@ def bind_specs(base, m):
     specs = sorted(path for path in (runner / "tests").rglob("*.spec.ts") if path.name != "healer-rehearsal.spec.ts")
     # Empty fresh runners simply queue case-spec tasks.
     found = {}
+    legacy_claims = {}
+    for legacy in specs:
+        if "generated" in legacy.relative_to(runner).parts:
+            continue
+        body = legacy.read_text(encoding="utf-8")
+        for match in re.finditer(r"\[([A-Za-z0-9][A-Za-z0-9_.-]*)\]", body):
+            cid = match.group(1)
+            if cid in m['cases']:
+                legacy_claims.setdefault(cid, []).append(legacy.relative_to(base).as_posix())
+    # A lint-passing generated contract is the authoritative executable when
+    # both generated and handwritten scripts claim the same imported case.
+    for cid, case in m['cases'].items():
+        lint = case.get('spec_lint') or {}
+        generated = runner / 'tests/generated' / (cid + '.spec.ts')
+        if case.get('case_spec') and lint.get('errors') == [] and generated.is_file():
+            found[cid] = (generated, generated.read_text(encoding='utf-8')[:500], True)
     for spec in specs:
         if "generated" in spec.relative_to(runner).parts:
             continue  # Generated tests require case-spec fixtures, not legacy hooks.
         body = spec.read_text(encoding="utf-8")
         for match in re.finditer(r"\[([A-Za-z0-9][A-Za-z0-9_.-]*)\]", body):
             cid = match.group(1)
-            if cid in found or cid not in m["cases"] or m["cases"][cid].get("case_spec"):
+            if cid not in m["cases"] or cid in found or m["cases"][cid].get("case_spec"):
                 continue
-            found[cid] = (spec, body[match.end():match.end() + 500])
+            found[cid] = (spec, body[match.end():match.end() + 500], False)
     if not found:
         return {"bound": [], "next": "spec", "instruction": "Write missing case-specs with uia-case-spec"}
     bound = []
-    for cid, (spec, window) in found.items():
+    for cid, (spec, window, generated) in found.items():
         c = m["cases"][cid]
+        if generated:
+            old_script = (c.get('registration') or {}).get('script')
+            c['registration'] = {'case_id': cid, 'case_spec': True,
+                'script': spec.relative_to(base).as_posix(),
+                'fixture': {'hooks': 'fixtures/case-spec.mjs', 'mutates': bool(read_yaml(inside(base, c['case_spec']))['mutation_scope']),
+                            'mutation_scope': read_yaml(inside(base, c['case_spec']))['mutation_scope']},
+                'dependencies': ['knowledge/page-map.yaml', 'knowledge/data-prep.yaml', 'knowledge/network.yaml']}
+            duplicates = set(legacy_claims.get(cid, []))
+            if old_script and old_script != c['registration']['script']:
+                duplicates.add(old_script)
+            c['script_binding'] = {'selected': c['registration']['script'],
+                                   'reason': 'lint-passing case-spec generated script takes precedence',
+                                   'duplicates': sorted(duplicates)}
+            c['daily_spec'] = False
+            c['fixture_ids'] = ['case-spec:' + cid]
+            c['flow_ids'] = ['case-spec']
+            c['isolated'] = False
+            version = case_version(base, m, c)
+            if c.get('version') != version:
+                reset_case(c, 'generated_case_spec_preferred', 'execution')
+                c['version'] = version
+                c['work_status'] = 'runnable'
+            c['stage'] = 'execution'
+            bound.append(cid)
+            if c['script_binding']['duplicates']:
+                c['duplicate_script_warning'] = '同时存在 legacy 与 generated 脚本；本次运行 generated。'
+            else:
+                c.pop('duplicate_script_warning', None)
+            continue
         mutates = "uia-mutates" in window
         registration = {
             "case_id": cid, "daily_spec": True,
@@ -602,6 +647,8 @@ def bind_specs(base, m):
     atomic_write(base / "state/cases.json", entries)
     event(m, "specs_bound", case_ids=sorted(found))
     return {"bound": sorted(found), "reopened": bound,
+            "script_choices": {cid: m['cases'][cid].get('script_binding') for cid in sorted(found) if m['cases'][cid].get('script_binding')},
+            "duplicate_warnings": {cid: m['cases'][cid]['duplicate_script_warning'] for cid in sorted(found) if m['cases'][cid].get('duplicate_script_warning')},
             "next": "preflight_then_run_batch" if bound else "generate_missing_specs",
             "instruction": "Run existing runnable specs before generating any new spec."}
 

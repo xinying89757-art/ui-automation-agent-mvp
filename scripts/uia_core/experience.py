@@ -65,7 +65,8 @@ def rows(base, m):
 def sync_checklist(base, m):
     from .preconditions import QUESTION_KEY
     entries = rows(base, m)
-    answers = load_memory(m)['answers']
+    memory_answers = load_memory(m)['answers']
+    answers = memory_answers
     old = m['questions'].get(QUESTION_KEY)
     # Run answers are immutable evidence; environment memory supplies only unseen runs.
     local = (old or {}).get('answer', {}).get('entries', {})
@@ -77,6 +78,14 @@ def sync_checklist(base, m):
                 'created_at': now(), 'attempted': [], 'resume_states': {}, 'sheet': None}
     q.update(case_ids=sorted({c for row in entries for c in row['cases']}), entries=entries,
              checklist=[r['key'] for r in pending], answer={'entries': {r['key']: answers[r['key']] for r in entries if r['key'] in answers}})
+    local_keys = set((old or {}).get('locally_answered_keys', []))
+    if old and 'locally_answered_keys' not in old:
+        local_keys = set(local) - set(old.get('memory_answer_keys', []))
+    memory_keys = {r['key'] for r in entries if r['key'] in memory_answers and r['key'] not in local_keys}
+    q['memory_answer_keys'] = sorted(memory_keys)
+    q['locally_answered_keys'] = sorted(local_keys)
+    q['memory_answer_count'] = len(memory_keys)
+    q['entry_count'] = len(entries)
     q['status'] = 'deferred' if pending and issued else 'open' if pending else 'answered'
     if pending and not issued:
         q.pop('answered_at', None)
@@ -93,6 +102,7 @@ def sync_checklist(base, m):
     text = checklist_text(q)
     (base / 'checklist.md').write_text(scrub_text(text, m['config']), encoding='utf-8')
     return {'question_id': QUESTION_KEY, 'question_count': len(pending) if not issued and not m.get('checklist_draft') else 0,
+            'memory_answer_count': q['memory_answer_count'], 'entry_count': len(entries),
             'draft': bool(m.get('checklist_draft')),
             'pending_review_count': len(pending) if issued else 0, 'status': q['status'],
             'checklist': str(base / 'checklist.md')}
@@ -153,6 +163,7 @@ def answer_sentence(base, m, sentence):
     require(q and q['status'] in {'open', 'deferred'} and not q.get('answered_at'), '没有待回答的开跑前清单；运行中问题请异步审核')
     parts = {a: b.strip(' ，,；;。') for a, b in re.findall(r'(?:^|[，,；;]\s*)([ABC])\s*[:：]?\s*(.*?)(?=(?:[，,；;]\s*[ABC](?![A-Za-z0-9])\s*[:：]?)|$)', sentence, re.S)}
     answers = dict(q.get('answer', {}).get('entries', {}))
+    newly_answered = []
     for row in q['entries']:
         if row['key'] in answers:
             continue
@@ -181,6 +192,7 @@ def answer_sentence(base, m, sentence):
             require(len(chosen) == 1, 'C 块请逐项选择清单中的选项，不接受默认猜测')
             value = chosen[0]
         answers[row['key']] = value
+        newly_answered.append(row['key'])
     memory = load_memory(m)
     memory['answers'].update(answers)
     memory['updated_at'] = now()
@@ -189,6 +201,9 @@ def answer_sentence(base, m, sentence):
     private.chmod(0o700)
     atomic_write(memory_path(m), memory)
     q.update(status='answered', answer={'entries': answers}, answered_at=now())
+    q['locally_answered_keys'] = sorted(set(q.get('locally_answered_keys', [])) | set(newly_answered))
+    q['memory_answer_keys'] = sorted(set(q.get('memory_answer_keys', [])) - set(newly_answered))
+    q['memory_answer_count'] = len(q['memory_answer_keys'])
     m['checklist_issued'] = True
     m.setdefault('interaction_events', []).append({'kind': 'checklist_answer', 'at': now()})
     event(m, 'checklist_answered', entries=len(answers))
@@ -285,11 +300,14 @@ def go(excel, profile=None, cases=None):
         require(len(candidates) == 1, '请用 --profile 指定已配置环境')
         profile = candidates[0].name.removesuffix('.local.json')
     path = profiles.profile_path(profile)
-    key = digest([str(source), str(path), selected])[:12]
+    key = digest([str(source), str(path)])[:12]
     matches = []
     for manifest in (ROOT / 'runs').glob('*/run.json'):
         candidate = read_json(manifest)
-        if candidate.get('go_key') == key:
+        source_rows = candidate.get('sources') or []
+        same_source = bool(source_rows and Path(source_rows[0].get('path', '')).resolve() == source and source_rows[0].get('sha256') == file_hash(source))
+        same_profile = candidate.get('config_path') and Path(candidate['config_path']).resolve() == path.resolve()
+        if candidate.get('go_key') == key or (same_source and same_profile and candidate.get('interaction_mode') == 'once'):
             matches.append(manifest)
     if matches:
         manifest = sorted(matches)[0]
@@ -301,11 +319,14 @@ def go(excel, profile=None, cases=None):
     with locked_run(manifest) as (manifest, m):
         base = manifest.parent
         if m.get('active_batch'):
-            return {'run_id': m['run_id'], 'question_count': 0, 'next': workflow.next_task(base, m)}
-        m.update(go_key=key, interaction_mode='once', selected_cases=selected)
+            return {'run_id': m['run_id'], 'run_reused': bool(matches),
+                    'run_selection': '复用同一工作簿与环境的 run；继续已有活动批次' if matches else '使用当前匹配 run；继续已有活动批次',
+                    'question_count': 0, 'next': workflow.next_task(base, m)}
+        previous_selection = m.get('selected_cases')
+        m.update(go_key=key, go_source=str(source), go_profile=str(path.resolve()), interaction_mode='once', selected_cases=selected)
         save(manifest, m)
         workflow.scaffold(base)
-        if not m['sources'] or m['sources'][0]['sha256'] != file_hash(source):
+        if not m['sources'] or m['sources'][0]['sha256'] != file_hash(source) or previous_selection != selected:
             workflow.import_excel(base, m, source)
         from .remote_checks import expire
         expire(base, m)
@@ -372,23 +393,53 @@ def go(excel, profile=None, cases=None):
     with locked_run(manifest) as (manifest, m):
         output = reports.make_report(manifest.parent, m)
         save(manifest, m)
-        return {'run_id': m['run_id'], **checklist, 'spec_tasks': tasks, 'report': output,
+        memory_note = ('清单全部来自环境记忆（' + str(checklist.get('memory_answer_count', 0)) + ' 项），本次 0 问'
+                       if checklist.get('entry_count', 0) == checklist.get('memory_answer_count', 0) and checklist.get('question_count') == 0 else None)
+        return {'run_id': m['run_id'], 'run_reused': bool(matches),
+                'run_selection': '复用同一工作簿与环境的 run；用例子集已更新' if matches else '新建 run；当前环境和工作簿没有匹配的既有 run',
+                'checklist_message': memory_note, **checklist, 'spec_tasks': tasks, 'report': output,
                 'next': {'action': 'complete_spec_tasks' if checklist['draft'] else 'answer_checklist' if checklist['question_count'] else 'continue_spec_tasks_or_review', 'mid_run_questions': 0}}
 
 
 def _run_ready(manifest, ready):
     from . import runtime
+    from .common import read_yaml
+    with locked_run(manifest) as (_path, m):
+        base = manifest.parent
+        independent, deferred = [], []
+        for cid in ready:
+            c = m['cases'].get(cid, {})
+            spec_path = c.get('case_spec')
+            spec = read_yaml(base / spec_path) if spec_path and (base / spec_path).is_file() else {}
+            (deferred if any(s.get('verb') == 'defer_public' for s in spec.get('steps', [])) else independent).append(cid)
+        ready = independent + deferred
+        has_deferred = bool(deferred)
+        held_ids = set(deferred)
     while ready:
         with locked_run(manifest) as (path, m):
             if not m.get('preflight') or m['preflight']['status'] != 'passed':
                 return
-            selected = ready[:m['config']['execution']['batch_size']]
+            size = m['config']['execution']['batch_size']
+            selected = ready[:size]
             ready = ready[len(selected):]
+            if any(cid in held_ids for cid in selected) and any(cid not in held_ids for cid in selected):
+                deferred_part = [cid for cid in selected if cid in held_ids]
+                selected = [cid for cid in selected if cid not in held_ids]
+                ready = deferred_part + ready
             selected = [cid for cid in selected if m['cases'][cid]['work_status'] == 'runnable']
             if not selected:
                 continue
+            if any(cid in held_ids for cid in selected):
+                from .remote_checks import hold_path, persist_hold
+                if not hold_path(m).is_file():
+                    persist_hold(m, sorted(held_ids))
             batch = runtime.begin_batch(path.parent, m, selected)
             cfg = m['config']; save(path, m)
         code = runtime.execute_process(path.parent, batch, cfg)
         with locked_run(manifest) as (path, m):
             runtime.consume_batch(path.parent, m, code); save(path, m)
+    if has_deferred:
+        with locked_run(manifest) as (path, m):
+            from .remote_checks import finalize
+            finalize(path.parent, m)
+            save(path, m)

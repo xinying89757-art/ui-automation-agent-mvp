@@ -632,7 +632,9 @@ def next_task(base, m):
             return {"action": "preflight", "skill": "uia-runtime", "case_ids": [c["case_id"] for c in ready]}
         return {"action": "run-batch", "skill": "uia-runtime", "case_ids": [c["case_id"] for c in ready[:budget]]}
     repairs = [c for c in available if c["stage"] == "repair"]
-    if repairs:
+    # Breadth first: every case gets a first execution before any case gets another repair round.
+    untried = [c for c in available if not c.get("attempts") and c["stage"] in {"spec", "intent", "matching", "discovery"}]
+    if repairs and not untried:
         return {"action": "repair", "skill": "uia-runtime", "case_ids": [c["case_id"] for c in repairs[:budget]]}
     if m.get("checklist_issued"):
         refine = [(c, unresolved_targets(base, m, c)) for c in available]
@@ -675,6 +677,8 @@ def next_task(base, m):
     if selected:
         return {"action": "intent", "skill": "uia-excel-prep", "case_ids": [c["case_id"] for c in selected],
                 "input_paths": [str(base / c["source"]) for c in selected]}
+    if repairs:
+        return {"action": "repair", "skill": "uia-runtime", "case_ids": [c["case_id"] for c in repairs[:budget]]}
     feedback = [c for c in cases if c.get("result") == "passed" and c.get("stability") == "stable" and not c.get("feedback")]
     if feedback:
         return {"action": "feedback", "skill": "uia-runtime-feedback-reviewer", "case_ids": [c["case_id"] for c in feedback[:budget]]}

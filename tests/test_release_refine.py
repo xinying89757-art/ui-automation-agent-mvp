@@ -116,3 +116,16 @@ class PublicHandoffTests(unittest.TestCase):
         m['cases']['C1']['work_status'] = 'waiting_human'
         self.assertEqual(workflow.release_resolved(m), ['old'])
         self.assertEqual(m['cases']['C1']['work_status'], 'pending')
+
+
+class BreadthFirstTests(ReleaseAndRefineTests):
+    def test_untried_cases_are_refined_before_repairs(self):
+        entries.confirm(self.m, '新版内容编辑器', ['click:content-admin', 'click:text=产品'])
+        workflow.release_resolved(self.m)
+        self.m['cases']['C3'] = {'case_id': 'C3', 'priority': 'P0', 'work_status': 'pending', 'stage': 'repair',
+                                 'result': 'automation_failure', 'attempts': [{'result': 'automation_failure'}]}
+        with patch.object(workflow, 'refresh'), patch('uia_core.preconditions.triage', return_value=[]):
+            self.assertEqual(workflow.next_task(self.base, self.m)['action'], 'refine_specs')
+            for cid in ('C1', 'C2'):
+                self.m['cases'][cid]['work_status'] = 'finished'
+            self.assertEqual(workflow.next_task(self.base, self.m)['action'], 'repair')

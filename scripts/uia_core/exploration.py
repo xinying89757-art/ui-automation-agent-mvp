@@ -103,9 +103,12 @@ Checkpoint: the moment you reach the Starting entry, send one short progress mes
 {{"checkpoint": "entry", "reached": false, "reached_entry": true, "route": [...], "frames": [...]}} and then continue.
 Final answer: ONE fenced ```json block {{"reached": true|false, "reached_entry": true|false,
 "failed_interaction": "drag|clipboard|gesture|file-dialog|canvas|other:<specific text> or null; only after reaching entry",
-"route": [ordered steps as "goto:/path" | "click:<css or text=...>" |
-"hover:..." | "fill:<target>=${{INPUT}}"], "frames": [iframe selectors on the way], "completion_signal": "<locator + visible text>",
-"targets": {{"<proposed.name>": "<stable css/role locator, scoped by frame>"}}, "notes": "<=3 short sentences"}}."""
+"route": [ordered steps; "goto:/path" or "click:text=<visible text>" strings, or objects
+{{"verb": "click|hover|fill|press", "target": <TARGET>, "value": "<literal non-secret text typed, e.g. / for a slash menu>"}}],
+"frames": [iframe selectors on the way], "completion_signal": "<locator + visible text>",
+"targets": {{"<proposed.name>": <TARGET>}}, "notes": "<=3 short sentences"}}.
+<TARGET> is a JSON object, never Playwright code: {{"frames": [outer iframe css, ..., innermost], "css": "<stable css>"}}
+or {{"frames": [...], "role": "button", "name": "<accessible name>"}} or {{"frames": [...], "text": "<exact visible text>"}}."""
 
 
 def codex_binary():

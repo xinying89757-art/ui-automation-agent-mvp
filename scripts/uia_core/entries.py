@@ -275,9 +275,46 @@ def _split_top(text):
     return parts + ([cur] if cur else [])
 
 
+def _frames_of(value):
+    value = value if isinstance(value, list) else [p for p in re.split(r'\s*>>\s*', value or '') if p.strip()]
+    return [f.strip() for f in value if isinstance(f, str) and f.strip()]
+
+
+def _with_frames(row, frames):
+    if frames:
+        row['frame'] = frames[0]
+        if frames[1:]:
+            row['nested_frames'] = frames[1:]
+    return row
+
+
 def locator_target(text):
-    """'iframe#a >> #b >> iframe.c button.x filtered by exact text 取消' -> page-map target row."""
+    """Generator locator (structured object, Playwright call text, or 'frame >> ... css') -> page-map target row."""
+    if isinstance(text, dict):
+        frames = _frames_of(text.get('frames') or text.get('frame') or [])
+        if text.get('role'):
+            row = {'role': str(text['role']), **({'name': str(text['name'])} if text.get('name') else {})}
+        elif text.get('text'):
+            row = {'selector': 'text=' + json.dumps(str(text['text']), ensure_ascii=False)}
+        else:
+            css = text.get('css') or text.get('selector')
+            require(isinstance(css, str) and css.strip(), 'target object needs css, role or text')
+            row = {'selector': css.strip()}
+        return _with_frames(row, frames)
     text = text.strip()
+    call = re.match(r"^(?:page\.)?getBy(Role|Text|Label|Placeholder)\(\s*(['\"])(.*?)\2\s*(?:,\s*\{(.*?)\})?\s*\)\s*(?:scoped to|in|inside|within)?\s*(.*)$", text, re.S)
+    if call:
+        kind, arg, opts, rest = call.group(1), call.group(3), call.group(4) or '', call.group(5)
+        name = re.search(r"name\s*:\s*(['\"])(.*?)\1", opts)
+        if kind == 'Role':
+            row = {'role': arg, **({'name': name.group(2)} if name else {})}
+        elif kind == 'Text':
+            row = {'selector': 'text=' + json.dumps(arg, ensure_ascii=False)}
+        elif kind == 'Label':
+            row = {'selector': 'internal:label=' + json.dumps(arg, ensure_ascii=False) + 's'}
+        else:
+            row = {'selector': '[placeholder=' + json.dumps(arg, ensure_ascii=False) + ']'}
+        return _with_frames(row, _frames_of(rest))
     exact = re.search(r'\s+filtered by (?:exact )?text\s+["“]?([^"”()]+?)["”]?\s*$', text)
     if exact:
         text = text[:exact.start()]
@@ -288,15 +325,10 @@ def locator_target(text):
     while len(tokens) > 1 and re.match(r'^iframe\b', tokens[0]):
         frames.append(tokens.pop(0))
     selector = ' '.join(tokens)
-    require(selector, 'unsupported locator: ' + text)
+    require(selector and not re.search(r'getBy|scoped to|\(\s*[\'"]', selector), 'unsupported locator: ' + text)
     if exact:
         selector += ':text-is(' + json.dumps(exact.group(1).strip(), ensure_ascii=False) + ')'
-    row = {'selector': selector}
-    if frames:
-        row['frame'] = frames[0]
-        if frames[1:]:
-            row['nested_frames'] = frames[1:]
-    return row
+    return _with_frames({'selector': selector}, frames)
 
 
 def promote(base, m, report, prefix=None, page=None, overwrite=False):
@@ -324,13 +356,27 @@ def promote(base, m, report, prefix=None, page=None, overwrite=False):
         put(prefix + '.' + slug(name), locator_target(locator))
     steps = []
     for index, step in enumerate(route.get('route') or [], 1):
+        if isinstance(step, dict):
+            verb, target, value = step.get('verb'), step.get('target'), step.get('value')
+            require(verb in {'goto', 'click', 'hover', 'fill', 'press', 'wait'} and target, 'unsupported route step: ' + json.dumps(step, ensure_ascii=False))
+            if isinstance(target, str) and (verb in {'goto', 'press', 'wait'} or target in targets or re.match(r'^(text|role)=', target)):
+                steps.append(verb + ':' + target + ('=' + str(value) if verb == 'fill' and value is not None else ''))
+                continue
+            name = prefix + '.route.' + str(index)
+            put(name, locator_target(target))
+            steps.append(verb + ':' + name + ('=' + (str(value) if value is not None else '${INPUT}') if verb == 'fill' else ''))
+            continue
         verb, _, rest = step.partition(':')
         require(verb in {'goto', 'click', 'hover', 'fill', 'press', 'wait'} and rest, 'unsupported route step: ' + step)
         rest = rest.strip()
         if verb in {'goto', 'press', 'wait'} or re.match(r'^(text|role)=', rest) and '>>' not in rest or rest in targets:
             steps.append(verb + ':' + re.sub(r'\s*\([^()]*\)\s*$', '', rest))
             continue
-        target, value = (rest.split('=${INPUT}')[0], '=${INPUT}') if verb == 'fill' else (rest, '')
+        if verb == 'fill':
+            split = re.match(r'^(.*?)=([^=\]\)"\']*)$', rest)
+            target, value = (split.group(1), '=' + split.group(2)) if split else (rest, '=${INPUT}')
+        else:
+            target, value = rest, ''
         name = prefix + '.route.' + str(index)
         put(name, locator_target(target))
         steps.append(verb + ':' + name + value)

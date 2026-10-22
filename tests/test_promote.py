@@ -70,3 +70,28 @@ class PromoteTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class StructuredTargetTests(unittest.TestCase):
+    def test_playwright_call_text_and_objects(self):
+        f = 'iframe[name="prod"] >> #tiptap-iframe >> iframe'
+        self.assertEqual(entries.locator_target("getByRole('button', { name: '添加FAQ' }) scoped to " + f),
+                         {'role': 'button', 'name': '添加FAQ', 'frame': 'iframe[name="prod"]', 'nested_frames': ['#tiptap-iframe', 'iframe']})
+        self.assertEqual(entries.locator_target("getByText('FAQ', { exact: true }) scoped to " + f)['selector'], 'text="FAQ"')
+        self.assertEqual(entries.locator_target({'frames': ['iframe#prod'], 'role': 'textbox', 'name': '请输入FAQ标题'}),
+                         {'role': 'textbox', 'name': '请输入FAQ标题', 'frame': 'iframe#prod'})
+        self.assertEqual(entries.locator_target({'frames': [], 'css': '.x'}), {'selector': '.x'})
+        with self.assertRaises(common.UiaError):
+            entries.locator_target('locator(".x").filter(something)')
+
+
+class StructuredRouteTests(PromoteTests):
+    def test_object_route_steps_and_literal_fill(self):
+        report = dict(REPORT, route=dict(REPORT['route'], route=[
+            'click:text=产品',
+            {'verb': 'fill', 'target': {'frames': ['iframe#prod', '#tiptap-iframe', 'iframe'], 'role': 'textbox'}, 'value': '/'},
+            'fill:iframe#prod >> #x=/',
+            {'verb': 'click', 'target': {'frames': ['iframe#prod', '#tiptap-iframe', 'iframe'], 'text': 'FAQ'}}], targets={}))
+        (self.base / 'exploration/generator-o.json').write_text(json.dumps(report, ensure_ascii=False), encoding='utf-8')
+        result = entries.promote(self.base, self.m, 'exploration/generator-o.json', prefix='p')
+        self.assertEqual(result['route_steps'], ['click:text=产品', 'fill:p.route.2=/', 'fill:p.route.3=/', 'click:p.route.4'])

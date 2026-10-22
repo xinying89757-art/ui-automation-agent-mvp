@@ -15,7 +15,7 @@ from . import metrics as run_metrics
 
 
 STATUS_ZH = {"remote_pending": "待远程检查", "remote_cached": "公开文件仍在缓存期", "remote_unreachable": "远程不可达或无法验证","passed": "通过", "business_failure": "业务失败", "save_not_persisted": "保存未生效（后台读回不一致）", "automation_failure": "自动化失败",
-             "environment_blocked": "环境阻断", "product_confirmation": "待业务确认", "not_suitable": "不适合自动化",
+             "environment_blocked": "环境阻断", "product_confirmation": "待业务确认", "not_suitable": "不适合自动化", "suspended": "挂起（流程/知识缺口）",
              "interrupted": "已中断", "stable": "已稳定", "unstable": "未稳定", "candidate": "待复验",
              "not_run": "未执行", "pending": "待处理", "runnable": "可执行", "running": "执行中",
              "waiting_human": "等待前置", "finished": "已完成", "open": "待回答", "answered": "已回答",

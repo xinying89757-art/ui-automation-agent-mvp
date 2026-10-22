@@ -139,3 +139,15 @@ class DraftAndResourceTests(PromoteTests):
             exploration.run_generator(self.base, self.m, 'p', 'plan', runner=runner, draft=True)
         self.assertIn('Draft mode', seen['prompt'])
         self.assertNotIn('Read-only', seen['prompt'])
+
+
+class AliasLintTests(unittest.TestCase):
+    def test_written_back_aliases_are_one_element(self):
+        from uia_core import specs
+        row = {'role': 'button', 'name': '保存', 'frame': 'iframe#prod'}
+        body = "await frame.getByRole('button', { name: '保存' }).click();"
+        aliases = {'a.save': dict(row, source='generator:a'), 'b.save': dict(row, source='observed:x', alias_of='a.save')}
+        self.assertEqual([e for e in specs.locator_errors(body, {'targets': aliases}) if 'non-unique' in e], [])
+        real = {'x.save': dict(row), 'y.save': dict(row)}
+        self.assertTrue([e for e in specs.locator_errors(body, {'targets': real}) if 'non-unique' in e])
+        self.assertEqual(entries.same_locator({'a.save': dict(row, source='g')}, dict(row), 'b.save'), 'a.save')

@@ -340,11 +340,14 @@ def code_files(base, registration):
 EXECUTED_RESULTS = {"product_confirmation", "business_failure", "save_not_persisted", "automation_failure"}
 
 
-def classification_gate(base, m, c, result):
+def classification_gate(base, m, c, result, reason=None):
     """Outcomes are earned by running; public checks go to remote hand-off; human waits come from the checklist."""
     if result in EXECUTED_RESULTS:
         require(c.get("attempts"), "未执行不能下结论：先补全 case-spec（探索/hints target）并 run-batch；"
                                    "product_confirmation 只用于执行后实际行为与期望不一致、需产品确认的情况")
+    if result == "suspended":
+        require(re.match(r"^(缺知识|缺控件|缺公开路径|远程条件不可表达|需求级|生成门禁|其他)[:：]", reason or ""),
+                "挂起需写明原因类别：缺知识|缺控件|缺公开路径|远程条件不可表达|需求级|生成门禁|其他：<说明>")
     if result == "environment_blocked" and not c.get("attempts") and not c.get("checklist_wait"):
         require(False, "环境阻断只能来自清单中未满足的前置或执行证据；公开前台断言请在 spec 中用 defer_public，"
                        "运行后台部分并生成 remote-check 请求（结果 remote_pending），不要直接判环境阻断")

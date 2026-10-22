@@ -242,6 +242,9 @@ def locator_errors(body, pages):
             clean = ICON.sub('', entry['name']).strip()
             # Includes map observations of duplicates, even when only one alias is stored.
             peers = [e for e in pages['targets'].values() if e.get('role') == entry['role'] and ICON.sub('', e.get('name', '')).strip() == clean and e.get('frame') == entry.get('frame') and e.get('scope') == entry.get('scope')]
+            # Knowledge write-back registers the same control once per exploration; identical written-back rows are aliases.
+            written = lambda e: e.get('alias_of') or str(e.get('source', '')).startswith(('generator:', 'observed:'))
+            peers = [e for e in peers if not written(e)] or peers[:1]
             if (entry.get('matches', 1) > 1 or len(peers) > 1) and not entry.get('scope'):
                 if re.search(r'getByRole\([^\n]*' + re.escape(clean), body):
                     errors.append('non-unique role/name needs a container scope: ' + name)

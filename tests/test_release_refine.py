@@ -129,3 +129,13 @@ class BreadthFirstTests(ReleaseAndRefineTests):
             for cid in ('C1', 'C2'):
                 self.m['cases'][cid]['work_status'] = 'finished'
             self.assertEqual(workflow.next_task(self.base, self.m)['action'], 'repair')
+
+
+class SuspendedTests(unittest.TestCase):
+    def test_suspended_needs_category_and_is_not_reopened(self):
+        with self.assertRaises(common.UiaError):
+            workflow.classification_gate(Path('.'), {}, {'attempts': []}, 'suspended', '没原因')
+        workflow.classification_gate(Path('.'), {}, {'attempts': []}, 'suspended', '缺公开路径：产品公开 URL 未知')
+        m = {'cases': {'C1': {'attempts': [], 'stage': 'finished', 'work_status': 'finished', 'result': 'suspended'}}, 'history': []}
+        self.assertEqual(workflow.reopen_unearned(m), [])
+        self.assertIn('suspended', common.RESULTS)

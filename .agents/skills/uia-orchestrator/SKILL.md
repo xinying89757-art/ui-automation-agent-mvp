@@ -31,7 +31,9 @@ never environment_blocked. Breadth first: `next` refines/runs never-executed cas
 rounds; follow its order instead of iterating one hard case.
 Need saves/validation/re-edit inside an editor? use `generator --draft` (component saves, empty submits; never outer
 save/publish). Public checks: find the record's public path (edit page URL/SEO field, list 预览/查看 link) and register it
-with `hints target --name <x>.public --resource /path --evidence ...`, then defer_public to it. Validation messages, re-edit, toolbars: explore them (snapshot/generator), do not park.
+with `hints target --name <x>.public --resource /path --evidence ...`, then defer_public to it.
+A case that cannot be executed for a recorded knowledge/process reason is classified `suspended` with a reason
+category (缺知识|缺控件|缺公开路径|远程条件不可表达|需求级|生成门禁|其他：…); it is an outcome, not a question. Validation messages, re-edit, toolbars: explore them (snapshot/generator), do not park.
 Explore each node once: knowledge → snapshot --goto/--open-target/--step/--frame/--scope → generator_setup_page with tests/seed.spec.ts; Midscene only for visual expectations.
 Write named targets into page-map.yaml (+ routes into flows) before writing specs; keep writing/running other nodes while one is unknown.
 Demo requires a known entry, entry_reached evidence and generator-cli --entry failure on the requested --interaction; unknown entries join checklist D (later discoveries go to review).

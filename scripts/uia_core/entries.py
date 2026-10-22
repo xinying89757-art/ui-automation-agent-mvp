@@ -342,6 +342,13 @@ def locator_target(text):
     return _with_frames({'selector': selector}, frames)
 
 
+def same_locator(targets, row, name):
+    keys = ('selector', 'role', 'name', 'frame', 'nested_frames', 'scope', 'resource')
+    ident = {k: row.get(k) for k in keys}
+    return next((other for other, existing in targets.items() if other != name and not existing.get('alias_of')
+                 and {k: existing.get(k) for k in keys} == ident), None)
+
+
 def promote(base, m, report, prefix=None, page=None, overwrite=False):
     """Promote a generator report's targets and route into shared knowledge (page-map + confirmed entry)."""
     path = (base / report) if not Path(report).is_absolute() else Path(report)
@@ -361,7 +368,8 @@ def promote(base, m, report, prefix=None, page=None, overwrite=False):
         if name in targets and not overwrite:
             skipped.append(name)
             return
-        targets[name] = dict(row, source=source, confirmed=False)
+        twin = same_locator(targets, row, name)
+        targets[name] = dict(row, source=source, confirmed=False, **({'alias_of': twin} if twin else {}))
         added.append(name)
     for name, locator in (route.get('targets') or {}).items():
         put(prefix + '.' + slug(name), locator_target(locator))
@@ -427,7 +435,8 @@ def add_target(base, m, name, locator, evidence, overwrite=False, resource=None,
     catalog = read_yaml(map_path) if map_path.is_file() else {'schema_version': 'page-map.v1', 'pages': {}, 'targets': {}}
     targets = catalog.setdefault('targets', {})
     require(name not in targets or overwrite, 'target exists; pass --overwrite to replace it')
-    targets[name] = dict(row, source='observed:' + str(evidence), confirmed=False)
+    twin = same_locator(targets, row, name)
+    targets[name] = dict(row, source='observed:' + str(evidence), confirmed=False, **({'alias_of': twin} if twin else {}))
     safe(catalog, m['config'])
     atomic_write(map_path, catalog, as_yaml=True)
     m.setdefault('knowledge_promotions', []).append({'at': now(), 'target': name, 'evidence': str(evidence)})

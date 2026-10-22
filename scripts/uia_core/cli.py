@@ -30,6 +30,9 @@ def parser():
     go.add_argument("excel")
     go.add_argument("--profile")
     go.add_argument("--cases", help="Comma-separated case IDs")
+    go.add_argument("--arm-watch", help="Comma-separated case IDs whose max-latency public assertion gets a pre-armed remote watch before the save")
+    go.add_argument("--lead-minutes", type=int, default=20)
+    go.add_argument("--watch-minutes", type=int, default=10)
     turn = commands.add_parser("session-turn")
     turn.add_argument("--run", required=True)
     turn.add_argument("--id", required=True)
@@ -298,7 +301,7 @@ def dispatch(args, path, m):
 def execute(args):
     if args.command == "go":
         from .experience import go
-        return go(args.excel, args.profile, args.cases)
+        return go(args.excel, args.profile, args.cases, arm_watch=args.arm_watch, lead_minutes=args.lead_minutes, watch_minutes=args.watch_minutes)
     if args.command == "env":
         return {"environments": profiles.presets()}
     if args.command == "setup":

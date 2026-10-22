@@ -42,6 +42,8 @@ node /path/to/remote-checks/check.mjs
 
 当 box 无法访问公开前台、而断言有 `max_latency_seconds` 时，先启动远程监听器，再保存：
 
+一条命令（推荐）：`.venv/bin/python scripts/uia.py go cases.xlsx --profile PROFILE --cases TC-0036 --arm-watch TC-0036 --lead-minutes 20 --watch-minutes 10`。go 在任何批次前布监听，立刻在 stderr 和 `runs/RUN/remote-checks/watch/ARMED.json` 给出监听目录与 `save_not_before`，然后先跑 hold-free 用例，到点才保存。把目录交给远程执行器后，取回 `watch-results.json` 运行 `ingest-watch`（第 4 步）。分步做法如下：
+
 0. 如果该用例已经在本 run 执行过，先运行 `.venv/bin/python scripts/uia.py spec gen --run RUN --cases TC-0036` 重置用例，再布监听。建议使用 `--watch-minutes 10`：更新若几分钟内仍不可见，已经不符合“立即”要求。
 1. 运行 `.venv/bin/python scripts/uia.py remote-checks arm-watch --run RUN --case TC-0036 [--lead-minutes 20] [--watch-minutes 10] [--interval-ms 1000]`。该命令从 case-spec 与 page-map 读取静态条件、公开路径和时效阈值；fixture 动态条件会被拒绝。默认在 20 分钟后开放保存窗口，并监听 40 分钟。
 2. 将返回的 `runs/RUN/remote-checks/watch/WATCH_ID/` 目录交给可访问公开前台的远程执行器。必须在 `save_not_before` 前启动 `node check.mjs` 并保持进程运行；脚本每秒带唯一 cache-bust 参数采样，并原子写 `watch-results.json`。只交付该目录，不交付 run.json、state 或认证文件。

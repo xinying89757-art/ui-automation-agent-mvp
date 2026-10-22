@@ -300,7 +300,7 @@ def checklist_notice(checklist):
     return '清单全部来自环境记忆（' + str(entries) + ' 项），本次 0 问' if entries == checklist.get('memory_answer_count', 0) else None
 
 
-def go(excel, profile=None, cases=None):
+def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_minutes=10):
     from . import workflow, specs, profiles, runtime, reports
     source = Path(excel).resolve()
     require(source.is_file(), '工作簿不存在')
@@ -393,6 +393,8 @@ def go(excel, profile=None, cases=None):
             workflow.question(m, 'environment', 'preflight', scrub_text(str(error), m['config']), list(m['cases']), reopen=True)
         save(manifest, m)
         ready = [cid for cid, c in m['cases'].items() if c['work_status'] == 'runnable' and not c.get('case_spec')]
+        armed = _arm_requested_watches(base, m, arm_watch, lead_minutes, watch_minutes)
+        save(manifest, m)
     # Existing runnable scripts get the first batch, before new generation.
     if ready:
         _run_ready(manifest, ready)
@@ -423,8 +425,28 @@ def go(excel, profile=None, cases=None):
         memory_note = checklist_notice(checklist)
         return {'run_id': m['run_id'], 'run_reused': bool(matches),
                 'run_selection': '复用同一工作簿与环境的 run；用例子集已更新' if matches else '新建 run；当前环境和工作簿没有匹配的既有 run',
-                'checklist_message': memory_note, **checklist, 'spec_tasks': tasks, 'report': output,
+                'checklist_message': memory_note, **checklist, 'spec_tasks': tasks, 'report': output, 'armed_watches': armed,
                 'next': {'action': 'complete_spec_tasks' if checklist['draft'] else 'answer_checklist' if checklist['question_count'] else 'continue_spec_tasks_or_review', 'mid_run_questions': 0}}
+
+
+def _arm_requested_watches(base, m, arm_watch, lead_minutes, watch_minutes):
+    """Arm remote watches before any batch, and announce the hand-off directory immediately."""
+    if not arm_watch:
+        return []
+    import json, sys
+    from .remote_checks import arm_watch as arm
+    armed = []
+    for cid in [x.strip() for x in arm_watch.split(',') if x.strip()]:
+        require(cid in m['cases'], 'arm-watch case is not in this run: ' + cid)
+        require(m['cases'][cid].get('work_status') == 'runnable', 'arm-watch case must be runnable (reset it with spec gen first): ' + cid)
+        result = arm(base, m, cid, lead_minutes, watch_minutes)
+        row = m['remote_watches'][result['watch_id']]
+        armed.append({'case_id': cid, 'watch_dir': str((base / result['request']).parent),
+                      'save_not_before': row['save_not_before'], 'watch_until': row['watch_until']})
+    atomic_write(base / 'remote-checks/watch/ARMED.json', armed)
+    # go blocks until the save window; the hand-off must be visible before that.
+    print(json.dumps({'armed_watches': armed}, ensure_ascii=False), file=sys.stderr, flush=True)
+    return armed
 
 
 def _run_ready(manifest, ready):

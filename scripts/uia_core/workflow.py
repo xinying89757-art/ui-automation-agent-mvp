@@ -569,7 +569,7 @@ def bind_specs(base, m):
     for cid, case in m['cases'].items():
         lint = case.get('spec_lint') or {}
         generated = runner / 'tests/generated' / (cid + '.spec.ts')
-        if case.get('case_spec') and lint.get('errors') == [] and generated.is_file():
+        if case.get('case_spec') and lint.get('errors') == [] and generated.is_file() and not case.get('spec_generation_blocked'):
             found[cid] = (generated, generated.read_text(encoding='utf-8')[:500], True)
     for spec in specs:
         if "generated" in spec.relative_to(runner).parts:
@@ -577,7 +577,11 @@ def bind_specs(base, m):
         body = spec.read_text(encoding="utf-8")
         for match in re.finditer(r"\[([A-Za-z0-9][A-Za-z0-9_.-]*)\]", body):
             cid = match.group(1)
-            if cid not in m["cases"] or cid in found or m["cases"][cid].get("case_spec"):
+            case = m["cases"].get(cid)
+            lint_passed = bool(case and case.get('case_spec') and (case.get('spec_lint') or {}).get('errors') == []
+                               and not case.get('spec_generation_blocked'))
+            generated = runner / 'tests/generated' / (cid + '.spec.ts')
+            if cid not in m["cases"] or cid in found or (lint_passed and generated.is_file()):
                 continue
             found[cid] = (spec, body[match.end():match.end() + 500], False)
     if not found:
@@ -624,6 +628,19 @@ def bind_specs(base, m):
         }
         c["daily_spec"] = True
         c["registration"] = registration
+        generated = runner / 'tests/generated' / (cid + '.spec.ts')
+        if c.get('case_spec') or generated.is_file():
+            duplicates = set(legacy_claims.get(cid, [])) - {registration['script']}
+            if generated.is_file():
+                duplicates.add(generated.relative_to(base).as_posix())
+            c['script_binding'] = {'selected': registration['script'],
+                                   'reason': ('case-spec generation refused: ' + c['spec_generation_blocked']) if c.get('spec_generation_blocked') else
+                                             'case-spec generated script unavailable or did not pass lint; legacy script fallback',
+                                   'duplicates': sorted(duplicates)}
+            c['duplicate_script_warning'] = '同时存在 case-spec 或 generated 与 legacy 脚本；生成脚本不可用或未通过 lint，本次运行 legacy。'
+        else:
+            c.pop('script_binding', None)
+            c.pop('duplicate_script_warning', None)
         c["flow_ids"] = ["llms-txt"]
         c["fixture_ids"] = ["llms-overview"] if mutates else ["llms-readonly"]
         c["isolated"] = False

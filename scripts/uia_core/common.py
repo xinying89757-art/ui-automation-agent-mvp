@@ -133,7 +133,10 @@ def locked_run(value):
                     fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 break
             except (BlockingIOError, OSError):
-                require(time.monotonic() < deadline, "Run is busy; retry after the current command")
+                run_id = path.parent.name
+                require(time.monotonic() < deadline,
+                        f"Run {run_id} is busy; another uia.py command (for example go or run-batch) is holding it. "
+                        f"Use `uia.py wait --run {run_id}` or `uia.py status --run {run_id}`.")
                 time.sleep(0.05)
         try:
             p, m = load_run(path)

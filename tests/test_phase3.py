@@ -22,6 +22,7 @@ class PhaseThreeTests(unittest.TestCase):
         for p in self.patches:
             p.start()
         shutil.copytree(SOURCE / 'assets', self.root / 'assets', ignore=shutil.ignore_patterns('node_modules', 'results'))
+        shutil.copytree(SOURCE / 'examples/phase2', self.root / 'examples/phase2')
         self.base = self.root / 'runs/R'
         self.base.mkdir(parents=True)
         self.m = {'cases': {}, 'config': {'environment': {'id': 'production'}, 'site': 'https://example.test',
@@ -154,6 +155,89 @@ class PhaseThreeTests(unittest.TestCase):
             self.assertEqual(first['run_id'], second['run_id'])
             self.assertEqual(run.call_count, 1)
             self.assertEqual(second['spec_tasks'][0]['case_id'], 'NEW-2')
+
+    def test_go_prefers_source_matched_generated_case_spec_before_legacy_binding(self):
+        auth = self.root / 'private.json'
+        common.atomic_write(auth, {'account': 'fake-private-user', 'password': 'fake-private-password'})
+        profiles.setup('offline', 'production', 'en.example.test', credentials_file=auth)
+        workbook = self.root / 'matched.xlsx'
+        wb = Workbook(); ws = wb.active
+        ws.append(['用例ID', '用例标题', '前置条件', '操作步骤', '预期结果'])
+        ws.append(['TC-0004', '窗口', '', '打开', '显示'])
+        wb.save(workbook)
+        original_import = workflow.import_excel
+        def import_with_matched_hash(base, manifest, source):
+            result = original_import(base, manifest, source)
+            manifest['cases']['TC-0004']['source_hash'] = common.read_json(self.root / 'examples/phase2/index.json')['TC-0004']['source_hash']
+            return result
+        def lint_contract(base, manifest, case_ids, **kwargs):
+            for cid in case_ids:
+                manifest['cases'][cid]['spec_lint'] = {'errors': [], 'automatable': 'yes'}
+            return {'valid': True, 'cases': {cid: {'errors': []} for cid in case_ids}}
+        def preflight(base, manifest, evidence):
+            manifest['preflight'] = {'status': 'passed'}
+        with patch.object(profiles, 'invoke_login', return_value={}), \
+             patch.object(workflow, 'import_excel', side_effect=import_with_matched_hash), \
+             patch.object(specs, 'lint', side_effect=lint_contract), \
+             patch.object(specs, 'generate', return_value={}) as generate, \
+             patch('uia_core.runtime.preflight', side_effect=preflight), \
+             patch.object(experience, '_run_ready') as run, \
+             patch.object(reports, 'make_report', return_value={}):
+            result = experience.go(workbook, 'offline', 'TC-0004')
+        case = common.read_json(self.root / 'runs' / result['run_id'] / 'run.json')['cases']['TC-0004']
+        self.assertEqual(generate.call_count, 1)
+        self.assertEqual(run.call_count, 1)
+        self.assertEqual(run.call_args.args[1], ['TC-0004'])
+        self.assertEqual(case['registration']['script'], 'runner/tests/generated/TC-0004.spec.ts')
+        self.assertEqual(case['script_binding']['selected'], case['registration']['script'])
+        self.assertIn('runner/tests/llms-txt.spec.ts', case['script_binding']['duplicates'])
+        self.assertTrue(case['duplicate_script_warning'])
+        report_metrics = {'checklist_questions': 0, 'checklist_answers': 0, 'mid_run_questions': 0,
+                          'unplanned_interventions': 0, 'session_turns': 0,
+                          'script_coverage': {'ratio': 1.0}, 'scope_violations': 0,
+                          'leak_hits': 0, 'unreviewed_assertion_changes': 0}
+        report = reports.opening({'cases': {'TC-0004': case}, 'questions': {}}, report_metrics, {'items': []})
+        self.assertIn('重复脚本选择', report[1]['text'])
+
+    def test_session_turn_is_allowed_during_active_batch(self):
+        manifest = self.root / 'runs/R/run.json'
+        self.m.update(schema_version='uia-run.v1', run_id='R', active_batch={'batch_id': 'B'},
+                      delivery={}, contaminated_fixtures=[], preflight={})
+        common.save(manifest, self.m)
+        args = cli.parser().parse_args(['session-turn', '--run', 'R', '--id', 'turn-1', '--kind', '发起'])
+        result = cli.execute(args)
+        self.assertEqual(result['session_turns'], 1)
+        self.assertEqual(common.read_json(manifest)['interaction_events'][0]['turn_id'], 'turn-1')
+
+    def test_blocked_generation_falls_back_to_legacy_with_reported_duplicate(self):
+        shutil.copytree(SOURCE / 'assets/playwright-runner', self.base / 'runner',
+                        ignore=shutil.ignore_patterns('node_modules', 'results'))
+        for existing in self.m['cases'].values():
+            existing['registration'] = None
+        self.add_case('TC-0004', [])
+        case = self.m['cases']['TC-0004']
+        case.update(spec_lint={'errors': []}, spec_generation_blocked='Restore held remote data before generating another version',
+                    version='v1')
+        with patch.object(workflow, 'case_errors', return_value=([], [])), \
+             patch.object(workflow, 'case_version', return_value='v1'):
+            result = workflow.bind_specs(self.base, self.m)
+        self.assertEqual(case['registration']['script'], 'runner/tests/llms-txt.spec.ts')
+        self.assertEqual(case['script_binding']['selected'], case['registration']['script'])
+        self.assertEqual(case['script_binding']['duplicates'], ['runner/tests/generated/TC-0004.spec.ts'])
+        self.assertIn('generation refused', case['script_binding']['reason'])
+        self.assertIn('TC-0004', result['duplicate_warnings'])
+
+    def test_busy_run_error_names_recovery_commands(self):
+        manifest = self.root / 'runs/BUSY-RUN/run.json'
+        manifest.parent.mkdir(parents=True)
+        common.atomic_write(manifest, {'schema_version': 'uia-run.v1', 'run_id': 'BUSY-RUN'})
+        import fcntl
+        with patch('uia_core.common.time.monotonic', side_effect=[0, 11]), \
+             patch('uia_core.common.time.sleep'), \
+             patch.object(fcntl, 'flock', side_effect=BlockingIOError):
+            with self.assertRaisesRegex(common.UiaError, r'BUSY-RUN.*go or run-batch.*wait --run BUSY-RUN.*status --run BUSY-RUN'):
+                with common.locked_run(manifest):
+                    pass
 
     def test_remote_checklist_does_not_gate_public_or_delayed_cases(self):
         import yaml

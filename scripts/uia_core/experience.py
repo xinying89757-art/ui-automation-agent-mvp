@@ -332,16 +332,32 @@ def go(excel, profile=None, cases=None):
         from .remote_checks import expire
         expire(base, m)
         workflow.refresh(base, m)
-        workflow.bind_specs(base, m)
         # Reuse only source-fingerprint-matched example contracts, never by case ID alone.
         index = ROOT / 'examples/phase2/index.json'
+        matched = []
         for cid, item in (read_json(index).items() if index.is_file() else []):
             c = m['cases'].get(cid)
-            if c and c['source_hash'] == item['source_hash'] and not specs.spec_path(base, c).is_file():
-                dest = specs.spec_path(base, c); dest.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copyfile(ROOT / item['spec'], dest)
-                if not c.get('registration'):
+            if c and c['source_hash'] == item['source_hash']:
+                dest = specs.spec_path(base, c)
+                if not dest.is_file():
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copyfile(ROOT / item['spec'], dest)
                     c['case_spec'] = str(dest.relative_to(base))
+                    matched.append(cid)
+                elif c.get('spec_generation_blocked'):
+                    matched.append(cid)
+        # Lint and compile matched contracts before legacy scripts claim imported cases.
+        if matched:
+            lint = specs.lint(base, m, matched)
+            for cid in matched:
+                if not m['cases'][cid].get('spec_lint', {}).get('errors'):
+                    try:
+                        specs.generate(base, m, cid)
+                        m['cases'][cid].pop('spec_generation_blocked', None)
+                    except UiaError as error:
+                        # Binding below records a visible legacy fallback and duplicate.
+                        m['cases'][cid]['spec_generation_blocked'] = scrub_text(str(error), m['config'])
+        workflow.bind_specs(base, m)
         # A legacy script that substitutes editor values for a public-file assertion is
         # incompatible with the source-matched deferred contract. Preserve its history,
         # then compile the contract instead of silently running the partial legacy test.

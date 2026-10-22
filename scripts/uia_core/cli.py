@@ -404,7 +404,7 @@ def execute(args):
             save(path, m)
         return result
     with locked_run(args.run) as (path, m):
-        require(not m.get("active_batch") or args.command in {"record-run", "recover", "validate", "report", "next"},
+        require(not m.get("active_batch") or args.command in {"record-run", "recover", "validate", "report", "next", "session-turn"},
                 "An execution batch is active; recover it before changing the run")
         before = digest({k: m[k] for k in ("cases", "questions", "sources", "config", "preflight", "contaminated_fixtures")})
         result = dispatch(args, path, m)

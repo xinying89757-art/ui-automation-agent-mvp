@@ -9,7 +9,7 @@ import { openFaq, restoreFaq } from '../flows/faq-data.mjs';
 const cfg=loadConfig();const browser=await chromium.launch(launchOptions(cfg));
 const proofs=[];
 try {
- const session=await authenticatedSession(browser,cfg,{allowLogin:false});
+ const session=await authenticatedSession(browser,cfg,{allowLogin:true}); // remote holds outlive sessions (~1h): cleanup re-logs in with stored credentials
  const leases=JSON.parse(fs.readFileSync(process.env.UIA_REMOTE_LEASES,'utf8'));
  for(const lease of leases) {
   const saved=JSON.parse(fs.readFileSync(lease.snapshot,'utf8'));
@@ -25,5 +25,5 @@ try {
   await editor.close();proofs.push({case_id:lease.case_id,cleanup_verified:true,restored_at:new Date().toISOString(),faq:faqProof});
  }
  console.log(JSON.stringify({cleanup_verified:true,proofs}));
-} catch {console.log(JSON.stringify({cleanup_verified:false,proofs}));process.exitCode=1;}
+} catch (e) {console.log(JSON.stringify({cleanup_verified:false,proofs,error_code:e?.code||'RESTORE_FAILED'}));process.exitCode=1;}
 finally {await browser.close();}

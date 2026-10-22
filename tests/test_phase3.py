@@ -79,7 +79,7 @@ class PhaseThreeTests(unittest.TestCase):
         self.assertEqual(self.m['cases']['T3']['work_status'], 'waiting_human')
         self.m['cases']['T2']['unknown_nodes'] = ['new-page']
         self.m['exploration'] = [{'method': 'snapshot', 'purpose': 'new-page', 'steps_count': 1},
-                                 {'method': 'generator', 'purpose': 'new-page', 'result': 'failed'}]
+                                 {'method': 'generator', 'source': 'generator-cli', 'purpose': 'new-page', 'result': 'failed'}]
         q = workflow.question(self.m, 'demo', 'new-page', '请录制', ['T2'])
         self.assertEqual(q['status'], 'deferred')
         review = experience.review(self.base, self.m)

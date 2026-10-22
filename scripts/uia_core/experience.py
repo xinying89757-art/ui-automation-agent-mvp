@@ -175,6 +175,14 @@ def answer_sentence(base, m, sentence):
     from .preconditions import QUESTION_KEY
     require(scrub_text(sentence, m['config']) == sentence, '回答含敏感信息，请只回答条件及选项')
     q = m['questions'].get(QUESTION_KEY)
+    if m.get('checklist_draft') or (q and q.get('draft')):
+        # The human answers once; a draft only means AI work (triage/specs) is unfinished.
+        # Keep the sentence and apply it when the checklist is finalized, never ask again for it.
+        m['pending_checklist_answer'] = {'sentence': sentence, 'at': now()}
+        m.setdefault('interaction_events', []).append({'kind': 'checklist_answer_pending', 'at': now()})
+        event(m, 'checklist_answer_deferred')
+        return {'answered': 0, 'deferred_until_final': True,
+                'instruction': '已保存答复；完成前置分流和全部 case-spec（未知目标可先写 ?名称）后，go 会自动应用这句答复，无需再问。'}
     require(q and not q.get('draft'), '清单仍是草稿；请先分类前置条件并完成规格')
     require(q and q['status'] in {'open', 'deferred'} and not q.get('answered_at'), '没有待回答的开跑前清单；运行中问题请异步审核')
     parts = {a: b.strip(' ，,；;。') for a, b in re.findall(r'(?:^|[，,；;]\s*)([ABC])\s*[:：]?\s*(.*?)(?=(?:[，,；;]\s*[ABC](?![A-Za-z0-9])\s*[:：]?)|$)', sentence, re.S)}
@@ -412,6 +420,17 @@ def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_m
         if not checklist['draft']:
             m['checklist_issued'] = True
             m.setdefault('checklist_question_count', checklist['question_count'])
+            pending = m.get('pending_checklist_answer')
+            from .preconditions import QUESTION_KEY as _QK
+            q = m['questions'].get(_QK)
+            if pending and q and not q.get('answered_at') and q.get('status') in {'open', 'deferred'}:
+                try:
+                    applied = answer_sentence(base, m, pending['sentence'])
+                    m.pop('pending_checklist_answer', None)
+                    event(m, 'checklist_pending_answer_applied', answered=applied.get('answered'))
+                except UiaError as exc:
+                    pending['error'] = str(exc)
+                checklist = sync_checklist(base, m)
         # Runtime environment evidence is refreshed each invocation; memory is not a preflight.
         evidence = 'evidence/go-environment-' + now().replace(':', '-') + '.json'
         try:

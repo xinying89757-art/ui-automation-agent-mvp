@@ -94,7 +94,7 @@ def parser():
     for name in ("import", "status", "next", "bind", "advance", "match", "scaffold", "register", "preflight",
                  "question", "answer", "explore", "run-batch", "record-run", "recover", "repair", "classify",
                  "feedback", "resolve-fixture", "replay-demo", "report", "validate",
-                 "bind-specs", "absorb-locators", "heal-review", "preconditions", "wait", "agent-env", "exploration-log"):
+                 "bind-specs", "absorb-locators", "heal-review", "preconditions", "wait", "agent-env", "exploration-log", "generator"):
         cmd = commands.add_parser(name)
         cmd.add_argument("--run", required=name != "validate")
         if name == "preconditions":
@@ -103,6 +103,11 @@ def parser():
             cmd.add_argument("--as", dest="classification", choices=["ai_prepare", "explore", "human_env", "ignore"])
             cmd.add_argument("--label")
             cmd.add_argument("--match", action="append", default=[])
+        if name == "generator":
+            cmd.add_argument("--purpose", required=True)
+            cmd.add_argument("--plan", required=True)
+            cmd.add_argument("--minutes", type=int, default=20)
+            cmd.add_argument("--model")
         if name == "exploration-log":
             cmd.add_argument("--method", choices=["generator", "midscene"], required=True)
             cmd.add_argument("--purpose", required=True)
@@ -297,6 +302,9 @@ def dispatch(args, path, m):
         return workflow.bind_specs(base, m)
     if cmd == "agent-env":
         return profiles.agent_env(base, m)
+    if cmd == "generator":
+        from .exploration import run_generator
+        return run_generator(base, m, args.purpose, args.plan, args.minutes, args.model)
     if cmd == "exploration-log":
         from .exploration import log
         return log(m, args.method, args.purpose, args.result, args.note)

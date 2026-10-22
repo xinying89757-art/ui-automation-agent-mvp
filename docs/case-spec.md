@@ -116,6 +116,10 @@ iframe selector/name/id 及其父路径、popup 路径；动作打开新页时�
 `--save-as` 只接受 run，写 exploration-routes.yaml 候选投影，fill 值替换为 `${INPUT}`，不保存 ref。
 运行日志保存方法、耗时、goto 路径、步骤数、failed_step 和 purpose，不保存输入值。
 
+Test Agents 一键入口：`python3 scripts/uia.py generator --run R --purpose NODE --plan '目标和完成信号'`。
+它启动隔离的 Codex 子 agent（playwright-test MCP、approve、seed、run 的 agent-env），只读探索，
+结果写 runs/R/exploration/generator-NODE.json，并记录耗时/模型/token；只有它算 generator 阶梯。下列为其内部步骤：
+
 Test Agents 必须先设置 seed，不能直接调用 browser_snapshot：
 
 1. 先在测试 tracing 外 `python3 scripts/uia.py login --run R`，保证受保护认证状态可用。

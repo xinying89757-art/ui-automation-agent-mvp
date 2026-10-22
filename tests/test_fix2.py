@@ -38,8 +38,19 @@ class GenericProcessTests(unittest.TestCase):
         self.assertIn('unclassified', json.dumps(self.m['precondition_triage']))
         self.assertEqual(workflow.next_task(self.base, self.m)['action'], 'classify_preconditions')
         self.assertIn('草稿', (self.base / 'checklist.md').read_text())
-        with self.assertRaises(common.UiaError):
-            experience.answer_sentence(self.base, self.m, 'A 都有')
+        deferred = experience.answer_sentence(self.base, self.m, 'A 都有')
+        self.assertTrue(deferred['deferred_until_final'])
+        self.assertEqual(self.m['pending_checklist_answer']['sentence'], 'A 都有')
+
+    def test_pending_answer_applies_once_checklist_is_final(self):
+        experience.sync_checklist(self.base, self.m)
+        experience.answer_sentence(self.base, self.m, 'A 都有')
+        rows = preconditions.triage(self.base, self.m)
+        for row in rows:
+            preconditions.classify_precondition(self.base, self.m, row['key'], 'human_env', '特殊条件', [])
+        self.assertFalse(experience.sync_checklist(self.base, self.m)['draft'])
+        applied = experience.answer_sentence(self.base, self.m, self.m['pending_checklist_answer']['sentence'])
+        self.assertGreaterEqual(applied['answered'], 1)
 
     def test_ai_tasks_one_human_block_and_memory(self):
         rows = preconditions.triage(self.base, self.m)
@@ -70,7 +81,13 @@ class GenericProcessTests(unittest.TestCase):
         exploration.log(self.m, 'generator', 'other', 'failed', 'seed unavailable')
         with self.assertRaisesRegex(common.UiaError, 'generator'):
             exploration.demo_gate(self.m, 'node.x', ['C1'])
-        exploration.log(self.m, 'generator', 'node.x', 'failed', 'bounded attempt')
+        exploration.log(self.m, 'generator', 'node.x', 'failed', 'tool unavailable')
+        with self.assertRaisesRegex(common.UiaError, 'uia.py generator'):
+            exploration.demo_gate(self.m, 'node.x', ['C1'])
+        fake = argparse.Namespace(stdout=self.generator_output(False), returncode=0)
+        with patch.object(exploration, 'codex_binary', return_value='/bin/codex'), \
+                patch('uia_core.profiles.agent_env', return_value={'cwd': '/runner', 'env': {'UIA_CONFIG': '/p/c.json'}}):
+            exploration.run_generator(self.base, self.m, 'node.x', '找入口', runner=lambda cmd, timeout: fake)
         common.atomic_write(self.base / 'C1/case-spec.yaml', {'steps': [{'target': '?node.x'}]}, as_yaml=True)
         exploration.index_unknown_nodes(self.base, self.m)
         exploration.demo_gate(self.m, 'node.x', ['C1'])
@@ -79,6 +96,33 @@ class GenericProcessTests(unittest.TestCase):
         with self.assertRaises(common.UiaError):
             experience.add_review(self.m, 'record_request', ['C1'], '演示', node='other')
         self.assertEqual(workflow.question(self.m, 'demo', 'node.x', '演示', ['C1'])['status'], 'deferred')
+
+    @staticmethod
+    def generator_output(reached):
+        route = '{"reached": ' + ('true' if reached else 'false') + ', "route": ["click:text=产品"], "targets": {}}'
+        message = 'done\n```json\n' + route + '\n```'
+        return '\n'.join([json.dumps({'type': 'item.completed', 'item': {'type': 'agent_message', 'text': message}}),
+                          json.dumps({'type': 'turn.completed', 'usage': {'input_tokens': 10, 'cached_input_tokens': 5, 'output_tokens': 2}})])
+
+    def test_generator_cli_runs_isolated_subagent_and_records_tokens(self):
+        seen = {}
+        def runner(cmd, timeout):
+            seen['cmd'], seen['timeout'] = cmd, timeout
+            return argparse.Namespace(stdout=self.generator_output(True), returncode=0)
+        with patch.object(exploration, 'codex_binary', return_value='/bin/codex'), \
+                patch('uia_core.profiles.agent_env', return_value={'cwd': '/runner', 'env': {'UIA_CONFIG': '/p/c.json'}}):
+            result = exploration.run_generator(self.base, self.m, 'node.y', '找入口', minutes=3, runner=runner)
+        joined = ' '.join(seen['cmd'])
+        self.assertIn('default_tools_approval_mode="approve"', joined)
+        self.assertIn('mcp_servers.playwright-test.env.UIA_CONFIG="/p/c.json"', joined)
+        self.assertIn('seed.spec.ts', seen['cmd'][-1])
+        self.assertEqual(seen['timeout'], 180)
+        row = result['recorded']
+        self.assertEqual((row['source'], row['result'], row['tokens']['input_tokens']), ('generator-cli', 'ok', 10))
+        self.assertEqual(result['route']['route'], ['click:text=产品'])
+        self.assertTrue((self.base / 'exploration/generator-node.y.json').is_file())
+        args = cli.parser().parse_args(['generator', '--run', 'R', '--purpose', 'n', '--plan', 'p'])
+        self.assertEqual(args.minutes, 20)
 
     def test_legacy_explore_is_clean_and_parser_compatible(self):
         args = cli.parser().parse_args(['explore', '--run', 'R'])

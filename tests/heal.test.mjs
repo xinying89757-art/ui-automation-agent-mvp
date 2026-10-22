@@ -44,3 +44,19 @@ test('healer accepts a locator diff and refuses an assertion edit', () => {
   assert.equal(blocked.accept, false);
   assert.equal(blocked.kind, 'suspected_product_bug');
 });
+
+test('locator-only repair inside an assertion line is accepted; matcher or expected edits stay rejected', () => {
+  const spec = [
+    "await businessAssertion('A1', async () => {",
+    "  await expect(page.locator(\"#dialog\").locator(\".row .error-v0\")).toHaveText(\"请填写内容\");",
+    '});',
+  ].join('\n');
+  const fixed = spec.replace('.row .error-v0', '.row .error');
+  const ok = gateProposal(spec, fixed, 'UIA_LOCATOR_MISS [A1]: resolved to 0 elements');
+  assert.equal(ok.accept, true);
+  assert.match(ok.accepted_diff, /\.row \.error"/);
+  const expectedEdit = fixed.replace('请填写内容', '别的内容');
+  assert.equal(gateProposal(spec, expectedEdit, 'UIA_LOCATOR_MISS [A1]').accept, false);
+  const matcherEdit = fixed.replace('toHaveText', 'toBeVisible').replace('("请填写内容")', '()');
+  assert.equal(gateProposal(spec, matcherEdit, 'UIA_LOCATOR_MISS [A1]').accept, false);
+});

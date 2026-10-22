@@ -67,7 +67,13 @@ export function classifyFailure(message) {
 }
 
 function assertionLines(text) {
-  return text.split('\n').filter(line => /expect\(|businessAssertion|toHaveText|toContainText|toBe\(/.test(line)).join('\n');
+  return text.split('\n')
+    .filter(line => /expect\(|businessAssertion|toHaveText|toContainText|toBe\(/.test(line))
+    // Locator expressions identify the observed element; they are the only part
+    // a locator-only repair may change. Keep the assertion label, matcher and
+    // expected value in the signature.
+    .map(line => line.replace(/\.locator\(\s*(['"])[\s\S]*?\1\s*\)/g, '.locator(<locator>)'))
+    .join('\n');
 }
 
 export function lineDiff(before, after) {

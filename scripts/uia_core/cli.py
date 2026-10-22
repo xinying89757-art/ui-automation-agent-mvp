@@ -34,7 +34,10 @@ def parser():
     go.add_argument("--cases", help="Comma-separated case IDs")
     go.add_argument("--hints", help="Optional page=rough path lines or a UTF-8 file")
     hints = commands.add_parser("hints")
-    hints.add_argument("action", choices=["add", "confirm", "promote"])
+    hints.add_argument("action", choices=["add", "confirm", "promote", "target"])
+    hints.add_argument("--name")
+    hints.add_argument("--locator", help='target: JSON {"frames":[...],"css"|"role"+"name"|"text":...}')
+    hints.add_argument("--evidence", help="target: exploration artifact that shows it")
     hints.add_argument("--report", help="promote: exploration/generator-<slug>.json")
     hints.add_argument("--prefix")
     hints.add_argument("--overwrite", action="store_true")
@@ -187,7 +190,10 @@ def dispatch(args, path, m):
     if cmd == "hints":
         from .entries import add, confirm
         from .experience import sync_checklist
-        if args.action == "promote":
+        if args.action == "target":
+            from .entries import add_target
+            result = add_target(base, m, args.name, args.locator, args.evidence, args.overwrite)
+        elif args.action == "promote":
             from .entries import promote
             require(args.report, "hints promote requires --report exploration/generator-<slug>.json")
             result = promote(base, m, args.report, args.prefix, args.page, args.overwrite)

@@ -395,3 +395,24 @@ def promote(base, m, report, prefix=None, page=None, overwrite=False):
         result['entry_confirmed'] = page
     m.setdefault('knowledge_promotions', []).append({'at': now(), 'report': str(report), 'targets': added, 'entry': result.get('entry_confirmed')})
     return result
+
+
+def add_target(base, m, name, locator, evidence, overwrite=False):
+    """Register one observed target (from a snapshot/generator artifact) without fabricating a report."""
+    require(re.fullmatch(r'[a-z0-9][a-z0-9.-]*', name or ''), 'target name: lowercase dotted, e.g. faq-editor.add')
+    path = base / evidence
+    require(evidence and path.is_file() and base.resolve() in path.resolve().parents, '--evidence must be an existing artifact inside the run (exploration/... or evidence/...)')
+    try:
+        value = json.loads(locator)
+    except ValueError:
+        value = locator
+    row = locator_target(value)
+    map_path = knowledge_path('page-map.yaml')
+    catalog = read_yaml(map_path) if map_path.is_file() else {'schema_version': 'page-map.v1', 'pages': {}, 'targets': {}}
+    targets = catalog.setdefault('targets', {})
+    require(name not in targets or overwrite, 'target exists; pass --overwrite to replace it')
+    targets[name] = dict(row, source='observed:' + str(evidence), confirmed=False)
+    safe(catalog, m['config'])
+    atomic_write(map_path, catalog, as_yaml=True)
+    m.setdefault('knowledge_promotions', []).append({'at': now(), 'target': name, 'evidence': str(evidence)})
+    return {'target': name, 'row': targets[name], 'page_map': str(map_path)}

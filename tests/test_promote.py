@@ -95,3 +95,14 @@ class StructuredRouteTests(PromoteTests):
         (self.base / 'exploration/generator-o.json').write_text(json.dumps(report, ensure_ascii=False), encoding='utf-8')
         result = entries.promote(self.base, self.m, 'exploration/generator-o.json', prefix='p')
         self.assertEqual(result['route_steps'], ['click:text=产品', 'fill:p.route.2=/', 'fill:p.route.3=/', 'click:p.route.4'])
+
+
+class AddTargetTests(PromoteTests):
+    def test_add_target_requires_evidence_and_no_silent_overwrite(self):
+        r = entries.add_target(self.base, self.m, 'faq-editor.add', '{"frames": ["iframe#prod", "#tiptap-iframe"], "role": "button", "name": "添加FAQ"}',
+                               'exploration/generator-faq-editor.entry.json')
+        self.assertEqual(r['row']['nested_frames'], ['#tiptap-iframe'])
+        with self.assertRaises(common.UiaError):
+            entries.add_target(self.base, self.m, 'faq-editor.add', '{"css": ".x"}', 'exploration/generator-faq-editor.entry.json')
+        with self.assertRaises(common.UiaError):
+            entries.add_target(self.base, self.m, 'faq-editor.other', '{"css": ".x"}', 'exploration/missing.json')

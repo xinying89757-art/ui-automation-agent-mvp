@@ -21,6 +21,8 @@ A generator `timeout` is not evidence either: rerun once with the default budget
 the CLI enforces a 10-minute floor) before recording any gap; follow the returned `next`.
 When a generator reaches its node, run `uia.py hints promote --run R --report exploration/generator-<slug>.json`
 (--page <entry>): it adds `<purpose>.<name>` page-map targets and confirms the entry route. Do not hand-edit page-map.
+For one more observed control use `uia.py hints target --run R --name <purpose.name> --locator '<JSON target>' --evidence exploration/<file>`;
+never fabricate or edit generator reports.
 A confirmed entry closes deferred review items about that page automatically. Never end a turn while
 `next` returns an AI action (refine_specs, spec, discover, preflight, run-batch, repair); end only on `review`/done.
 Explore each node once: knowledge → snapshot --goto/--open-target/--step/--frame/--scope → generator_setup_page with tests/seed.spec.ts; Midscene only for visual expectations.

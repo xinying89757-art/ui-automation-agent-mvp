@@ -206,3 +206,12 @@ JSON 保留兼容的机器状态码，并附同样中文开头。metrics.json �
 中途提问和计划外介入。review.json 包含复现、原始期望、实际失败、证据和受限脱敏截图。
 只有公共控件文字白名单保留的弹窗截图可保留；任意输入、自由文字及媒体均遮罩，未采集时明确标注，
 不替代成原始全页截图。截图不进入 scripts.zip。
+
+## 公开文件远程交接（Phase 4）
+
+```bash
+.venv/bin/python scripts/uia.py remote-checks ingest --run RUN /path/to/results.json
+.venv/bin/python scripts/uia.py remote-checks restore --run RUN
+```
+
+[完整协议及 schema](remote-checks.md)。限定用例的 go 正常完成后台保存、FAQ 准备和时序检查；公开前台不可达不挂起 defer_public 用例。交接文件为 `runs/<id>/remote-checks/{request.json,check.mjs}`，外部只需 Node 18+。回执保留 pass/fail/still-cached/unreachable 四类，严格绑定请求文件字节哈希、批次和版本；远程通过仍需本机恢复成功。等待远程的准备快照不发送到外部；最终回执会自动恢复，到期/取消可显式 restore，或通过 go 续跑处理到期恢复。

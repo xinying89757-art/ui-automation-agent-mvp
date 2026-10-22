@@ -180,3 +180,5 @@ python3 scripts/uia.py validate --run REQ-001
 新用例默认走 case-spec；旧 intent/reuse-plan、asset-matcher/profile-builder/asset-miner 文件保留兼容。Xinying 已授权配置测试站自由修改、保存、发布；实际可行时恢复数据。
 
 用例规格技能位于 [uia-case-spec](.agents/skills/uia-case-spec/SKILL.md)。
+
+公开文件需要远程读取时，参见 [远程文件交接协议](docs/remote-checks.md)。本机先完成保存和准备，生成 `runs/<id>/remote-checks/request.json` 与不含认证的 `check.mjs`；远端 Node 18+ 执行后，将 `results.json` 交回 `uia.py remote-checks ingest`。数据在交接期间保留，回执后自动恢复并核验；到期使用 `remote-checks restore`。

@@ -59,3 +59,15 @@ AI 完成未知步骤后，用 `register --run ID --case CASE --file registratio
 blocked / cannot save / 无法保存 / 置灰 / 不可用 等期望必须包含 disabled 检查。
 静态禁用态用 `verb: assert` 观察，不点击、不强制派发；保存中的初始提交可以先 click 再观察禁用。
 TC-0048 保留空字符串及纯空格，不把禁用态代替 Excel 要求的错误文案和弹窗状态。
+
+## Phase 4：远程文件、请求时序与 FAQ
+
+完整文件协议见 [remote-checks.md](remote-checks.md)。`defer_public` 关联带 `resource` 的 page-map 目标，断言用 `remote_file`，条件支持 contains、equals、按指定二级标题截取的 ordered_pairs。`excel` 原文不能改写。本机脚本用 `// @deferred A2` 标识交接覆盖；该断言不记为本机 PASS。远程等待期间数据保留，最终回执后恢复核验；清理 pending 不能计通过。
+
+网络规则在 `assets/playwright-runner/knowledge/network.yaml`，page-map 的 `network_rule` 引用该规则，不在用例中放 URL/定位器。`network_delay` 的字符串 value 为 1..30000 毫秒；使用 Playwright route 按 method/path 匹配、计数和延迟。`network_release` 释放同一规则。脚本 finally 释放并移除规则，避免污染清理。`request_count` 核验精确请求数。`double_click` 为物理双击，第二击仍落在同一位置；`attempt_click` 为真实指针尝试，用于核验处理中取消、关闭被阻止。不会 force-click 或绕过 DOM 禁用状态派发事件。
+
+`visible_text` 核验控件实际显示的文字，适合内部同时存在隐藏“保存”和显示“保存中…”节点的按钮。`observe` 在操作前安装观察器，`occurrence_count` 检查提示全程可见出现次数，提示消失后仍可验证；不会用已消失 toast 的当前 DOM 数量冒充全程计数。
+
+`faq.count` 使用可恢复 FAQ 准备器：完整快照原始条目 ID、列表顺序、分类/时间元数据、答案文字与 HTML；增加当前 owner 的条目达到 N，重读验证；恢复时只删除 owner 新增项，再比较原始快照哈希。分页不完整或 N 小于既有条数时在变更前明确拒绝，不能删除原始记录冒充精确恢复。当前真实样本从 1 条增至 5 条再恢复。富文本有两层子 iframe，page-map 保留实际结构，不保留会话 ref。
+
+FAQ 创建使用实测成功的 `faq.create` 表单接口（网络目录记录方法、路径和字段名），每次读取当前添加表单并保留其站点及保护字段，仅在内存内覆盖本次问题/答案后提交；不记录或传出保护字段值。拒绝带既有记录 ID 的创建表单，避免覆盖原记录。创建后仍由真实 FAQ 管理页重新读取数量、内容及顺序。该接口仅用于可恢复的数据准备，业务断言仍使用编辑器实际保存和远程公开文件。

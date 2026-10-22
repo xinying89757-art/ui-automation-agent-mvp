@@ -126,3 +126,16 @@ test('semantic text action reveals a nested row link before clicking passive dup
     assert.equal(structure.nodes.some(node => node.tag === 'a'), true);
   } finally { await browser.close(); }
 });
+
+test('entry replay treats a navigation click as satisfied when the next target is already showing', async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.setContent('<button id="target">Edit</button>');
+    const ok = await navigateSnapshot(page, cfg, { steps: ['click:text=Products', 'click:#target'], entrySteps: 2 });
+    assert.equal(ok.failed_step, null);
+    assert.deepEqual(ok.steps[0], { index: 1, skipped: 'already_satisfied' });
+    const strict = await navigateSnapshot(page, cfg, { steps: ['click:text=Products', 'click:#target'] });
+    assert.equal(strict.failed_step.index, 1);
+  } finally { await browser.close(); }
+});

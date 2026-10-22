@@ -132,6 +132,23 @@ export function parseStep(action) {
   }
   return { verb, target: value, value };
 }
+async function alreadyThere(page, actions, index, entrySteps, options) {
+  const [kind, action] = actions[index] ?? [];
+  const [nextKind, nextAction] = actions[index + 1] ?? [];
+  if (kind !== 'step' || index >= entrySteps || !/^(click|hover):/u.test(action ?? '')) return false;
+  if (nextKind !== 'step' || !/^(click|hover|fill):/u.test(nextAction ?? '')) return false;
+  try {
+    const next = parseStep(nextAction);
+    const nextOptions = index + 1 < entrySteps ? { ...options, frame: undefined, scope: undefined } : options;
+    const deadline = Date.now() + 3000;
+    while (Date.now() < deadline) {
+      const matched = await resolveActionTarget(page, next.target, nextOptions);
+      if (matched && await matched.locator.isVisible().catch(() => false)) return true;
+      await new Promise(resolve => setTimeout(resolve, 200));
+    }
+  } catch { /* fall through to the original failure */ }
+  return false;
+}
 export async function navigateSnapshot(page, cfg, { goto, openTarget: named, steps = [], clicks = [], hover, entrySteps = 0, ...options } = {}) {
   const actions = [...(goto ? [['goto', goto]] : []), ...(named ? [['open', named]] : []),
     ...clicks.map(x => ['legacy', 'click:' + x]), ...(hover ? [['legacy', 'hover:' + hover]] : []), ...steps.map(x => ['step', x])];
@@ -182,6 +199,13 @@ export async function navigateSnapshot(page, cfg, { goto, openTarget: named, ste
         }
       })(), new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Navigation budget exceeded')), budget); })]);
     } catch (error) {
+      // Idempotent entry replay: a navigation click whose destination is already showing is satisfied, not failed.
+      if (await alreadyThere(page, actions, index, entrySteps, options)) {
+        results.push({ index: index + 1, skipped: 'already_satisfied' });
+        clearTimeout(timer);
+        context.off('page', onPage);
+        continue;
+      }
       // Do not echo Playwright call logs, which may contain filled values or URLs.
       failed_step = { index: index + 1, action: kind === 'step' && action.startsWith('fill:') ? 'fill:[REDACTED]' : kind === 'goto' ? 'goto:' + urlPath(action) : action,
         reason: /origin|wait must|requires|Expected|Cyclic|unknown named/u.test(error.message) ? error.message :

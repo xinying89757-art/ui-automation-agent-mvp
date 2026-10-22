@@ -26,7 +26,10 @@ export function markRestored(ctx) {
   for (const row of rows) row.restored_at = new Date().toISOString();
   fs.writeFileSync(file, JSON.stringify(rows, null, 2));
 }
-export function businessSaveResult(httpOk, body, okCodes = [0, 200, '0', '200', 'SUCCESS', true]) {
+const DEFAULT_OK_CODES = [0, 200, '0', '200', 'success', 'ok', true];
+const codeKey = value => String(value).trim().toLowerCase();
+export function businessSaveResult(httpOk, body, okCodes = DEFAULT_OK_CODES) {
+  okCodes = okCodes ?? DEFAULT_OK_CODES;
   let businessCode = null, businessOk = Boolean(httpOk);
   if (body && typeof body === 'object' && !Array.isArray(body)) {
     const keys = ['code', 'status', 'errcode'].filter(k => Object.hasOwn(body, k));
@@ -36,7 +39,7 @@ export function businessSaveResult(httpOk, body, okCodes = [0, 200, '0', '200', 
       if (value === false || value === 0 || value === null || value === '' ||
           typeof value === 'string' && ['0', 'false', 'no'].includes(value.trim().toLowerCase())) businessOk = false;
     }
-    if (keys.some(key => !okCodes.some(code => String(code) === String(body[key])))) businessOk = false;
+    if (keys.some(key => !okCodes.some(code => codeKey(code) === codeKey(body[key])))) businessOk = false;
   }
   return { businessCode, businessOk };
 }
@@ -92,10 +95,12 @@ export async function verifyPersisted(page, ctx, declaration, rule, readValue) {
   const actual = await readValue();
   const intended = resolveFixture(ctx.fixtureState, declaration.value);
   const ok = persistedResult(save, intended, actual);
+  const reason = ok ? null : !save ? 'save_not_observed' : !save.business_ok ? 'save_business_failed' : 'read_back_mismatch';
   const evidence = { assertion_id: declaration.id, target: declaration.target,
-    intended: scrubText(intended).slice(0, 200), actual: scrubText(actual).slice(0, 200), ok, method: 'ui' };
+    intended: scrubText(intended).slice(0, 200), actual: scrubText(actual).slice(0, 200), ok, method: 'ui',
+    ...(save ? {business_code: save.business_code, business_ok: save.business_ok} : {}), ...(reason ? {reason} : {}) };
   ctx.readBack = evidence;
   const file = path.join(process.env.UIA_RESULTS_DIR, 'read-back-' + ctx.caseId + '.json');
   fs.writeFileSync(file, JSON.stringify(evidence, null, 2));
-  if (!ok) throw new Error('UIA_SAVE_NOT_PERSISTED: read-back does not match intended value');
+  if (!ok) throw new Error('UIA_SAVE_NOT_PERSISTED: ' + reason);
 }

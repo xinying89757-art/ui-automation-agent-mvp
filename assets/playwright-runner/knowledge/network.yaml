@@ -3,7 +3,7 @@ rules:
   llms.save:
     method: POST
     path: /phoenix/customizeFile/llms/save
-    ok_codes: [0, 200, '0', '200', SUCCESS]
+    ok_codes: [0, 200, '0', '200', success]  # live: {status: "success"}
     capabilities:
     - delay
     - count

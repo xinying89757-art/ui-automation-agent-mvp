@@ -8,7 +8,7 @@ test("[TC-0036] 保存配置后无需发布即可立即更新公开文件", asyn
   const networks: Record<string, any> = {};
   const observations: Record<string, any> = {};
   try {
-  observations["save-clock:public.llms.immediate"] = trackSave(page, caseContext, {"method": "POST", "path": "/phoenix/customizeFile/llms/save", "ok_codes": [0, 200, "0", "200", "SUCCESS"], "capabilities": ["delay", "count", "release"], "evidence": "docs/phase4-verification.md"});
+  observations["save-clock:public.llms.immediate"] = trackSave(page, caseContext, {"method": "POST", "path": "/phoenix/customizeFile/llms/save", "ok_codes": [0, 200, "0", "200", "success"], "capabilities": ["delay", "count", "release"], "evidence": "docs/phase4-verification.md"});
   // @step S1
   await page.locator("#backstage-dialog-customizeFile").locator("input.llms-overview").fill("phase2-immediate-public-overview");
   // @step S2
@@ -21,7 +21,7 @@ test("[TC-0036] 保存配置后无需发布即可立即更新公开文件", asyn
   await page.reload();
   await openTarget(page, "settings");
   await page.locator("#site_customize_txt a").click();
-  await verifyPersisted(page, caseContext, {"id": "R1", "after": "S2", "target": "txt.overview", "value": "phase2-immediate-public-overview", "reopen": ["settings", "txt.entry"], "save_target": "network.llms.save"}, {"method": "POST", "path": "/phoenix/customizeFile/llms/save", "ok_codes": [0, 200, "0", "200", "SUCCESS"], "capabilities": ["delay", "count", "release"], "evidence": "docs/phase4-verification.md"}, async () => await readFieldValue(page.locator("#backstage-dialog-customizeFile").locator("input.llms-overview")));
+  await verifyPersisted(page, caseContext, {"id": "R1", "after": "S2", "target": "txt.overview", "value": "phase2-immediate-public-overview", "reopen": ["settings", "txt.entry"], "save_target": "network.llms.save"}, {"method": "POST", "path": "/phoenix/customizeFile/llms/save", "ok_codes": [0, 200, "0", "200", "success"], "capabilities": ["delay", "count", "release"], "evidence": "docs/phase4-verification.md"}, async () => await readFieldValue(page.locator("#backstage-dialog-customizeFile").locator("input.llms-overview")));
   // @step S3
   await assertSaveBusinessOk(caseContext);
   // Public assertions are handed off after the editor save.

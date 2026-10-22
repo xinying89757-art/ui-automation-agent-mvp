@@ -12,6 +12,9 @@ test('save response business codes and persisted values are independently classi
  assert.deepEqual(businessSaveResult(true,{status:'FAILED'}),{businessCode:'status:FAILED',businessOk:false});
  assert.equal(businessSaveResult(true,{success:false}).businessOk,false);
  assert.equal(businessSaveResult(true,{code:201},[201]).businessOk,true);
+ assert.equal(businessSaveResult(true,{status:'success'}).businessOk,true);
+ assert.equal(businessSaveResult(true,{status:'SUCCESS'},[0,'success']).businessOk,true);
+ assert.equal(businessSaveResult(true,{status:'success'},undefined).businessOk,true);
  assert.equal(persistedResult({business_ok:true},'wanted','wanted'),true);
  assert.equal(persistedResult({business_ok:true},'wanted','stale'),false);
  assert.equal(persistedResult({business_ok:false},'wanted','wanted'),false);

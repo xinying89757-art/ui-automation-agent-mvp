@@ -120,6 +120,18 @@ def answer(m, qid, value, base):
     return {"question_id": qid, "next": "next", "replay_required": q["kind"] == "demo"}
 
 
+def _restore_deselected(m, cid, content_hash, pop=False):
+    """Latest archived copy of a case removed only by subset selection, if its source is unchanged."""
+    archive = m.get("archived_cases", [])
+    for index in range(len(archive) - 1, -1, -1):
+        row = archive[index]
+        if row.get("reason") == "deselected" and row["case"].get("case_id") == cid:
+            if row["case"].get("source_hash") != content_hash:
+                return None
+            return archive.pop(index)["case"] if pop else row["case"]
+    return None
+
+
 def import_excel(base, m, excel, mapping=None):
     require(not m.get("active_batch"), "Finish or recover the active batch before importing")
     require(not any(c.get("attempts") and c["attempts"][-1].get("cleanup_pending") for c in m["cases"].values()), "Restore held remote data before importing another workbook version")
@@ -161,6 +173,10 @@ def import_excel(base, m, excel, mapping=None):
                 c["intent_hash"] = None
                 c["plan_hash"] = None
                 c["repair_rounds"] = 0
+        elif _restore_deselected(m, cid, raw["content_hash"]) is not None:
+            # A case dropped only by an earlier subset selection keeps its results and scripts.
+            c = _restore_deselected(m, cid, raw["content_hash"], pop=True)
+            counts["unchanged"] += 1
         else:
             counts["added"] += 1
             c = {"case_id": cid, "stage": "spec" if m.get("pipeline") else "intent", "work_status": "pending", "result": None,
@@ -175,10 +191,13 @@ def import_excel(base, m, excel, mapping=None):
                  sheet=raw["sheet"], rows=raw["rows"])
         new[cid] = c
     incomplete_sheets = {g["sheet"] for g in parsed["gaps"]}
+    still_in_source = {m["identity_map"].get(r["identity_key"], r["suggested_id"]) for r in parsed["cases"]}
     for cid, c in old.items():
         if cid not in new:
             if c["sheet"] in incomplete_sheets:
                 new[cid] = c  # Unreadable sheets must not silently delete previously known cases.
+            elif cid in still_in_source:
+                m["archived_cases"].append({"at": now(), "reason": "deselected", "case": c})
             else:
                 m["archived_cases"].append({"at": now(), "reason": "removed_from_source", "case": c})
                 counts["archived"] += 1

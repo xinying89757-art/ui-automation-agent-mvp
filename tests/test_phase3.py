@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
-from uia_core import common, experience, workflow, profiles, specs, cli, metrics, reports
+from uia_core import common, experience, workflow, profiles, specs, cli, metrics, reports, entries
 from openpyxl import Workbook
 
 SOURCE = Path(__file__).resolve().parents[1]
@@ -78,9 +78,11 @@ class PhaseThreeTests(unittest.TestCase):
         self.assertEqual(result['pending_review_count'], 1)
         self.assertEqual(self.m['cases']['T3']['work_status'], 'waiting_human')
         self.m['cases']['T2']['unknown_nodes'] = ['new-page']
-        self.m['exploration'] = [{'method': 'snapshot', 'purpose': 'new-page', 'steps_count': 1},
-                                 {'method': 'generator', 'source': 'generator-cli', 'purpose': 'new-page', 'result': 'failed'}]
-        q = workflow.question(self.m, 'demo', 'new-page', '请录制', ['T2'])
+        entries.add(self.m, 'new-page=管理 → 编辑')
+        self.m['exploration'] = [{'method': 'snapshot', 'purpose': 'new-page', 'steps_count': 1, 'entry': 'new-page', 'entry_reached': True},
+                                 {'method': 'generator', 'source': 'generator-cli', 'purpose': 'new-page', 'result': 'failed',
+                                  'entry': 'new-page', 'entry_reached': True, 'reached_entry': True, 'failed_interaction': 'drag'}]
+        q = workflow.question(self.m, 'demo', 'new-page', '请录制', ['T2'], interaction='drag')
         self.assertEqual(q['status'], 'deferred')
         review = experience.review(self.base, self.m)
         self.assertFalse(review['blocking_delivery'])

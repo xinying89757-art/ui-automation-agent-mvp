@@ -40,7 +40,7 @@ def opening(m, metrics, review):
     if remote:
         waiting.append('公开文件待远程验证：' + '、'.join(remote) + '；见 remote-checks/request.json，不计通过。')
     needs = waiting + ([f"异步审核单 {len(review['items'])} 项；断言建议默认不应用。"] if review['items'] else [])
-    metrics_text = (f"清单问题 {metrics['checklist_questions']}，清单回答 {metrics['checklist_answers']}，中途提问 {metrics['mid_run_questions']}，"
+    metrics_text = (f"清单问题 {metrics['checklist_questions']}（入口问题 {metrics.get('entry_question_count', 0)}），清单回答 {metrics['checklist_answers']}，中途提问 {metrics['mid_run_questions']}，"
                     f"计划外人工介入 {metrics['unplanned_interventions']}，会话轮次 {metrics['session_turns']}；"
                     f"脚本实际执行覆盖率 {metrics['script_coverage']['ratio']:.1%}；"
                     f"越权 {metrics['scope_violations']}，泄露 {metrics['leak_hits']}，未审核断言变更 {metrics['unreviewed_assertion_changes']}。")
@@ -132,6 +132,8 @@ def make_report(base, m):
                "questions": questions, "unresolved_sheets": [x for src in m["sources"] for x in src.get("unresolved_sheets", [])],
                "source_update_required": m.get("source_update_required", False), "delivery_complete": False}
     diff = {"schema_version": "uia-asset-review.v1", "writeback": "not_applied", "cases": []}
+    diff['entry_hints'] = {'file': 'assets/playwright-runner/knowledge/entries.yaml',
+                           'changes': m.get('entry_hint_changes', {})}
     for c in m["cases"].values():
         if c.get("feedback"):
             file = inside(base, c["feedback"])

@@ -29,9 +29,7 @@ DOM evidence. Scope with `--frame '#backstage-innerpage'` or `--scope '#dialog'`
 - Explore only required gaps; reuse live-verified flows across selected cases.
   Record each strategy and duration through `explore`. Default budget: ten minutes per
   flow and two distinct strategies per gap. Do not repeat a strategy without new evidence.
-- When a gap remains at the limit, queue a concrete locator/flow demonstration. Other
-  flows continue. Imported Playwright scripts stay pending until independent replay
-  and cleanup are evidenced via `replay-demo`. A Trace alone cannot replace the script.
+- Demo requires a known, reached entry plus generator-cli --entry failure on a named --interaction; keep other flows running and independently replay/clean imported scripts.
 - Preserve selectors and observed structures in run-local evidence/implementations;
   static UI knowledge remains semantic. Never invent selectors, routes or hidden behavior.
 

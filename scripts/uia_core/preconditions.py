@@ -152,13 +152,15 @@ def triage(base, m):
                                      'classification': (entry or {}).get('classification', 'unclassified')})['cases'].append(cid)
             if entry:
                 grouped[key]['label'] = entry['label']
+                if entry.get('page'):
+                    grouped[key]['page'] = entry['page']
     m['precondition_triage'] = list(grouped.values())
     m['precondition_tasks'] = [dict(row, action=row['classification']) for row in grouped.values()
                               if row['classification'] in {'ai_prepare', 'explore'}]
     return m['precondition_triage']
 
 
-def classify_precondition(base, m, key, classification, label, matches):
+def classify_precondition(base, m, key, classification, label, matches, page=None):
     from .common import atomic_write, require
     from .secrets import scrub_text
     rows = triage(base, m)
@@ -168,7 +170,12 @@ def classify_precondition(base, m, key, classification, label, matches):
     require(label and scrub_text(label, m['config']) == label, 'Label must be non-secret')
     patterns = list(dict.fromkeys([normalize(row['text'])] + [normalize(x) for x in matches or []]))
     require(all(scrub_text(x, m['config']) == x for x in patterns), 'Match must be non-secret')
+    if page:
+        from .entries import safe
+        safe(page, m['config'])
     m.setdefault('precondition_catalog', {})[key] = {'label': label, 'match': patterns, 'classification': classification}
+    if page:
+        m['precondition_catalog'][key]['page'] = page
     # Projection only; run.json remains the source of progress.
     atomic_write(base / 'preconditions.yaml', {'schema_version': 'preconditions.run.v1', 'preconditions': m['precondition_catalog']}, as_yaml=True)
     triage(base, m)

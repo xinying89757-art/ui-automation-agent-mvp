@@ -32,6 +32,14 @@ def parser():
     go.add_argument("excel")
     go.add_argument("--profile")
     go.add_argument("--cases", help="Comma-separated case IDs")
+    go.add_argument("--hints", help="Optional page=rough path lines or a UTF-8 file")
+    hints = commands.add_parser("hints")
+    hints.add_argument("action", choices=["add", "confirm"])
+    hints.add_argument("--run", required=True)
+    hints.add_argument("text", nargs="?")
+    hints.add_argument("--page")
+    hints.add_argument("--step", action="append", default=[])
+    hints.add_argument("--frame")
     go.add_argument("--arm-watch", help="Comma-separated case IDs whose max-latency public assertion gets a pre-armed remote watch before the save")
     go.add_argument("--lead-minutes", type=int, default=20)
     go.add_argument("--watch-minutes", type=int, default=10)
@@ -82,6 +90,7 @@ def parser():
     snapshot.add_argument("--step", action="append", default=[])
     snapshot.add_argument("--save-as")
     snapshot.add_argument("--purpose", default="")
+    snapshot.add_argument("--entry")
     spec = commands.add_parser("spec")
     spec.add_argument("action", choices=["lint", "gen", "render"])
     spec.add_argument("--run", required=True)
@@ -102,12 +111,14 @@ def parser():
             cmd.add_argument("--key")
             cmd.add_argument("--as", dest="classification", choices=["ai_prepare", "explore", "human_env", "ignore"])
             cmd.add_argument("--label")
+            cmd.add_argument("--page")
             cmd.add_argument("--match", action="append", default=[])
         if name == "generator":
             cmd.add_argument("--purpose", required=True)
             cmd.add_argument("--plan", required=True)
             cmd.add_argument("--minutes", type=int, default=20)
             cmd.add_argument("--model")
+            cmd.add_argument("--entry")
         if name == "exploration-log":
             cmd.add_argument("--method", choices=["generator", "midscene"], required=True)
             cmd.add_argument("--purpose", required=True)
@@ -132,6 +143,8 @@ def parser():
         if name == "question":
             cmd.add_argument("--kind", choices=["login", "environment", "product", "demo", "record_request", "column_mapping", "preconditions"], required=True)
             cmd.add_argument("--subject", required=True)
+            cmd.add_argument("--page", help="Entry page for the specific interaction node")
+            cmd.add_argument("--interaction")
             cmd.add_argument("--prompt", required=True)
             cmd.add_argument("--cases", nargs="*", default=[])
             cmd.add_argument("--key")
@@ -168,6 +181,16 @@ def parser():
 def dispatch(args, path, m):
     base = path.parent
     cmd = args.command
+    if cmd == "hints":
+        from .entries import add, confirm
+        from .experience import sync_checklist
+        if args.action == "add":
+            require(args.text, "hints add requires 页面=路径")
+            result = add(m, args.text)
+        else:
+            require(args.page, "hints confirm requires --page")
+            result = confirm(m, args.page, args.step, args.frame)
+        return {**result, **sync_checklist(base, m)}
     if hasattr(args, "case"):
         require(args.case in m["cases"], "Unknown case: " + args.case)
     if cmd == "remote-checks":
@@ -211,7 +234,8 @@ def dispatch(args, path, m):
     if cmd == "question":
         from .exploration import index_unknown_nodes
         index_unknown_nodes(base, m)
-        return workflow.question(m, args.kind, args.subject, args.prompt, args.cases, args.key, args.attempted, args.sheet)
+        return workflow.question(m, args.kind, args.subject, args.prompt, args.cases, args.key, args.attempted, args.sheet,
+                                 interaction=args.interaction, base=base, page=args.page)
     if cmd == "session-turn":
         from .experience import session_turn
         return session_turn(m, args.id, args.kind)
@@ -304,7 +328,7 @@ def dispatch(args, path, m):
         return profiles.agent_env(base, m)
     if cmd == "generator":
         from .exploration import run_generator
-        return run_generator(base, m, args.purpose, args.plan, args.minutes, args.model)
+        return run_generator(base, m, args.purpose, args.plan, args.minutes, args.model, entry=args.entry)
     if cmd == "exploration-log":
         from .exploration import log
         return log(m, args.method, args.purpose, args.result, args.note)
@@ -312,7 +336,7 @@ def dispatch(args, path, m):
         from .preconditions import sync_preconditions, classify_precondition
         if args.action == "classify":
             require(args.key and args.classification and args.label, "classify requires --key --as --label")
-            result = classify_precondition(base, m, args.key, args.classification, args.label, args.match)
+            result = classify_precondition(base, m, args.key, args.classification, args.label, args.match, args.page)
             return {**result, **sync_preconditions(base, m)}
         return sync_preconditions(base, m)
     if cmd == "absorb-locators":
@@ -340,7 +364,7 @@ def dispatch(args, path, m):
 def execute(args):
     if args.command == "go":
         from .experience import go
-        return go(args.excel, args.profile, args.cases, arm_watch=args.arm_watch, lead_minutes=args.lead_minutes, watch_minutes=args.watch_minutes)
+        return go(args.excel, args.profile, args.cases, arm_watch=args.arm_watch, lead_minutes=args.lead_minutes, watch_minutes=args.watch_minutes, hints=args.hints)
     if args.command == "env":
         return {"environments": profiles.presets()}
     if args.command == "setup":
@@ -400,11 +424,31 @@ def execute(args):
         from .common import config
         area = {"page": None, "content-admin": "内容管理", "editor": "编辑网站"}[args.node]
         require(not args.save_as or args.run, "--save-as requires --run")
+        require(not args.entry or args.run, "--entry requires --run")
         if args.run:
             with locked_run(args.run) as (path, m):
                 import time as _time
+                entry_hint, entry_count = None, None
+                if args.entry:
+                    from .entries import snapshot_route
+                    entry_hint, entry_count = snapshot_route(args, m['config'])
+                    if entry_count is None:
+                        return {'entry': args.entry, 'entry_hint': entry_hint, 'entry_reached': False,
+                                'instruction': '将入口路径翻译为 --goto/--step 后执行 snapshot；再用 uia.py hints confirm --run R --page P --step ... [--frame ...] 保存具体步骤。'}
                 started, t0 = now(), _time.monotonic()
-                snapshot_result = profiles.invoke_snapshot(m["config"], path.parent / "runner", area, args.manual, args.frame, args.scope, args.open_target, args.hover, args.click, args.goto, args.step)
+                try:
+                    snapshot_result = profiles.invoke_snapshot(m["config"], path.parent / "runner", area, args.manual, args.frame, args.scope, args.open_target, args.hover, args.click, args.goto, args.step)
+                except UiaError:
+                    from .secrets import scrub_text
+                    m.setdefault('exploration', []).append({'at': now(), 'method': 'snapshot', 'purpose': scrub_text(args.purpose, m['config']),
+                                                          'entry': args.entry, 'entry_reached': False, 'result': 'failed'})
+                    save(path, m)
+                    raise
+                failed = snapshot_result.get('structure', {}).get('failed_step')
+                failed_index = failed.get('index') if isinstance(failed, dict) else failed
+                entry_reached = bool(args.entry and (not failed or isinstance(failed_index, int) and failed_index > entry_count))
+                if args.entry:
+                    snapshot_result.update(entry=args.entry, entry_hint=entry_hint, entry_reached=entry_reached)
                 known = any(c.get("registration") for c in m["cases"].values())
                 # Exploration baseline: one row per snapshot (method/where/how long); no page content.
                 m.setdefault("exploration", []).append({"node": args.node, "known_page": known,
@@ -414,6 +458,7 @@ def execute(args):
                                                          "open_target": args.open_target, "clicks": len(args.click or []),
                                                          "hover": bool(args.hover), "goto": urlsplit(args.goto or "").path or None,
                                                          "steps_count": len(args.step), "purpose": redact(args.purpose, m["config"]),
+                                                         "entry": args.entry, "entry_reached": entry_reached,
                                                          "failed_step": snapshot_result.get("structure", {}).get("failed_step")})
                 if args.save_as:
                     from .exploration import save_route
@@ -462,7 +507,13 @@ def execute(args):
         require(not m.get("active_batch") or args.command in {"record-run", "recover", "validate", "report", "next", "session-turn"},
                 "An execution batch is active; recover it before changing the run")
         before = digest({k: m[k] for k in ("cases", "questions", "sources", "config", "preflight", "contaminated_fixtures")})
-        result = dispatch(args, path, m)
+        try:
+            result = dispatch(args, path, m)
+        except UiaError:
+            # A refused demo may have queued an entry in the single checklist / async review.
+            if args.command == 'question' and args.kind in {'demo', 'record_request'}:
+                save(path, m)
+            raise
         after = digest({k: m[k] for k in ("cases", "questions", "sources", "config", "preflight", "contaminated_fixtures")})
         if before != after and args.command != "report":
             m["delivery"] = {}

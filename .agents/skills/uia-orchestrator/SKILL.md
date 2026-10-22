@@ -16,7 +16,7 @@ do not invoke Claude Code `Task()` or assume a shell script can invoke the model
 Before presenting the checklist, classify every unmatched workbook precondition; ai_prepare/explore are AI tasks, human_env joins the single upfront question block.
 Explore each node once: knowledge → snapshot --goto/--open-target/--step/--frame/--scope → generator_setup_page with tests/seed.spec.ts; Midscene only for visual expectations.
 Write named targets into page-map.yaml (+ routes into flows) before writing specs; keep writing/running other nodes while one is unknown.
-Demo/record_request requires navigation and a `uia.py generator` run for the specific node, and only cases whose specs reference it.
+Demo requires a known entry, entry_reached evidence and generator-cli --entry failure on the requested --interaction; unknown entries join checklist D (later discoveries go to review).
 Write all case-specs (unknown targets as ?name) before exploring, so the checklist is final early; an answer given while it is still a draft is saved and applied automatically by go — never ask again.
 
 ## One-command daily entry

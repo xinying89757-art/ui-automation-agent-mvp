@@ -135,7 +135,5 @@ Test Agents 必须先设置 seed，不能直接调用 browser_snapshot：
    `python3 scripts/uia.py exploration-log --run R --method generator --purpose NODE --result failed --note '具体失败和已尝试路径'`。
    可用同一环境执行 `npx playwright test tests/seed.spec.ts` 验证 seed（runner cwd）。
 
-`question --kind demo|record_request --subject NODE` 仅在同 purpose 有导航快照和 generator 尝试时
-允许；缺少阶梯会明确拒绝。每个关联 case-spec 必须通过 `?NODE` 引用同一未知节点，不能批量
-附上无关用例。`exploration-log --method midscene` 记录视觉补充，不替代 generator。
+`question --kind demo|record_request --subject NODE --page PAGE --interaction drag|clipboard|gesture|file-dialog|canvas|other:<text>` 仅接受已知且到达的入口、同 purpose 的 generator-cli --entry 报告 reached_entry=true 并在该交互失败；关联规格须引用 ?NODE。
 旧 `uia.py explore` 已退役，返回迁移提示；不再使用历史 flow_id 格式。

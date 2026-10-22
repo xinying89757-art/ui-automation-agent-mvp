@@ -60,7 +60,9 @@ def rows(base, m):
         # Choices must be authored with the question; never invent a business answer.
         result.append({'key': 'business:' + digest(text), 'block': 'C', 'label': text, 'cases': owners,
                        'options': re.split(r'[、/|]', text.split('选项：', 1)[1]) if '选项：' in text else ['保持原期望', '暂挂待确认']})
-    for block in ('A', 'B', 'C'):
+    from .entries import page_rows
+    result += page_rows(base, m)
+    for block in ('A', 'B', 'C', 'D'):
         for index, row in enumerate((r for r in result if r['block'] == block), 1):
             row['number'] = index
     return result
@@ -78,9 +80,26 @@ def sync_checklist(base, m):
     # Run answers are immutable evidence; environment memory supplies only unseen runs.
     local = (old or {}).get('answer', {}).get('entries', {})
     answers = {**answers, **local}
-    pending = [r for r in entries if r['key'] not in answers]
     issued = m.get('checklist_issued', False)
     previous_keys = {r['key'] for r in (old or {}).get('entries', [])}
+    if issued:
+        from .entries import resolve
+        # Preserve the issued checklist and its answers even after entries become known.
+        current_keys = {r['key'] for r in entries}
+        for row in (old or {}).get('entries', []):
+            hint = resolve(row['page']) if row['block'] == 'D' else None
+            if hint and row['key'] not in current_keys:
+                entries.append(row)
+                answers.setdefault(row['key'], hint['path_text'])
+    pending = [r for r in entries if r['key'] not in answers]
+    late_entries = [r for r in pending if issued and r['block'] == 'D' and r['key'] not in previous_keys]
+    if issued:
+        for row in pending:
+            if row['block'] == 'D' and row['key'] not in previous_keys:
+                add_review(m, 'page_entry', row['cases'], row['page'] + ' 大概在哪里进入？（例：内容管理 → 产品 → 编辑）', page=row['page'])
+        # Late entries exist only in the async review, not as new checklist questions.
+        entries = [r for r in entries if r['block'] != 'D' or r['key'] in previous_keys]
+        pending = [r for r in entries if r['key'] not in answers]
     q = old or {'id': QUESTION_KEY, 'kind': 'preconditions', 'subject': 'run-preconditions',
                 'created_at': now(), 'attempted': [], 'resume_states': {}, 'sheet': None}
     q.update(case_ids=sorted({c for row in entries for c in row['cases']}), entries=entries,
@@ -93,6 +112,7 @@ def sync_checklist(base, m):
     q['locally_answered_keys'] = sorted(local_keys)
     q['memory_answer_count'] = len(memory_keys)
     q['entry_count'] = len(entries)
+    q['entry_question_count'] = sum(r['block'] == 'D' for r in pending)
     q['status'] = 'deferred' if pending and issued else 'open' if pending else 'answered'
     if pending and not issued:
         q.pop('answered_at', None)
@@ -104,26 +124,30 @@ def sync_checklist(base, m):
         for row in pending:
             if row['key'] in previous_keys:
                 continue
-            add_review(m, 'new_ambiguity' if row['block'] == 'C' else 'new_permission', row['cases'], row['label'])
-    apply_checklist(m, q)
+            if row['block'] != 'D':
+                add_review(m, 'new_ambiguity' if row['block'] == 'C' else 'new_permission', row['cases'], row['label'])
+    apply_checklist(m, q, late_entries)
     q['unclassified'] = unclassified
     q['draft'] = m['checklist_draft']
     text = checklist_text(q)
     (base / 'checklist.md').write_text(scrub_text(text, m['config']), encoding='utf-8')
+    if issued and any(x['kind'] == 'page_entry' for x in m.get('review_items', {}).values()):
+        review(base, m)
     return {'question_id': QUESTION_KEY, 'question_count': len(pending) if not issued and not m.get('checklist_draft') else 0,
+            'entry_question_count': q['entry_question_count'] if not issued and not m.get('checklist_draft') else 0,
             'memory_answer_count': q['memory_answer_count'], 'entry_count': len(entries),
             'draft': bool(m.get('checklist_draft')), 'unclassified': unclassified,
             'ai_tasks': m.get('precondition_tasks', []),
-            'pending_review_count': len(pending) if issued else 0, 'status': q['status'],
+            'pending_review_count': len(pending) + len(late_entries) if issued else 0, 'status': q['status'],
             'checklist': str(base / 'checklist.md')}
 
 
-def apply_checklist(m, q):
+def apply_checklist(m, q, extra_entries=()):
     answers = q.get('answer', {}).get('entries', {})
     blocked = {}
-    for row in q.get('entries', []):
+    for row in [*q.get('entries', []), *extra_entries]:
         value = answers.get(row['key'])
-        okay = value is True if row['block'] != 'C' else bool(value) and value != '暂挂待确认'
+        okay = bool(value) and value != '暂挂待确认' if row['block'] in {'C', 'D'} else value is True
         if row['block'] == 'B':
             mutation = m['config'].get('mutation', {})
             allowed = mutation.get('allowed') and (row['label'] in mutation.get('scope', []) or
@@ -153,7 +177,7 @@ def checklist_text(q):
     if q.get('unclassified'):
         lines += ['## 未分类前置条件（AI 必须先分流）', '']
         lines += ['- ' + r['key'] + ' ' + r['label'] + '（' + '、'.join(r['cases']) + '）' for r in q['unclassified']]
-    for block, title in [('A', '需要的站点、账号、编辑器和迁移条件'), ('B', '临时修改并还原的数据范围'), ('C', '业务歧义及选项')]:
+    for block, title in [('A', '需要的站点、账号、编辑器和迁移条件'), ('B', '临时修改并还原的数据范围'), ('C', '业务歧义及选项'), ('D', '页面入口（大概在哪）')]:
         lines += ['## ' + block + ' ' + title, '']
         if block == 'A':
             lines += ['公开文件检查在远程执行，不挂起关联用例；本机先完成编辑器保存和数据准备，交接 remote-checks/request.json。远程回执后恢复并核验数据；到期须续跑或调用恢复命令。请求延迟由浏览器拦截器提供。', '']
@@ -165,13 +189,14 @@ def checklist_text(q):
         for row in subset:
             value = answers.get(row['key'], '待回答')
             status = ('已确认可用' if value is True else '已确认缺少／不同意，相关用例挂起' if value is False else value)
-            lines += ['- ' + block + str(row.get('number', 1)) + '. ' + row['label'] + '（' + '、'.join(row['cases']) + '）：' + ' / '.join(row['options']) + '。状态：' + str(status)]
+            label = row['label'] + (' 大概在哪里进入？（例：内容管理 → 产品 → 编辑）' if block == 'D' else '')
+            lines += ['- ' + block + str(row.get('number', 1)) + '. ' + label + '（' + '、'.join(row['cases']) + '）：' + ' / '.join(row['options']) + '。状态：' + str(status)]
         lines += ['']
-    lines += ['回答格式：A 除 TC-xxxx 缺少外其余可用，B 同意，C 无歧义（有歧义时逐项选择）。', '']
+    lines += ['回答格式：A 除 TC-xxxx 缺少外其余可用，B 同意，C 无歧义，D 页面=大概路径（多项用 D1、D2 或分号分隔）。', '']
     return '\n'.join(lines)
 
 
-def answer_sentence(base, m, sentence):
+def answer_sentence(base, m, sentence, finalizing=False):
     from .preconditions import QUESTION_KEY
     require(scrub_text(sentence, m['config']) == sentence, '回答含敏感信息，请只回答条件及选项')
     q = m['questions'].get(QUESTION_KEY)
@@ -184,8 +209,16 @@ def answer_sentence(base, m, sentence):
         return {'answered': 0, 'deferred_until_final': True,
                 'instruction': '已保存答复；完成前置分流和全部 case-spec（未知目标可先写 ?名称）后，go 会自动应用这句答复，无需再问。'}
     require(q and not q.get('draft'), '清单仍是草稿；请先分类前置条件并完成规格')
-    require(q and q['status'] in {'open', 'deferred'} and not q.get('answered_at'), '没有待回答的开跑前清单；运行中问题请异步审核')
-    parts = {a: b.strip(' ，,；;。') for a, b in re.findall(r'(?:^|[，,；;]\s*)([ABC])\s*[:：]?\s*(.*?)(?=(?:[，,；;]\s*[ABC](?![A-Za-z0-9])\s*[:：]?)|$)', sentence, re.S)}
+    require(q and (finalizing or q['status'] in {'open', 'deferred'} and not q.get('answered_at')), '没有待回答的开跑前清单；运行中问题请异步审核')
+    parts = {a: b.strip(' ，,；;。') for a, b in re.findall(r'(?:^|[，,；;]\s*)([ABC])\s*[:：]?\s*(.*?)(?=(?:[，,；;]\s*[ABCD](?![A-Za-z])\s*[:：]?)|$)', sentence, re.S)}
+    from .entries import parse, store, matches, key as entry_key
+    entry_answers = []
+    for number, text in re.findall(r'(?:^|[，,；;]\s*)D(\d*)\s*[:：]?\s*(.*?)(?=[，,；;]\s*[ABCD](?![A-Za-z])|$)', sentence, re.S):
+        if number and not re.search(r'[=＝]', text):
+            row = next((r for r in q['entries'] if r['block'] == 'D' and r['number'] == int(number)), None)
+            require(row, '未知 D 块编号')
+            text = row['page'] + '=' + text
+        entry_answers += parse(text)
     answers = dict(q.get('answer', {}).get('entries', {}))
     newly_answered = []
     for row in q['entries']:
@@ -207,6 +240,10 @@ def answer_sentence(base, m, sentence):
         elif row['block'] == 'B':
             require(bool(re.search(r'同意|允许|不同意|拒绝', block)), 'B 块请回答同意或不同意')
             value = not bool(re.search(r'不同意|拒绝', block))
+        elif row['block'] == 'D':
+            hint = next((h for h in entry_answers if matches(row['page'], h['label'])), None)
+            require(hint, 'D 块请逐项提供 页面=大概路径')
+            value = hint['path_text']
         else:
             business_count = sum(r['block'] == 'C' for r in q['entries'])
             if business_count > 1:
@@ -218,6 +255,9 @@ def answer_sentence(base, m, sentence):
         answers[row['key']] = value
         newly_answered.append(row['key'])
     memory = load_memory(m)
+    if entry_answers:
+        store(m, entry_answers, 'checklist')
+        memory['answers'].update({'entry:' + entry_key(h['label']): h['path_text'] for h in entry_answers})
     memory['answers'].update(answers)
     memory['updated_at'] = now()
     private = memory_path(m).parent
@@ -228,6 +268,8 @@ def answer_sentence(base, m, sentence):
     q['locally_answered_keys'] = sorted(set(q.get('locally_answered_keys', [])) | set(newly_answered))
     q['memory_answer_keys'] = sorted(set(q.get('memory_answer_keys', [])) - set(newly_answered))
     q['memory_answer_count'] = len(q['memory_answer_keys'])
+    m.setdefault('checklist_question_count', len(newly_answered))
+    m.setdefault('entry_question_count', sum(r['block'] == 'D' and r['key'] in newly_answered for r in q['entries']))
     m['checklist_issued'] = True
     m.setdefault('interaction_events', []).append({'kind': 'checklist_answer', 'at': now()})
     event(m, 'checklist_answered', entries=len(answers))
@@ -240,7 +282,7 @@ def add_review(m, kind, cases, text, **detail):
     key = digest([kind, sorted(cases), text])[:16]
     if kind == 'record_request':
         from .exploration import demo_gate
-        demo_gate(m, detail.get('node'), cases)
+        demo_gate(m, detail.get('node'), cases, detail.get('interaction'), base=detail.pop('base', None), page=detail.get('page'))
     entry = {'id': key, 'kind': kind, 'case_ids': cases, 'summary': scrub_text(text, m['config']),
              'status': '待审核', 'applied': False, **detail}
     import json
@@ -250,17 +292,19 @@ def add_review(m, kind, cases, text, **detail):
 
 
 def review(base, m):
-    for q in m['questions'].values():
+    for q in list(m['questions'].values()):
         if q['status'] in {'open', 'deferred'} and q.get('subject') != 'run-preconditions':
             kind = 'record_request' if q['kind'] in {'demo', 'record_request'} else 'new_ambiguity' if q['kind'] == 'product' else 'environment'
             detail = {}
             if kind == 'record_request':
                 from .exploration import demo_gate
                 try:
-                    demo_gate(m, q['subject'], q['case_ids'])
+                    demo_gate(m, q['subject'], q['case_ids'], q.get('interaction'), page=q.get('page'))
                 except UiaError:
                     continue
                 detail['node'] = q['subject']
+                detail['interaction'] = q.get('interaction')
+                detail['page'] = q.get('page')
                 detail['command'] = 'node assets/playwright-runner/node_modules/@playwright/test/cli.js codegen --load-storage "$UIA_CODEGEN_STATE" https://www.leadong.com/website.html -o recorded.spec.ts'
                 detail['instructions'] = '受保护变量 UIA_CODEGEN_STATE 指向已认证状态；复用登录后录制，只提交脱敏动作脚本，勿录制密码或导出登录态。'
             add_review(m, kind, q['case_ids'], q['prompt'], **detail)
@@ -282,6 +326,10 @@ def review(base, m):
     checklist = m['questions'].get(QUESTION_KEY, {})
     answered_labels = {r['label'] for r in checklist.get('entries', []) if r['key'] in checklist.get('answer', {}).get('entries', {})}
     for entry in m.get('review_items', {}).values():
+        if entry['kind'] == 'page_entry':
+            from .entries import resolve
+            if resolve(entry.get('page', '')):
+                entry['status'] = '入口已补充（历史保留）'
         if entry['kind'] in {'new_permission', 'new_ambiguity'} and entry['summary'] in answered_labels:
             entry['status'] = '已答清单'
     for entry in m.get('review_items', {}).values():
@@ -309,7 +357,7 @@ def review(base, m):
     payload = {'blocking_delivery': False, 'assertion_changes_default': '不应用', 'items': items}
     atomic_write(base / 'review.json', payload)
     names = {'suspected_defect': '疑似产品缺陷', 'assertion_change': '断言变更建议（默认不应用）',
-             'record_request': '页面录制请求', 'new_ambiguity': '新增业务歧义', 'new_permission': '新增权限', 'environment': '环境待处理', 'automation_gap': '自动化缺口（待探索）'}
+             'record_request': '页面录制请求', 'page_entry': '页面入口待补充', 'new_ambiguity': '新增业务歧义', 'new_permission': '新增权限', 'environment': '环境待处理', 'automation_gap': '自动化缺口（待探索）'}
     lines = ['# 异步审核单', '', '不阻塞其他用例交付；断言变更默认不应用。', '']
     for row in items:
         lines += ['## ' + names.get(row['kind'], row['kind']) + '：' + '、'.join(row['case_ids']), '', row['summary'], '',
@@ -336,7 +384,7 @@ def checklist_notice(checklist):
     return '清单全部来自环境记忆（' + str(entries) + ' 项），本次 0 问' if entries == checklist.get('memory_answer_count', 0) else None
 
 
-def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_minutes=10):
+def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_minutes=10, hints=None):
     from . import workflow, specs, profiles, runtime, reports
     source = Path(excel).resolve()
     require(source.is_file(), '工作簿不存在')
@@ -365,10 +413,15 @@ def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_m
             workflow.init(run_id, path)
     with locked_run(manifest) as (manifest, m):
         base = manifest.parent
+        if hints:
+            from .entries import handoff
+            handoff(m, hints)
         if m.get('active_batch'):
+            if hints:
+                save(manifest, m)
             return {'run_id': m['run_id'], 'run_reused': bool(matches),
                     'run_selection': '复用同一工作簿与环境的 run；继续已有活动批次' if matches else '使用当前匹配 run；继续已有活动批次',
-                    'question_count': 0, 'next': workflow.next_task(base, m)}
+                    'question_count': 0, 'entry_question_count': 0, 'next': workflow.next_task(base, m)}
         previous_selection = m.get('selected_cases')
         m.update(go_key=key, go_source=str(source), go_profile=str(path.resolve()), interaction_mode='once', selected_cases=selected)
         save(manifest, m)
@@ -420,12 +473,13 @@ def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_m
         if not checklist['draft']:
             m['checklist_issued'] = True
             m.setdefault('checklist_question_count', checklist['question_count'])
+            m.setdefault('entry_question_count', checklist['entry_question_count'])
             pending = m.get('pending_checklist_answer')
             from .preconditions import QUESTION_KEY as _QK
             q = m['questions'].get(_QK)
-            if pending and q and not q.get('answered_at') and q.get('status') in {'open', 'deferred'}:
+            if pending and q:
                 try:
-                    applied = answer_sentence(base, m, pending['sentence'])
+                    applied = answer_sentence(base, m, pending['sentence'], finalizing=True)
                     m.pop('pending_checklist_answer', None)
                     event(m, 'checklist_pending_answer_applied', answered=applied.get('answered'))
                 except UiaError as exc:

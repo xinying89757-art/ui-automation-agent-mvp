@@ -48,11 +48,11 @@ def init(run_id, config_path):
     return {"run": str(base / "run.json"), "next": "import", "status": "not_executed"}
 
 
-def question(m, kind, subject, prompt, case_ids, key=None, attempted=None, sheet=None, reopen=False):
+def question(m, kind, subject, prompt, case_ids, key=None, attempted=None, sheet=None, reopen=False, interaction=None, base=None, page=None):
     require(all(cid in m["cases"] for cid in case_ids), "Question refers to an unknown case")
     if kind in {"demo", "record_request"}:
         from .exploration import demo_gate
-        demo_gate(m, subject, case_ids)
+        demo_gate(m, subject, case_ids, interaction, base=base, page=page)
     require(kind != "column_mapping" or sheet, "A column mapping question needs its source sheet")
     key = key or digest([kind, subject, sheet])[:16]
     existing = m["questions"].get(key)
@@ -65,6 +65,8 @@ def question(m, kind, subject, prompt, case_ids, key=None, attempted=None, sheet
     q = existing or {"id": key, "kind": kind, "subject": subject, "prompt": prompt,
                      "case_ids": [], "attempted": [], "created_at": now(), "status": "open",
                      "resume_states": {}, "sheet": sheet}
+    if kind in {"demo", "record_request"}:
+        q.update(interaction=interaction, page=page)
     if m.get("interaction_mode") == "once" and subject != "run-preconditions":
         q["status"] = "deferred"
     q["attempted"] = list(dict.fromkeys(q["attempted"] + (attempted or [])))

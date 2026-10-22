@@ -49,7 +49,7 @@ Write named targets into page-map.yaml (+ routes into flows) before writing spec
 Generator/healer output may change locators/waits only (approval mode approve); Midscene uses the DeepSeek key only from /home/box/.secrets/deepseek.env, exploration only, never in replay.
 Strip icon glyphs, scope dialog locators, disambiguate repeated role/name pairs with a container.
 Order: first write ALL case-specs from Excel (unknown targets as ?name, no exploration needed) so the checklist is final; then explore.
-Start from the page the precondition names (e.g. 产品/文章详情 → its content-admin edit page via --goto/--node content-admin) and confirm the editor kind before exploring components.
+Start with snapshot --entry PAGE / generator --entry PAGE; translate rough hints to navigation, then persist concrete steps with hints confirm.
 Generator rung = `uia.py generator --run R --purpose NODE --plan '...'` (isolated Test Agents sub-agent, logs time/tokens); self-reported attempts do not count.
 Use exploration-log only for Midscene; demo/record_request only after the ladder, for cases referencing that unknown node. External calls: timeout 2h codex exec ... < /dev/null.
 

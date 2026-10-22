@@ -36,6 +36,10 @@ Excel 导入接受常见中英文表头别名并跳过无用例内容的行；�
 
 ## 人工问题
 
+提测可选 `go --hints FILE_OR_TEXT` 或 `hints add --run R "页面=路径"`；未知入口合并一次清单 D（可用 `preconditions classify --page` 注册），后发现只进异步审核。
+D 答复（页面=路径或 D1/D2）写入环境记忆及 `assets/playwright-runner/knowledge/entries.yaml`，跨需求复用；草稿答复在清单定稿时自动应用。
+探索从 `snapshot --entry PAGE` / `generator --entry PAGE` 开始；粗略路径转为 --goto/--step 后用 `hints confirm` 保存；仅已知入口到达且 generator 在指定 --interaction 失败后才可请求演示。
+
 问题保存类型、影响用例、尝试记录和恢复位置。登录和凭证只接收状态/环境变量引用，
 不在对话或清单中保存密码值。同一缺口合并询问，已经确认的业务答案再次使用；
 如果新证据证明环境问题仍存在，重新打开该问题并保留以前的回答。

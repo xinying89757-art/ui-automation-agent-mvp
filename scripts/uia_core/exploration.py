@@ -13,16 +13,27 @@ def log(m, method, purpose, result, note):
     return {'recorded': row}
 
 
-def demo_gate(m, node, cases):
+def demo_gate(m, node, cases, interaction=None, base=None, page=None):
+    import re
+    from .entries import resolve, request, matches
     require(node and node.strip() and node not in {'page', 'editor', '*'}, 'Demo must name the specific unknown node')
     rows = [row for row in m.get('exploration', []) if row.get('purpose') == node]
-    missing = []
-    if not any(row.get('method') == 'snapshot' and (row.get('goto') or row.get('open_target') or row.get('steps_count') or row.get('clicks')) for row in rows):
-        missing.append('snapshot --goto/--open-target/--step navigation')
-    # Only a real sub-agent run counts; a self-reported "tool unavailable" note is not a generator attempt.
-    if not any(row.get('method') == 'generator' and row.get('source') == 'generator-cli' for row in rows):
-        missing.append('generator via `uia.py generator --purpose NODE --plan ...`')
-    require(not missing, 'Demo refused; missing rungs: ' + ', '.join(missing))
+    page = page or next((r['entry'] for r in reversed(rows) if r.get('entry')), node)
+    if not resolve(page):
+        request(m, page, cases, base)
+        require(False, '页面入口未知：请走入口提示问题（清单 D 块），不要请求演示')
+    rows = [r for r in rows if r.get('entry') and matches(page, r['entry'])]
+    require(any(r.get('entry_reached') is True for r in rows),
+            '演示被拒绝：先用 snapshot --entry / generator --entry 到达页面入口')
+    generators = [r for r in rows if r.get('method') == 'generator' and r.get('source') == 'generator-cli'
+                  and r.get('reached_entry') is True and r.get('result') == 'failed' and r.get('failed_interaction')]
+    require(generators, '演示被拒绝：需要 uia.py generator --entry 在到达入口后报告具体交互失败')
+    require(interaction and re.fullmatch(r'drag|clipboard|gesture|file-dialog|canvas|other:.+', interaction),
+            '演示被拒绝：必须指定 --interaction drag|clipboard|gesture|file-dialog|canvas|other:<text>')
+    require(any(r['failed_interaction'] == interaction for r in generators),
+            '演示被拒绝：--interaction 必须对应 generator 报告的具体失败交互')
+    from .entries import safe
+    safe(interaction, m['config'])
     require(bool(cases), 'Demo must name affected cases')
     require(all(node in m['cases'].get(cid, {}).get('unknown_nodes', []) for cid in cases),
             'Demo refused; every case-spec must reference this specific unknown node')
@@ -80,11 +91,14 @@ def save_route(base, m, args, result):
 GENERATOR_PROMPT = """You are a Playwright Test Agents generator used ONLY for exploration of one unknown page node.
 Node: {purpose}
 Goal / plan: {plan}
+Starting entry (reach this route before exploring the interaction): {entry_hint}
 Rules: call generator_setup_page with seedFile "tests/seed.spec.ts" first (the page is the authenticated editor), then
 use browser_* tools to reach the node and its observable completion signal. Read-only: do not click save/publish/delete,
 do not type credentials, do not print cookies/storage. Do not edit files except writing the generated test via
 generator_write_test to tests/explore/{slug}.spec.ts if you get that far. Stop after at most {max_actions} browser actions.
-Final answer: ONE fenced ```json block {{"reached": true|false, "route": [ordered steps as "goto:/path" | "click:<css or text=...>" |
+Final answer: ONE fenced ```json block {{"reached": true|false, "reached_entry": true|false,
+"failed_interaction": "drag|clipboard|gesture|file-dialog|canvas|other:<specific text> or null; only after reaching entry",
+"route": [ordered steps as "goto:/path" | "click:<css or text=...>" |
 "hover:..." | "fill:<target>=${{INPUT}}"], "frames": [iframe selectors on the way], "completion_signal": "<locator + visible text>",
 "targets": {{"<proposed.name>": "<stable css/role locator, scoped by frame>"}}, "notes": "<=3 short sentences"}}."""
 
@@ -100,7 +114,7 @@ def codex_binary():
 
 
 def generator_command(binary, cwd, env, prompt, model):
-    command = [binary, 'exec', '-C', cwd, '-s', 'workspace-write', '-m', model,
+    command = ['timeout', '2h', binary, 'exec', '-C', cwd, '-s', 'workspace-write', '-m', model,
                '-c', 'model_reasoning_effort="high"', '-c', 'sandbox_workspace_write.network_access=true',
                '-c', 'mcp_servers.playwright-test.command="npx"',
                '-c', 'mcp_servers.playwright-test.args=["playwright","run-test-mcp-server"]',
@@ -135,15 +149,20 @@ def parse_generator_output(text):
     return final, usage, route
 
 
-def run_generator(base, m, purpose, plan, minutes=20, model=None, max_actions=40, runner=None):
+def run_generator(base, m, purpose, plan, minutes=20, model=None, max_actions=40, runner=None, entry=None):
     """Launch an isolated Codex sub-agent with the Test Agents MCP + seed; record a real generator rung."""
     import json, re, subprocess, time
     from .common import atomic_write
     from .profiles import agent_env
     require(purpose and purpose.strip() and plan and plan.strip(), 'generator requires --purpose and --plan')
+    from .entries import resolve, safe
+    hint = resolve(entry) if entry else None
+    require(not entry or hint, '页面入口未知：请走入口提示问题（清单 D 块），不要请求演示')
+    safe({'purpose': purpose, 'plan': plan, 'entry': entry, 'hint': hint}, m['config'])
     setup = agent_env(base, m)
     slug = re.sub(r'[^A-Za-z0-9_.-]+', '-', purpose).strip('-')[:60] or 'node'
-    prompt = GENERATOR_PROMPT.format(purpose=purpose, plan=plan, slug=slug, max_actions=max_actions)
+    prompt = GENERATOR_PROMPT.format(purpose=purpose, plan=plan, slug=slug, max_actions=max_actions,
+                                     entry_hint=json.dumps(hint, ensure_ascii=False) if hint else 'No entry supplied; cannot request a demo.')
     model = model or 'gpt-6-luna'
     command = generator_command(codex_binary(), setup['cwd'], setup['env'], prompt, model)
     started, t0 = now(), time.monotonic()
@@ -155,15 +174,24 @@ def run_generator(base, m, purpose, plan, minutes=20, model=None, max_actions=40
         output, code = (exc.stdout or b'').decode() if isinstance(exc.stdout, bytes) else (exc.stdout or ''), 124
     final, usage, route = parse_generator_output(output)
     reached = bool(route and route.get('reached'))
+    reached_entry = bool(entry and route and route.get('reached_entry') is True)
+    failed_interaction = route.get('failed_interaction') if route and reached_entry and not reached else None
+    if not isinstance(failed_interaction, str) or not re.fullmatch(r'drag|clipboard|gesture|file-dialog|canvas|other:.+', failed_interaction):
+        failed_interaction = None
+    if failed_interaction:
+        failed_interaction = scrub_text(failed_interaction, m['config'])
     clean = lambda value: scrub_text(json.dumps(value, ensure_ascii=False), m['config'])
     out_dir = base / 'exploration'
     out_dir.mkdir(parents=True, exist_ok=True)
     report = {'purpose': purpose, 'plan': plan, 'model': model, 'exit_code': code, 'reached': reached,
+              'entry': entry, 'reached_entry': reached_entry, 'failed_interaction': failed_interaction,
               'route': json.loads(clean(route)) if route else None, 'final_message': scrub_text(final, m['config'])[-4000:]}
     atomic_write(out_dir / ('generator-' + slug + '.json'), report)
     row = {'at': now(), 'started_at': started, 'method': 'generator', 'source': 'generator-cli', 'purpose': purpose,
            'result': 'ok' if reached else 'failed', 'duration_ms': int((time.monotonic() - t0) * 1000),
            'model': model, 'exit_code': code,
+           'entry': entry, 'entry_reached': reached_entry, 'reached_entry': reached_entry,
+           'failed_interaction': failed_interaction,
            'tokens': {k: usage.get(k) for k in ('input_tokens', 'cached_input_tokens', 'output_tokens') if k in usage},
            'note': 'route' if reached else ('no route; exit ' + str(code))}
     m.setdefault('exploration', []).append(row)

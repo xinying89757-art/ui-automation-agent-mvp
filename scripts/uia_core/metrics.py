@@ -107,6 +107,7 @@ def calculate(base, m, final_report_at=None):
         "session_turns": sum(x.get('kind') == 'session_turn' for x in m.get('interaction_events', [])),
         "checklist_answers": sum(x.get('kind') == 'checklist_answer' for x in m.get('interaction_events', [])),
         "checklist_questions": m.get('checklist_question_count', 0),
+        "entry_question_count": m.get('entry_question_count', 0),
         "mid_run_questions": sum(x.get('kind') == 'mid_run_question' for x in m.get('interaction_events', [])),
         "import_to_first_result_seconds": elapsed(imported_at, first_at) if imported_at and first_at else None,
         "import_to_final_report_seconds": elapsed(imported_at, review_at) if imported_at and review_at else None,

@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
-from uia_core import common, preconditions, experience, exploration, workflow, profiles, cli
+from uia_core import common, preconditions, experience, exploration, workflow, profiles, cli, entries
 
 
 class GenericProcessTests(unittest.TestCase):
@@ -24,9 +24,12 @@ class GenericProcessTests(unittest.TestCase):
                                    'work_status': 'pending', 'stage': 'spec', 'result': None, 'attempts': []}
         self.memory = patch.object(experience, 'memory_path', return_value=self.base / 'memory.json')
         self.memory.start()
+        self.root_patch = patch.object(common, 'ROOT', self.base / 'project')
+        self.root_patch.start()
 
     def tearDown(self):
         self.memory.stop()
+        self.root_patch.stop()
         self.temp.cleanup()
 
     def test_unclassified_groups_survive_spec_omissions_and_block_checklist(self):
@@ -58,10 +61,11 @@ class GenericProcessTests(unittest.TestCase):
         preconditions.classify_precondition(self.base, self.m, rows[1]['key'], 'human_env', '特殊权限', [])
         result = experience.sync_checklist(self.base, self.m)
         self.assertFalse(result['draft'])
-        self.assertEqual(result['question_count'], 1)
+        self.assertEqual(result['question_count'], 2)
+        self.assertEqual(result['entry_question_count'], 1)
         self.assertEqual(result['ai_tasks'][0]['cases'], ['C1', 'C2'])
         self.assertTrue((self.base / 'preconditions.yaml').is_file())
-        experience.answer_sentence(self.base, self.m, 'A 都有')
+        experience.answer_sentence(self.base, self.m, 'A 都有，D 未知页面=管理 → 编辑')
         other = copy.deepcopy(self.m)
         other['questions'] = {}; other.pop('checklist_issued')
         self.assertEqual(experience.sync_checklist(self.base, other)['question_count'], 0)
@@ -73,9 +77,10 @@ class GenericProcessTests(unittest.TestCase):
 
     def test_demo_requires_navigation_generator_and_same_unknown_node(self):
         for kind in ['demo', 'record_request']:
-            with self.assertRaisesRegex(common.UiaError, 'snapshot.*generator'):
+            with self.assertRaisesRegex(common.UiaError, '页面入口未知'):
                 workflow.question(self.m, kind, 'node.x', '演示', ['C1'])
-        self.m['exploration'].append({'method': 'snapshot', 'purpose': 'node.x', 'steps_count': 1})
+        entries.add(self.m, 'node.x=管理 → 编辑')
+        self.m['exploration'].append({'method': 'snapshot', 'purpose': 'node.x', 'steps_count': 1, 'entry': 'node.x', 'entry_reached': True})
         with self.assertRaisesRegex(common.UiaError, 'generator'):
             exploration.demo_gate(self.m, 'node.x', ['C1'])
         exploration.log(self.m, 'generator', 'other', 'failed', 'seed unavailable')
@@ -87,19 +92,19 @@ class GenericProcessTests(unittest.TestCase):
         fake = argparse.Namespace(stdout=self.generator_output(False), returncode=0)
         with patch.object(exploration, 'codex_binary', return_value='/bin/codex'), \
                 patch('uia_core.profiles.agent_env', return_value={'cwd': '/runner', 'env': {'UIA_CONFIG': '/p/c.json'}}):
-            exploration.run_generator(self.base, self.m, 'node.x', '找入口', runner=lambda cmd, timeout: fake)
+            exploration.run_generator(self.base, self.m, 'node.x', '找入口', runner=lambda cmd, timeout: fake, entry='node.x')
         common.atomic_write(self.base / 'C1/case-spec.yaml', {'steps': [{'target': '?node.x'}]}, as_yaml=True)
         exploration.index_unknown_nodes(self.base, self.m)
-        exploration.demo_gate(self.m, 'node.x', ['C1'])
+        exploration.demo_gate(self.m, 'node.x', ['C1'], 'drag')
         with self.assertRaisesRegex(common.UiaError, 'every case-spec'):
-            exploration.demo_gate(self.m, 'node.x', ['C1', 'C2'])
+            exploration.demo_gate(self.m, 'node.x', ['C1', 'C2'], 'drag')
         with self.assertRaises(common.UiaError):
             experience.add_review(self.m, 'record_request', ['C1'], '演示', node='other')
-        self.assertEqual(workflow.question(self.m, 'demo', 'node.x', '演示', ['C1'])['status'], 'deferred')
+        self.assertEqual(workflow.question(self.m, 'demo', 'node.x', '演示', ['C1'], interaction='drag')['status'], 'deferred')
 
     @staticmethod
     def generator_output(reached):
-        route = '{"reached": ' + ('true' if reached else 'false') + ', "route": ["click:text=产品"], "targets": {}}'
+        route = '{"reached": ' + ('true' if reached else 'false') + ', "reached_entry": true, "failed_interaction": "drag", "route": ["click:text=产品"], "targets": {}}'
         message = 'done\n```json\n' + route + '\n```'
         return '\n'.join([json.dumps({'type': 'item.completed', 'item': {'type': 'agent_message', 'text': message}}),
                           json.dumps({'type': 'turn.completed', 'usage': {'input_tokens': 10, 'cached_input_tokens': 5, 'output_tokens': 2}})])

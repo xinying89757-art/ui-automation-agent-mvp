@@ -81,6 +81,11 @@ DOM evidence. Scope with `--frame '#backstage-innerpage'` or `--scope '#dialog'`
   Do not reinterpret an assertion value mismatch as a locator miss. Other locator/timing/
   generation failures may use `repair` after saved diagnosis and successful cleanup, at most
   two repair rounds. Re-register changed scripts and restart the success count.
+- Never edit framework code (scripts/uia_core, support/*.mjs|ts, schemas, skills) during a
+  tester's run, even when a gate looks wrong. Keep the case at its current classification,
+  add a `review` item named 流程缺陷 with the evidence, and finish the other cases.
+- Run one `uia.py` command per run at a time. If a command returns "busy", use `wait`/`status`;
+  do not start another `go` for the same workbook until the first returns.
 - Cleanup failure blocks only affected fixtures. Restore them through observed UI,
   save cleanup verification and call `resolve-fixture`, then answer the scoped question.
 - If interrupted, inspect `next`/`status`. `recover` consumes a completed batch report;

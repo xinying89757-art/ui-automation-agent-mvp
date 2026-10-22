@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import re
 import shutil
+import datetime as dt
 from pathlib import Path
 from .common import (ROOT, UiaError, atomic_write, config, digest, event, file_hash,
                      locked_run, now, read_json, read_yaml, require, save)
@@ -433,8 +434,22 @@ def _run_ready(manifest, ready):
                 from .remote_checks import hold_path, persist_hold
                 if not hold_path(m).is_file():
                     persist_hold(m, sorted(held_ids))
+            from .remote_checks import timestamp, wait_for_watch
+            armed = [row for row in m.get('remote_watches', {}).values()
+                     if row.get('status') == 'armed' and row.get('case_id') in selected]
+            for row in armed:
+                remaining = (timestamp(row['save_not_before']) - dt.datetime.now(dt.timezone.utc)).total_seconds()
+                require(remaining <= 3600, 'Armed watch is more than 60 minutes away; refusing to wait')
             batch = runtime.begin_batch(path.parent, m, selected)
             cfg = m['config']; save(path, m)
+        for row in armed:
+            def beat(watch, seconds):
+                body = {'batch_id': batch['id'], 'case_ids': list(batch['case_ids']), 'completed': [],
+                        'running': True, 'waiting_for_watch': watch['watch_id'],
+                        'remaining_seconds': round(seconds), 'updated_at': now()}
+                atomic_write(path.parent / 'heartbeat.json', body)
+                atomic_write(path.parent / batch['directory'] / 'heartbeat.json', body)
+            wait_for_watch(path.parent, row, heartbeat=beat)
         code = runtime.execute_process(path.parent, batch, cfg)
         with locked_run(manifest) as (path, m):
             runtime.consume_batch(path.parent, m, code); save(path, m)

@@ -38,6 +38,17 @@ node /path/to/remote-checks/check.mjs
 
 调度会先运行不需要 hold 的用例，再准备 deferred 用例，所有准备完成后才生成最终 `request.json`。数据 hold 写入私有 `.auth/remote-holds/`，供同环境的其他 run/clone 阻止数据修改；只读用例仍可运行。导入或 restore 完成恢复后清除 hold。
 
+## 立即生效：预布监听
+
+当 box 无法访问公开前台、而断言有 `max_latency_seconds` 时，先启动远程监听器，再保存：
+
+1. `.venv/bin/python scripts/uia.py remote-checks arm-watch --run RUN --case TC-0036 [--lead-minutes 20] [--watch-minutes 40] [--interval-ms 1000]`。该命令从 case-spec 与 page-map 读取静态条件、公开路径和时效阈值；fixture 动态条件会被拒绝。默认在 20 分钟后开放保存窗口，并监听 40 分钟。
+2. 将返回的 `runs/RUN/remote-checks/watch/WATCH_ID/` 目录交给可访问公开前台的远程执行器。执行器在 `save_not_before` 前运行 `node check.mjs`，保持进程运行；脚本每秒带唯一 cache-bust 参数采样，并原子写 `watch-results.json`。只交付该目录，不交付 run.json、state 或认证文件。
+3. 在 box 运行 `.venv/bin/python scripts/uia.py go cases.xlsx --profile PROFILE --cases TC-0036`。调度器先运行 hold-free 用例；到该用例时等待至 `save_not_before`（等待超过 60 分钟会拒绝），再执行保存流程。
+4. 将生成的 `watch-results.json` 带回 box，并运行 `.venv/bin/python scripts/uia.py remote-checks ingest-watch --run RUN /path/to/watch-results.json`。
+
+监听结果按 `schemas/remote-watch-results.schema.json` 校验；请求格式见 `schemas/remote-watch-request.schema.json`。仅保存每次采样的时刻、HTTP 成功标志和条件匹配标志、状态变化时间线及首次出现时限长脱敏证据，不保存响应头或完整正文。`ingest-watch` 将 verdict 写入同一 regular remote check 并经现有 case folding / cleanup 流程结案；重复导入幂等。
+
 回到本机导入：
 
 ```bash

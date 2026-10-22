@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { checkOne, evaluate } from '../scripts/templates/remote-check.mjs';
+import { checkOne, evaluate, runWatch } from '../scripts/templates/remote-check.mjs';
 const start=Date.parse('2026-01-01T00:00:00Z');
 const check={id:'c', url:'http://example.test/file',method:'GET',timeout_ms:100,
  saved_at:new Date(start).toISOString(),earliest_check_at:new Date(start+3600000).toISOString(),
@@ -50,4 +50,23 @@ test('checker evidence is bounded and redacts contact and credential patterns',a
  const result=await checkOne({...check,conditions:[{op:'contains',value:'safe target'}]},response(body),()=>start+1000);
  assert.equal(result.evidence.length,1); assert.ok(result.evidence[0].excerpt.length<=2000);
  assert.doesNotMatch(result.evidence[0].excerpt,/person@example\.com|eyJabcdefghijk|13812345678/);
+});
+test('watch polls until three present confirmations, records state changes and median clock offset',async()=>{
+ let now=start, n=0; const bodies=['old','old','new','new','new'];
+ const request={schema_version:'uia-remote-watch.v1',run_id:'R',watch_id:'W',request_sha256:'a'.repeat(64),url:'http://example.test/file',
+   method:'GET',conditions:[{op:'contains',value:'new'}],watch_until:new Date(start+20000).toISOString(),interval_ms:1000,timeout_ms:100};
+ const result=await runWatch(request,async url=>{
+   assert.match(String(url),/uia_cb=/); const body=bodies[n++];
+   return new Response(body,{status:200,headers:{Date:new Date(start+5000).toUTCString()}});
+ },()=>now,async ms=>{now+=ms;});
+ assert.equal(result.poll_count,5); assert.equal(result.confirmed_present,true); assert.equal(result.baseline_absent,true);
+ assert.deepEqual(result.timeline.map(x=>x.state),['absent','present']); assert.equal(result.clock_offset_ms,3500); // Date second-resolution +500 ms centring
+ assert.ok(result.evidence.section_sha256); assert.equal(result.error_count,0);
+});
+test('watch records a polling gap without exposing response data',async()=>{
+ let now=start;
+ const request={schema_version:'uia-remote-watch.v1',run_id:'R',watch_id:'G',request_sha256:'b'.repeat(64),url:'http://example.test/file',
+   method:'GET',conditions:[{op:'contains',value:'new'}],watch_until:new Date(start+8000).toISOString(),interval_ms:1000,timeout_ms:100};
+ const result=await runWatch(request,async()=>new Response('old'),()=>now,async()=>{now+=6000;});
+ assert.equal(result.poll_count,2); assert.equal(result.max_gap_ms,6000); assert.deepEqual(result.polls.map(p=>Object.keys(p)),[['t_ms','ok','present'],['t_ms','ok','present']]);
 });

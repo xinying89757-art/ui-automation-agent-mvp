@@ -4,6 +4,10 @@ import datetime as dt
 import hashlib
 import re
 import shutil
+import time
+import urllib.request
+import urllib.error
+import statistics
 from pathlib import Path
 from .common import ROOT, atomic_write, digest, event, file_hash, now, read_json, require
 from .secrets import scrub_text
@@ -114,6 +118,218 @@ def collect(base, m, batch, cid, attempt):
     # The caller exports only after independent cases and all deferred preparations finish.
 
 
+def _watch_assertion(base, m, cid):
+    from .common import read_yaml
+    case = m['cases'][cid]
+    spec = read_yaml(base / case.get('case_spec', ''))
+    pages = read_yaml(base / 'runner/knowledge/page-map.yaml')
+    attached = {s.get('id'): s for s in spec.get('steps', []) if isinstance(s, dict)}
+    for assertion in spec.get('assertions', []):
+        checks = assertion.get('checks', [])
+        remote = [c for c in checks if isinstance(c, dict) and c.get('op') == 'remote_file']
+        if not remote:
+            continue
+        step = attached.get(assertion.get('after'), {})
+        target = step.get('target')
+        resource = pages.get('targets', {}).get(target, {}).get('resource', {})
+        latency = resource.get('max_latency_seconds')
+        if latency is None:
+            continue
+        require(type(latency) in {int, float} and latency > 0, 'Cannot arm watch: invalid max_latency_seconds')
+        conditions = []
+        for check in remote:
+            condition = check.get('value')
+            serialized = __import__('json').dumps(condition, ensure_ascii=False)
+            require('$fixture.' not in serialized and '${' not in serialized,
+                    'Cannot arm watch: remote_file condition values must be static in case-spec')
+            require(isinstance(condition, dict) and condition.get('op') in {'contains', 'equals', 'ordered_pairs'} and
+                    isinstance(condition.get('value'), (str, list)), 'Cannot arm watch: invalid static remote_file condition')
+            conditions.append(condition)
+        require(conditions, 'Cannot arm watch: no remote_file assertion conditions')
+        target_resource = pages.get('targets', {}).get(target, {}).get('resource', {})
+        public = m.get('config', {}).get('targets', {}).get('public')
+        require(public and target_resource.get('path'), 'Cannot arm watch: public target URL is unavailable')
+        url = __import__('urllib.parse', fromlist=['urljoin']).urljoin(public.rstrip('/') + '/', target_resource['path'].lstrip('/'))
+        return assertion, conditions, latency, url
+    require(False, 'Cannot arm watch: case has no remote_file assertion with max_latency_seconds in page-map')
+
+
+def _clock_offset(entry_url):
+    """Backend Date minus local midpoint in milliseconds; null means unavailable."""
+    try:
+        start = time.time() * 1000
+        request = urllib.request.Request(entry_url, method='HEAD')
+        with urllib.request.urlopen(request, timeout=2) as response:
+            date = response.headers.get('Date')
+        end = time.time() * 1000
+        parsed = dt.datetime.strptime(date, '%a, %d %b %Y %H:%M:%S GMT').replace(tzinfo=dt.timezone.utc) if date else None
+        # Date is truncated to whole seconds; +500 ms centres the estimate.
+        return int(parsed.timestamp() * 1000 + 500 - (start + end) / 2) if parsed else None
+    except Exception:
+        return None
+
+
+def arm_watch(base, m, cid, lead_minutes=20, watch_minutes=40, interval_ms=1000):
+    require(cid in m['cases'], 'Unknown case: ' + cid)
+    require(type(lead_minutes) is int and 0 <= lead_minutes <= 60 and type(watch_minutes) is int and 1 <= watch_minutes <= 120 and
+            type(interval_ms) is int and 100 <= interval_ms <= 60000, 'Invalid watch timing')
+    assertion, conditions, latency, url = _watch_assertion(base, m, cid)
+    armed = dt.datetime.now(dt.timezone.utc)
+    save_not_before = armed + dt.timedelta(minutes=lead_minutes)
+    until = save_not_before + dt.timedelta(minutes=watch_minutes)
+    watch_id = digest([m['run_id'], cid, assertion['id'], armed.isoformat()])[:24]
+    directory = base / 'remote-checks' / 'watch' / watch_id
+    request = {'schema_version': 'uia-remote-watch.v1', 'run_id': m['run_id'], 'watch_id': watch_id,
+               'case_id': cid, 'assertion_id': assertion['id'], 'expected': assertion['excel'], 'url': url,
+               'method': 'GET', 'conditions': conditions, 'armed_at': armed.isoformat(),
+               'save_not_before': save_not_before.isoformat(), 'watch_until': until.isoformat(),
+               'interval_ms': interval_ms, 'timeout_ms': 10000, 'max_latency_seconds': latency,
+               'max_clock_offset_ms': 1000}
+    serialized = __import__('json').dumps(request, ensure_ascii=False)
+    require(scrub_text(serialized, m['config']) == serialized, 'Watch request contains sensitive data')
+    parsed_url = __import__('urllib.parse', fromlist=['urlsplit']).urlsplit(url)
+    require(parsed_url.scheme in {'http', 'https'} and not parsed_url.username and not parsed_url.password and not parsed_url.query,
+            'Cannot arm watch: unsafe public URL')
+    directory.mkdir(parents=True, exist_ok=False)
+    atomic_write(directory / 'request.json', request)
+    shutil.copyfile(Path(__file__).resolve().parents[1] / 'templates/remote-check.mjs', directory / 'check.mjs')
+    offset = _clock_offset(m.get('config', {}).get('environment', {}).get('entry_url', ''))
+    record = {'watch_id': watch_id, 'case_id': cid, 'assertion_id': assertion['id'], 'status': 'armed',
+              'armed_at': armed.isoformat(), 'save_not_before': save_not_before.isoformat(),
+              'watch_until': until.isoformat(), 'request_sha256': file_hash(directory / 'request.json'),
+              'box_clock_offset_ms': offset, 'request_file': str((directory / 'request.json').relative_to(base))}
+    m.setdefault('remote_watches', {})[watch_id] = record
+    event(m, 'remote_watch_armed', case_id=cid, watch_id=watch_id)
+    return {'watch_id': watch_id, 'request': record['request_file'], 'status': 'armed'}
+
+
+def wait_for_watch(base, watch, clock=None, sleeper=None, heartbeat=None):
+    """Wait until save window; helper is injectable for scheduler unit tests."""
+    clock = clock or (lambda: dt.datetime.now(dt.timezone.utc))
+    sleeper = sleeper or time.sleep
+    target = timestamp(watch['save_not_before'])
+    while (target - clock()).total_seconds() > 0:
+        remaining = (target - clock()).total_seconds()
+        require(remaining <= 3600, 'Armed watch is more than 60 minutes away; refusing to wait')
+        if heartbeat:
+            heartbeat(watch, remaining)
+        sleeper(min(5, remaining))
+
+
+def ingest_watch(base, m, file):
+    require(not m.get('active_batch'), 'Wait for the active batch before ingesting')
+    payload = read_json(file)
+    required = {'schema_version', 'run_id', 'watch_id', 'request_sha256', 'first_poll_at', 'last_poll_at',
+                'poll_count', 'error_count', 'max_gap_ms', 'baseline_absent', 'last_absent_at',
+                'first_present_at', 'confirmed_present', 'clock_offset_ms', 'evidence', 'timeline', 'polls'}
+    require(isinstance(payload, dict) and set(payload) == required and payload.get('schema_version') == 'uia-remote-watch-results.v1' and
+            payload.get('run_id') == m['run_id'], 'Invalid watch result envelope')
+    watch_id = payload.get('watch_id'); watches = m.get('remote_watches', {})
+    require(watch_id in watches, 'Unknown watch_id')
+    watch = watches[watch_id]
+    request_file = base / watch['request_file']
+    require(request_file.is_file() and payload['request_sha256'] == file_hash(request_file) == watch.get('request_sha256'), 'Watch request hash mismatch')
+    receipt = digest(Path(file).read_bytes())
+    if receipt in m.get('remote_watch_ingests', []):
+        return {'ingested': 0, 'duplicate': True}
+    for key in ('poll_count', 'error_count', 'max_gap_ms'):
+        require(type(payload[key]) is int and payload[key] >= 0, 'Invalid watch counters')
+    require(type(payload['baseline_absent']) is bool and type(payload['confirmed_present']) is bool and
+            isinstance(payload['polls'], list) and len(payload['polls']) == payload['poll_count'], 'Invalid watch polls')
+    require((payload['poll_count'] == 0 and payload['first_poll_at'] is None and payload['last_poll_at'] is None) or
+            (payload['poll_count'] > 0 and payload['first_poll_at'] is not None and payload['last_poll_at'] is not None),
+            'Invalid watch timestamp envelope')
+    for value in (payload['first_poll_at'], payload['last_poll_at'], payload['last_absent_at'], payload['first_present_at']):
+        if value is not None: timestamp(value)
+    require(payload['clock_offset_ms'] is None or type(payload['clock_offset_ms']) is int, 'Invalid watch clock offset')
+    for poll in payload['polls']:
+        require(isinstance(poll, dict) and set(poll) == {'t_ms', 'ok', 'present'} and type(poll['t_ms']) is int and
+                type(poll['ok']) is bool and type(poll['present']) is bool, 'Invalid watch poll')
+    require(all(payload['polls'][i]['t_ms'] >= payload['polls'][i-1]['t_ms'] for i in range(1, len(payload['polls']))) and
+            payload['error_count'] == sum(not p['ok'] for p in payload['polls']), 'Inconsistent watch poll sequence')
+    gaps = [payload['polls'][i]['t_ms'] - payload['polls'][i-1]['t_ms'] for i in range(1, len(payload['polls']))]
+    require(payload['max_gap_ms'] == max(gaps, default=0), 'Inconsistent watch gap')
+    first_success = next((p for p in payload['polls'] if p['ok']), None)
+    require(payload['baseline_absent'] == bool(first_success and not first_success['present']), 'Inconsistent watch baseline')
+    confirmed = any(all(p['ok'] and p['present'] for p in payload['polls'][i:i+3]) for i in range(max(0, len(payload['polls'])-2)))
+    require(payload['confirmed_present'] == confirmed, 'Inconsistent watch confirmation')
+    require(isinstance(payload['timeline'], list) and len(payload['timeline']) <= len(payload['polls']), 'Invalid watch timeline')
+    expected_timeline = []
+    previous_state = None
+    for poll in payload['polls']:
+        state = 'error' if not poll['ok'] else 'present' if poll['present'] else 'absent'
+        if state != previous_state:
+            expected_timeline.append({'t_ms': poll['t_ms'], 'state': state}); previous_state = state
+    require(payload['timeline'] == expected_timeline, 'Inconsistent watch timeline')
+    if payload['evidence'] is not None:
+        ev = payload['evidence']
+        require(isinstance(ev, dict) and set(ev) == {'excerpt', 'section_sha256'} and isinstance(ev['excerpt'], str) and
+                len(ev['excerpt']) <= 2000 and ev['section_sha256'] == hashlib.sha256(ev['excerpt'].encode()).hexdigest() and
+                redact_evidence(ev['excerpt']) == ev['excerpt'], 'Invalid watch evidence')
+    require(not payload['first_present_at'] or payload['evidence'] is not None, 'First-present evidence is missing')
+    request = read_json(request_file)
+    require(request.get('schema_version') == 'uia-remote-watch.v1' and request.get('watch_id') == watch_id and
+            request.get('run_id') == m['run_id'], 'Stored watch request is invalid')
+    entries = [(key, row) for key, row in m.get('remote_checks', {}).items()
+               if row.get('request', {}).get('case_id') == watch['case_id'] and
+               row.get('request', {}).get('assertion_id') == watch['assertion_id'] and
+               row.get('active', True) and
+               timestamp(row['request']['saved_at']) >= timestamp(watch['armed_at'])]
+    require(entries, 'No matching regular remote check produced after watch was armed')
+    key, entry = entries[-1]; req = entry['request']; saved = timestamp(req['saved_at'])
+    require(req.get('max_latency_seconds') == request.get('max_latency_seconds') and req.get('url') == request.get('url') and
+            req.get('conditions') == request.get('conditions'), 'Watch does not match the regular remote assertion')
+    first = timestamp(payload['first_poll_at']) if payload['first_poll_at'] else None
+    latency_ms = req.get('max_latency_seconds', 0) * 1000
+    latency = int((timestamp(payload['first_present_at']) - saved).total_seconds() * 1000) if payload.get('first_present_at') else None
+    code = None; status = 'unreachable'
+    if first is None: code = 'watch_gap'
+    elif first > saved: code = 'watch_started_late'
+    elif not any(p['ok'] for p in payload['polls']): code = 'watch_gap'
+    elif not payload['baseline_absent']: code = 'baseline_present'
+    elif payload['clock_offset_ms'] is None or abs(payload['clock_offset_ms']) > request.get('max_clock_offset_ms', 1000): code = 'clock_offset'
+    elif watch.get('box_clock_offset_ms') is not None and abs(watch['box_clock_offset_ms']) > request.get('max_clock_offset_ms', 1000): code = 'clock_offset'
+    elif watch.get('box_clock_offset_ms') is None:
+        watch['clock_offset_note'] = 'box_clock_offset_unavailable'
+    if code is None:
+        first_ms = first.timestamp() * 1000; saved_ms = saved.timestamp() * 1000
+        # Poll t_ms is measured from the first poll start; any successful sample inside (saved, saved+window] counts.
+        in_window = any(p['ok'] and 0 < (first_ms + p['t_ms'] - saved_ms) <= latency_ms for p in payload['polls'])
+        if not in_window and not payload['confirmed_present']:
+            code = 'watch_gap'
+        elif payload['confirmed_present'] and payload.get('first_present_at'):
+            if latency < -request.get('max_clock_offset_ms', 1000): code = 'clock_offset'
+            elif latency <= latency_ms: code, status = 'immediate_met', 'pass'
+            elif payload.get('last_absent_at') and timestamp(payload['last_absent_at']) > saved + dt.timedelta(milliseconds=latency_ms):
+                code, status = 'immediate_not_met', 'fail'
+            else: code = 'watch_gap'  # late first-present without an absent sample after the window is not proof
+        elif payload.get('last_absent_at') and timestamp(payload['last_absent_at']) > saved + dt.timedelta(milliseconds=latency_ms):
+            code, status = 'immediate_not_met', 'fail'
+        else:
+            code = 'watch_gap'
+    chinese = {'immediate_met':'立即生效已确认', 'immediate_not_met':'最终内容在 {n} 秒后生效',
+               'watch_started_late':'监听启动晚于保存，无法验证立即生效', 'baseline_present':'首个有效采样已包含新内容，无法验证变化时间',
+               'clock_offset':'时钟偏差超出允许范围，无法验证立即生效', 'watch_gap':'保存后的时效窗口内没有有效采样，无法验证立即生效'}
+    reason = ('最终 ' + str(round(latency/1000, 3)) + ' 秒后生效' if code == 'immediate_not_met' and latency is not None
+              else '超过时效窗口仍未出现新内容' if code == 'immediate_not_met' else chinese[code])
+    archive = base / 'remote-checks' / 'watch' / watch_id / ('ingested-' + receipt + '.json')
+    row = {'id': key, 'checked_at': payload['last_poll_at'] or now(), 'status': status, 'http_status': None,
+           'conditions': [bool(payload['confirmed_present'])] * len(req.get('conditions', [])),
+           'reason': code, 'variant': 'cache_busted',
+           'latency_ms': latency, 'watch_result_sha256': receipt,
+           'watch_result_file': str(archive.relative_to(base))}
+    if Path(file).resolve() != archive.resolve(): shutil.copyfile(file, archive)
+    entry.setdefault('history', []).append(row); entry['status'] = status
+    entry['watch_verdict'] = {'reason': code, 'report': reason, 'latency_ms': latency, 'receipt_sha256': receipt}
+    watch.update(status='ingested', verdict=code, result_sha256=receipt, ingested_at=now())
+    m.setdefault('remote_watch_ingests', []).append(receipt)
+    cleanup = restore(base, m) if all(r['status'] in {'pass', 'fail', 'unreachable'} for r in m.get('remote_checks', {}).values() if r.get('active', True)) else None
+    fold(m, req['case_id'])
+    event(m, 'remote_watch_ingested', case_id=req['case_id'], watch_id=watch_id, verdict=code)
+    return {'ingested': 1, 'duplicate': False, 'case_id': req['case_id'], 'status': status, 'reason': code,
+            'report': reason, 'latency_ms': latency, 'cleanup': cleanup}
+
+
 def environment_key(m):
     from .profiles import connection_settings
     return digest(connection_settings(m['config']))
@@ -164,7 +380,8 @@ def fold(m, cid):
         return
     status = 'pass_reevaluated' if statuses == {'pass_reevaluated'} else next((s for s in ('fail', 'unreachable', 'still-cached', 'pending') if s in statuses), 'pass')
     c['remote_status'] = status
-    c['classification'] = {'reason': LABELS[status], 'at': now()}
+    watch_reasons = [r.get('watch_verdict', {}).get('report') for r in entries if r.get('watch_verdict', {}).get('report')]
+    c['classification'] = {'reason': watch_reasons[-1] if watch_reasons else LABELS[status], 'at': now()}
     if status in {'pass', 'pass_reevaluated'} and not c['attempts'][-1].get('cleanup_verified'):
         c.update(result='remote_pending', pass_streak=0, stability='not_run', stage='remote', work_status='remote_pending')
         c['classification']['reason'] = '远程通过，等待本机恢复数据并核验'

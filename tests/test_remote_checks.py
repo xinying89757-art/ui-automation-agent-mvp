@@ -120,6 +120,86 @@ class RemoteChecksTests(unittest.TestCase):
     def test_pending_local_result_never_becomes_case_pass(self):
         remote.fold(self.m,'C'); self.assertEqual(self.m['cases']['C']['result'],'remote_pending')
 
+    def test_arm_watch_writes_static_credential_free_request_and_refuses_dynamic_values(self):
+        import yaml
+        runner=self.base/'runner/knowledge'; runner.mkdir(parents=True)
+        (runner/'page-map.yaml').write_text(yaml.safe_dump({'targets':{'public.llms.immediate':{'resource':{'path':'/llms.txt','max_latency_seconds':5}}}}))
+        folder=self.base/'cases/C'; folder.mkdir(parents=True)
+        (folder/'case-spec.yaml').write_text(yaml.safe_dump({'steps':[{'id':'S2','verb':'defer_public','target':'public.llms.immediate'}],
+          'assertions':[{'id':'A2','after':'S2','excel':'2. 公开文件立即显示新的网站概述。','checks':[{'op':'remote_file','target':'public.llms.immediate','value':{'op':'contains','value':'new overview'}}]}]}))
+        self.m['cases']['C']['case_spec']='cases/C/case-spec.yaml'; self.m['config'].update(targets={'public':'https://example.test'},environment={'entry_url':'https://example.test'})
+        with patch.object(remote,'_clock_offset',return_value=23):
+            armed=remote.arm_watch(self.base,self.m,'C',lead_minutes=0,watch_minutes=2,interval_ms=500)
+        request=common.read_json(self.base/armed['request'])
+        self.assertEqual(request['schema_version'],'uia-remote-watch.v1'); self.assertEqual(request['max_latency_seconds'],5)
+        self.assertEqual(request['conditions'][0]['value'],'new overview'); self.assertNotIn('box_clock_offset_ms',request)
+        self.assertEqual(self.m['remote_watches'][armed['watch_id']]['box_clock_offset_ms'],23)
+        data=(folder/'case-spec.yaml').read_text().replace('new overview','$fixture.overview')
+        (folder/'case-spec.yaml').write_text(data)
+        with self.assertRaisesRegex(common.UiaError,'static'):
+            remote.arm_watch(self.base,self.m,'C')
+
+    def test_watch_scheduler_waits_and_rejects_more_than_hour(self):
+        base=dt.datetime(2026,1,1,tzinfo=dt.timezone.utc); current=[base]; sleeps=[]
+        watch={'save_not_before':(base+dt.timedelta(seconds=7)).isoformat()}
+        def sleep(seconds): sleeps.append(seconds); current[0]+=dt.timedelta(seconds=seconds)
+        beats=[]
+        remote.wait_for_watch(self.base,watch,clock=lambda:current[0],sleeper=sleep,heartbeat=lambda *_:beats.append(True))
+        self.assertEqual(current[0],base+dt.timedelta(seconds=7)); self.assertTrue(sleeps); self.assertGreaterEqual(len(beats),2)
+        with self.assertRaisesRegex(common.UiaError,'60 minutes'):
+            remote.wait_for_watch(self.base,{'save_not_before':(base+dt.timedelta(hours=1,seconds=1)).isoformat()},clock=lambda:base,sleeper=lambda _:None)
+
+    def watch_payload(self, verdict='pass'):
+        saved=dt.datetime(2026,1,1,tzinfo=dt.timezone.utc)
+        self.check.update(saved_at=saved.isoformat(),max_latency_seconds=5,earliest_check_at=saved.isoformat(),deadline=(saved+dt.timedelta(hours=2)).isoformat())
+        folder=self.base/'remote-checks/watch/w1'; folder.mkdir(parents=True,exist_ok=True)
+        common.atomic_write(folder/'request.json',{'schema_version':'uia-remote-watch.v1','run_id':'R','watch_id':'w1',
+          'max_latency_seconds':5,'url':self.check['url'],'conditions':self.check['conditions']})
+        self.m['remote_watches']={'w1':{'watch_id':'w1','case_id':'C','assertion_id':'A2','status':'armed','armed_at':(saved-dt.timedelta(minutes=1)).isoformat(),'request_file':'remote-checks/watch/w1/request.json','request_sha256':common.file_hash(folder/'request.json'),'box_clock_offset_ms':None}}
+        first=saved-dt.timedelta(seconds=1)
+        times=[0,1000,2000,3000,4000]
+        polls=[{'t_ms':t,'ok':True,'present': t >= 2000} for t in times]
+        payload={'schema_version':'uia-remote-watch-results.v1','run_id':'R','watch_id':'w1','request_sha256':common.file_hash(folder/'request.json'),
+          'first_poll_at':first.isoformat(),'last_poll_at':(first+dt.timedelta(milliseconds=times[-1])).isoformat(),'poll_count':5,'error_count':0,'max_gap_ms':1000,
+          'baseline_absent':True,'last_absent_at':(first+dt.timedelta(milliseconds=1000)).isoformat(),'first_present_at':(first+dt.timedelta(milliseconds=2000)).isoformat(),
+          'confirmed_present':True,'clock_offset_ms':0,'evidence':{'excerpt':'new','section_sha256':hashlib.sha256(b'new').hexdigest()},
+          'timeline':[{'t_ms':0,'state':'absent'},{'t_ms':2000,'state':'present'}],'polls':polls}
+        if verdict=='late':
+            payload['first_poll_at']=(saved+dt.timedelta(seconds=1)).isoformat()
+        elif verdict=='baseline':
+            payload['baseline_absent']=False; payload['polls'][0]['present']=True
+            payload['timeline']=[{'t_ms':0,'state':'present'},{'t_ms':1000,'state':'absent'},{'t_ms':2000,'state':'present'}]
+        elif verdict=='clock':
+            payload['clock_offset_ms']=1500
+        elif verdict=='gap':
+            payload.update(poll_count=1,error_count=1,max_gap_ms=0,baseline_absent=False,last_absent_at=None,
+                           first_present_at=None,confirmed_present=False,evidence=None,polls=[{'t_ms':0,'ok':False,'present':False}],timeline=[{'t_ms':0,'state':'error'}])
+        elif verdict=='late_present_unproven':
+            # First present after the window but no absent sample after the window: not proof of a slow update.
+            payload['first_present_at']=(saved+dt.timedelta(seconds=8)).isoformat(); payload['last_absent_at']=(saved-dt.timedelta(seconds=1)).isoformat()
+        elif verdict=='not_met':
+            payload['first_present_at']=(saved+dt.timedelta(seconds=8)).isoformat(); payload['last_absent_at']=(saved+dt.timedelta(seconds=6)).isoformat()
+        path=self.base/'watch-results.json'; common.atomic_write(path,payload); return path
+
+    def test_watch_ingest_verdicts_and_idempotence(self):
+        for kind,code,status in [('pass','immediate_met','pass'),('not_met','immediate_not_met','fail'),('late','watch_started_late','unreachable'),('baseline','baseline_present','unreachable'),('clock','clock_offset','unreachable'),('gap','watch_gap','unreachable'),('late_present_unproven','watch_gap','unreachable')]:
+            with self.subTest(kind=kind):
+                # Reinitialize because each ingest folds its case state.
+                self.setUpCaseForWatch()
+                path=self.watch_payload(kind); result=remote.ingest_watch(self.base,self.m,path)
+                self.assertEqual(result['reason'],code); self.assertEqual(self.m['remote_checks']['check1']['status'],status)
+                self.assertEqual(result['latency_ms'],8000 if kind in {'not_met','late_present_unproven'} else None if kind=='gap' else 1000)
+                self.assertTrue(remote.ingest_watch(self.base,self.m,path)['duplicate'])
+                self.assertEqual(len(self.m['remote_checks']['check1']['history']),1)
+
+    def setUpCaseForWatch(self):
+        # Restore the common fixture between verdict scenarios without recreating temp paths.
+        saved=dt.datetime.now(dt.timezone.utc)-dt.timedelta(minutes=5)
+        self.check.update(saved_at=saved.isoformat(),max_latency_seconds=5,earliest_check_at=saved.isoformat(),deadline=(saved+dt.timedelta(hours=2)).isoformat())
+        common.atomic_write(self.request,{'schema_version':'uia-remote-request.v1','run_id':'R','checks':[self.check]})
+        self.m['remote_checks']={'check1':{'request':self.check,'version':'v','batch_id':'b','status':'pending','active':True,'history':[]}}
+        self.m['cases']['C']['attempts'][-1].update(cleanup_verified=True,cleanup_pending=False,setup_verified=True,result='passed')
+
     def test_held_cleanup_is_restored_in_reverse_order_before_case_pass(self):
         attempt = self.m['cases']['C']['attempts'][-1]
         attempt.update(cleanup_verified=False, cleanup_pending=True, at=common.now())

@@ -121,7 +121,7 @@ class GenericProcessTests(unittest.TestCase):
         self.assertIn('default_tools_approval_mode="approve"', joined)
         self.assertIn('mcp_servers.playwright-test.env.UIA_CONFIG="/p/c.json"', joined)
         self.assertIn('seed.spec.ts', seen['cmd'][-1])
-        self.assertEqual(seen['timeout'], 180)
+        self.assertEqual(seen['timeout'], 600)  # 10-minute floor
         row = result['recorded']
         self.assertEqual((row['source'], row['result'], row['tokens']['input_tokens']), ('generator-cli', 'ok', 10))
         self.assertEqual(result['route']['route'], ['click:text=产品'])

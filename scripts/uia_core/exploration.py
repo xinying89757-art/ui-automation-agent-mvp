@@ -99,6 +99,8 @@ do not switch to another area. Entry clicks run outside frame_hint; use that fra
 use browser_* tools to reach the node and its observable completion signal. Read-only: do not click save/publish/delete,
 do not type credentials, do not print cookies/storage. Do not edit files except writing the generated test via
 generator_write_test to tests/explore/{slug}.spec.ts if you get that far. Stop after at most {max_actions} browser actions.
+Checkpoint: the moment you reach the Starting entry, send one short progress message with a ```json block
+{{"checkpoint": "entry", "reached": false, "reached_entry": true, "route": [...], "frames": [...]}} and then continue.
 Final answer: ONE fenced ```json block {{"reached": true|false, "reached_entry": true|false,
 "failed_interaction": "drag|clipboard|gesture|file-dialog|canvas|other:<specific text> or null; only after reaching entry",
 "route": [ordered steps as "goto:/path" | "click:<css or text=...>" |
@@ -134,7 +136,7 @@ def generator_command(binary, cwd, env, prompt, model):
 def parse_generator_output(text):
     """Return (final_message, usage, route_json_or_None) from codex --json output."""
     import json, re
-    final, usage = '', {}
+    final, usage, checkpoint = '', {}, None
     for line in text.splitlines():
         try:
             event = json.loads(line)
@@ -143,6 +145,12 @@ def parse_generator_output(text):
         item = event.get('item') or {}
         if event.get('type') == 'item.completed' and item.get('type') == 'agent_message':
             final = item.get('text', '')
+            hit = re.search(r'```json\s*(\{.*?\})\s*```', final, re.S)
+            if hit and '"checkpoint"' in hit.group(1):
+                try:
+                    checkpoint = json.loads(hit.group(1))
+                except ValueError:
+                    pass
         if event.get('type') == 'turn.completed':
             usage = event.get('usage') or {}
     match = re.search(r'```json\s*(\{.*?\})\s*```', final, re.S)
@@ -152,6 +160,8 @@ def parse_generator_output(text):
             route = json.loads(match.group(1))
         except ValueError:
             route = None
+    if route is None and checkpoint:
+        route = dict(checkpoint, reached=False, failed_interaction=None)
     return final, usage, route
 
 
@@ -174,6 +184,9 @@ def run_generator(base, m, purpose, plan, minutes=20, model=None, max_actions=40
     prompt = GENERATOR_PROMPT.format(purpose=purpose, plan=plan, slug=slug, max_actions=max_actions,
                                      entry_hint=json.dumps(hint, ensure_ascii=False) if hint else 'No entry supplied; cannot request a demo.')
     model = model or 'gpt-6-luna'
+    from .common import DEFAULTS
+    requested_minutes = minutes
+    minutes = max(int(minutes or 0), int(DEFAULTS['exploration_minutes_per_flow']))
     command = generator_command(codex_binary(), setup['cwd'], setup['env'], prompt, model)
     started, t0 = now(), time.monotonic()
     runner = runner or (lambda cmd, timeout: subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, stdin=subprocess.DEVNULL))
@@ -190,7 +203,7 @@ def run_generator(base, m, purpose, plan, minutes=20, model=None, max_actions=40
     start_failure = (code not in (0, 124) and not usage and not route) or bool(re.search(
         r'(?:sandbox.*(?:failed to start|failed|not permitted)|failed to (?:start|initialize).*sandbox|permission denied.*(?:codex|session)|(?:codex|session).*permission denied)',
         startup_error + output + final, re.I))
-    failure_class = 'subagent_start' if start_failure else None
+    failure_class = 'subagent_start' if start_failure else ('timeout' if code == 124 else None)
     if start_failure:
         route = None
         final = 'Sub-agent failed to start or initialize its sandbox/runtime. ' + scrub_text(startup_error, m['config'])[:500]
@@ -216,7 +229,15 @@ def run_generator(base, m, purpose, plan, minutes=20, model=None, max_actions=40
            'entry': entry, 'entry_reached': reached_entry, 'reached_entry': reached_entry,
            'failed_interaction': failed_interaction,
            'tokens': {k: usage.get(k) for k in ('input_tokens', 'cached_input_tokens', 'output_tokens') if k in usage},
+           'budget_minutes': minutes, 'requested_minutes': requested_minutes,
            'note': 'route' if reached else ('no route; exit ' + str(code))}
     m.setdefault('exploration', []).append(row)
-    return {'recorded': row, 'report': str((out_dir / ('generator-' + slug + '.json')).relative_to(base)),
+    advice = None
+    if failure_class == 'timeout':
+        advice = ('generator 超时不是页面不可达的证据：同一入口用默认预算再运行一次（不传 --minutes），'
+                  + ('已到达入口，后续计划只写入口之后的交互；' if reached_entry else '')
+                  + '不要把超时转成审核问题或演示请求。')
+    elif failure_class == 'subagent_start':
+        advice = '子代理启动失败属于环境问题：修复后重试，不算演示依据。'
+    return {'next': advice, 'recorded': row, 'report': str((out_dir / ('generator-' + slug + '.json')).relative_to(base)),
             'route': report['route']}

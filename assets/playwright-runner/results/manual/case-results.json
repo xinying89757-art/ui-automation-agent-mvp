@@ -1,0 +1,408 @@
+{
+  "schema_version": "uia-batch-results.v1",
+  "batch_id": null,
+  "started_at": "2026-10-22T10:26:39.761Z",
+  "finished_at": "2026-10-22T10:26:51.087Z",
+  "status": "failed",
+  "complete": true,
+  "cases": [
+    {
+      "case_id": "TC-0004",
+      "result": "automation_failure",
+      "playwright_status": "failed",
+      "setup_started": false,
+      "duration_ms": 2,
+      "retry": 0,
+      "errors": [
+        "Error: 请先选择环境并配置初始入口"
+      ],
+      "lifecycle": {},
+      "assertions": [],
+      "failure_stage": "locator_or_timing",
+      "read_back": null,
+      "saves": [],
+      "script": "/workspace/uia-dev/assets/playwright-runner/tests/generated/TC-0004.spec.ts",
+      "line": 7,
+      "attachments": []
+    },
+    {
+      "case_id": "TC-0016",
+      "result": "automation_failure",
+      "playwright_status": "failed",
+      "setup_started": false,
+      "duration_ms": 2,
+      "retry": 0,
+      "errors": [
+        "Error: 请先选择环境并配置初始入口"
+      ],
+      "lifecycle": {},
+      "assertions": [],
+      "failure_stage": "locator_or_timing",
+      "read_back": null,
+      "saves": [],
+      "script": "/workspace/uia-dev/assets/playwright-runner/tests/generated/TC-0016.spec.ts",
+      "line": 7,
+      "attachments": []
+    },
+    {
+      "case_id": "TC-0019",
+      "result": "automation_failure",
+      "playwright_status": "failed",
+      "setup_started": false,
+      "duration_ms": 2,
+      "retry": 0,
+      "errors": [
+        "Error: 请先选择环境并配置初始入口"
+      ],
+      "lifecycle": {},
+      "assertions": [],
+      "failure_stage": "locator_or_timing",
+      "read_back": null,
+      "saves": [],
+      "script": "/workspace/uia-dev/assets/playwright-runner/tests/generated/TC-0019.spec.ts",
+      "line": 7,
+      "attachments": []
+    },
+    {
+      "case_id": "TC-0033",
+      "result": "automation_failure",
+      "playwright_status": "failed",
+      "setup_started": false,
+      "duration_ms": 2,
+      "retry": 0,
+      "errors": [
+        "Error: 请先选择环境并配置初始入口"
+      ],
+      "lifecycle": {},
+      "assertions": [],
+      "failure_stage": "locator_or_timing",
+      "read_back": null,
+      "saves": [],
+      "script": "/workspace/uia-dev/assets/playwright-runner/tests/generated/TC-0033.spec.ts",
+      "line": 7,
+      "attachments": []
+    },
+    {
+      "case_id": "TC-0036",
+      "result": "automation_failure",
+      "playwright_status": "failed",
+      "setup_started": false,
+      "duration_ms": 2,
+      "retry": 0,
+      "errors": [
+        "Error: 请先选择环境并配置初始入口"
+      ],
+      "lifecycle": {},
+      "assertions": [],
+      "failure_stage": "locator_or_timing",
+      "read_back": null,
+      "saves": [],
+      "script": "/workspace/uia-dev/assets/playwright-runner/tests/generated/TC-0036.spec.ts",
+      "line": 7,
+      "attachments": []
+    },
+    {
+      "case_id": "TC-0048",
+      "result": "automation_failure",
+      "playwright_status": "failed",
+      "setup_started": false,
+      "duration_ms": 2,
+      "retry": 0,
+      "errors": [
+        "Error: 请先选择环境并配置初始入口"
+      ],
+      "lifecycle": {},
+      "assertions": [],
+      "failure_stage": "locator_or_timing",
+      "read_back": null,
+      "saves": [],
+      "script": "/workspace/uia-dev/assets/playwright-runner/tests/generated/TC-0048.spec.ts",
+      "line": 7,
+      "attachments": []
+    },
+    {
+      "case_id": "TC-0055",
+      "result": "automation_failure",
+      "playwright_status": "failed",
+      "setup_started": false,
+      "duration_ms": 2,
+      "retry": 0,
+      "errors": [
+        "Error: 请先选择环境并配置初始入口"
+      ],
+      "lifecycle": {},
+      "assertions": [],
+      "failure_stage": "locator_or_timing",
+      "read_back": null,
+      "saves": [],
+      "script": "/workspace/uia-dev/assets/playwright-runner/tests/generated/TC-0055.spec.ts",
+      "line": 7,
+      "attachments": []
+    },
+    {
+      "case_id": "TC-0001",
+      "result": "automation_failure",
+      "playwright_status": "failed",
+      "setup_started": false,
+      "duration_ms": 2,
+      "retry": 0,
+      "errors": [
+        "Error: 请先选择环境并配置初始入口"
+      ],
+      "lifecycle": {},
+      "assertions": [],
+      "failure_stage": "locator_or_timing",
+      "read_back": null,
+      "saves": [],
+      "script": "/workspace/uia-dev/assets/playwright-runner/tests/llms-txt.spec.ts",
+      "line": 4,
+      "attachments": []
+    },
+    {
+      "case_id": "TC-0004",
+      "result": "automation_failure",
+      "playwright_status": "failed",
+      "setup_started": false,
+      "duration_ms": 2,
+      "retry": 0,
+      "errors": [
+        "Error: 请先选择环境并配置初始入口"
+      ],
+      "lifecycle": {},
+      "assertions": [],
+      "failure_stage": "locator_or_timing",
+      "read_back": null,
+      "saves": [],
+      "script": "/workspace/uia-dev/assets/playwright-runner/tests/llms-txt.spec.ts",
+      "line": 14,
+      "attachments": []
+    },
+    {
+      "case_id": "TC-0005",
+      "result": "automation_failure",
+      "playwright_status": "failed",
+      "setup_started": false,
+      "duration_ms": 2,
+      "retry": 0,
+      "errors": [
+        "Error: 请先选择环境并配置初始入口"
+      ],
+      "lifecycle": {},
+      "assertions": [],
+      "failure_stage": "locator_or_timing",
+      "read_back": null,
+      "saves": [],
+      "script": "/workspace/uia-dev/assets/playwright-runner/tests/llms-txt.spec.ts",
+      "line": 26,
+      "attachments": []
+    },
+    {
+      "case_id": "TC-0006",
+      "result": "automation_failure",
+      "playwright_status": "failed",
+      "setup_started": false,
+      "duration_ms": 2,
+      "retry": 0,
+      "errors": [
+        "Error: 请先选择环境并配置初始入口"
+      ],
+      "lifecycle": {},
+      "assertions": [],
+      "failure_stage": "locator_or_timing",
+      "read_back": null,
+      "saves": [],
+      "script": "/workspace/uia-dev/assets/playwright-runner/tests/llms-txt.spec.ts",
+      "line": 40,
+      "attachments": []
+    },
+    {
+      "case_id": "TC-0015",
+      "result": "automation_failure",
+      "playwright_status": "failed",
+      "setup_started": false,
+      "duration_ms": 2,
+      "retry": 0,
+      "errors": [
+        "Error: 请先选择环境并配置初始入口"
+      ],
+      "lifecycle": {},
+      "assertions": [],
+      "failure_stage": "locator_or_timing",
+      "read_back": null,
+      "saves": [],
+      "script": "/workspace/uia-dev/assets/playwright-runner/tests/llms-txt.spec.ts",
+      "line": 55,
+      "attachments": []
+    },
+    {
+      "case_id": "TC-0017",
+      "result": "automation_failure",
+      "playwright_status": "failed",
+      "setup_started": false,
+      "duration_ms": 2,
+      "retry": 0,
+      "errors": [
+        "Error: 请先选择环境并配置初始入口"
+      ],
+      "lifecycle": {},
+      "assertions": [],
+      "failure_stage": "locator_or_timing",
+      "read_back": null,
+      "saves": [],
+      "script": "/workspace/uia-dev/assets/playwright-runner/tests/llms-txt.spec.ts",
+      "line": 69,
+      "attachments": []
+    },
+    {
+      "case_id": "TC-0024",
+      "result": "automation_failure",
+      "playwright_status": "failed",
+      "setup_started": false,
+      "duration_ms": 2,
+      "retry": 0,
+      "errors": [
+        "Error: 请先选择环境并配置初始入口"
+      ],
+      "lifecycle": {},
+      "assertions": [],
+      "failure_stage": "locator_or_timing",
+      "read_back": null,
+      "saves": [],
+      "script": "/workspace/uia-dev/assets/playwright-runner/tests/llms-txt.spec.ts",
+      "line": 82,
+      "attachments": []
+    },
+    {
+      "case_id": "TC-0041",
+      "result": "automation_failure",
+      "playwright_status": "failed",
+      "setup_started": false,
+      "duration_ms": 2,
+      "retry": 0,
+      "errors": [
+        "Error: 请先选择环境并配置初始入口"
+      ],
+      "lifecycle": {},
+      "assertions": [],
+      "failure_stage": "locator_or_timing",
+      "read_back": null,
+      "saves": [],
+      "script": "/workspace/uia-dev/assets/playwright-runner/tests/llms-txt.spec.ts",
+      "line": 99,
+      "attachments": []
+    },
+    {
+      "case_id": "TC-0043",
+      "result": "automation_failure",
+      "playwright_status": "failed",
+      "setup_started": false,
+      "duration_ms": 2,
+      "retry": 0,
+      "errors": [
+        "Error: 请先选择环境并配置初始入口"
+      ],
+      "lifecycle": {},
+      "assertions": [],
+      "failure_stage": "locator_or_timing",
+      "read_back": null,
+      "saves": [],
+      "script": "/workspace/uia-dev/assets/playwright-runner/tests/llms-txt.spec.ts",
+      "line": 116,
+      "attachments": []
+    },
+    {
+      "case_id": "TC-0036",
+      "result": "automation_failure",
+      "playwright_status": "failed",
+      "setup_started": false,
+      "duration_ms": 2,
+      "retry": 0,
+      "errors": [
+        "Error: 请先选择环境并配置初始入口"
+      ],
+      "lifecycle": {},
+      "assertions": [],
+      "failure_stage": "locator_or_timing",
+      "read_back": null,
+      "saves": [],
+      "script": "/workspace/uia-dev/assets/playwright-runner/tests/llms-txt.spec.ts",
+      "line": 139,
+      "attachments": []
+    },
+    {
+      "case_id": "TC-0019",
+      "result": "automation_failure",
+      "playwright_status": "failed",
+      "setup_started": false,
+      "duration_ms": 2,
+      "retry": 0,
+      "errors": [
+        "Error: 请先选择环境并配置初始入口"
+      ],
+      "lifecycle": {},
+      "assertions": [],
+      "failure_stage": "locator_or_timing",
+      "read_back": null,
+      "saves": [],
+      "script": "/workspace/uia-dev/assets/playwright-runner/tests/llms-txt.spec.ts",
+      "line": 177,
+      "attachments": []
+    },
+    {
+      "case_id": "TC-0050",
+      "result": "automation_failure",
+      "playwright_status": "failed",
+      "setup_started": false,
+      "duration_ms": 2,
+      "retry": 0,
+      "errors": [
+        "Error: 请先选择环境并配置初始入口"
+      ],
+      "lifecycle": {},
+      "assertions": [],
+      "failure_stage": "locator_or_timing",
+      "read_back": null,
+      "saves": [],
+      "script": "/workspace/uia-dev/assets/playwright-runner/tests/llms-txt.spec.ts",
+      "line": 203,
+      "attachments": []
+    },
+    {
+      "case_id": "TC-0023",
+      "result": "automation_failure",
+      "playwright_status": "failed",
+      "setup_started": false,
+      "duration_ms": 2,
+      "retry": 0,
+      "errors": [
+        "Error: 请先选择环境并配置初始入口"
+      ],
+      "lifecycle": {},
+      "assertions": [],
+      "failure_stage": "locator_or_timing",
+      "read_back": null,
+      "saves": [],
+      "script": "/workspace/uia-dev/assets/playwright-runner/tests/llms-txt.spec.ts",
+      "line": 227,
+      "attachments": []
+    },
+    {
+      "result": "automation_failure",
+      "playwright_status": "failed",
+      "setup_started": false,
+      "duration_ms": 2,
+      "retry": 0,
+      "errors": [
+        "Error: 请先选择环境并配置初始入口"
+      ],
+      "lifecycle": {},
+      "assertions": [],
+      "failure_stage": "locator_or_timing",
+      "read_back": null,
+      "saves": [],
+      "script": "/workspace/uia-dev/assets/playwright-runner/tests/seed.spec.ts",
+      "line": 20,
+      "attachments": []
+    }
+  ]
+}

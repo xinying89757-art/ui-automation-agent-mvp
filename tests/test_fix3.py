@@ -1,3 +1,4 @@
+import subprocess
 import argparse
 import json
 import os
@@ -97,6 +98,26 @@ class Fix3Tests(unittest.TestCase):
         self.assertEqual(result['recorded']['failure_class'], 'subagent_start')
         self.assertEqual(common.read_json(self.base / result['report'])['failure_class'], 'subagent_start')
         result['recorded'].update(reached_entry=True, entry_reached=True, failed_interaction='drag')
+        self.m['cases']['C1']['unknown_nodes'] = ['insert.widget']
+        with self.assertRaisesRegex(common.UiaError, 'generator'):
+            exploration.demo_gate(self.m, 'insert.widget', ['C1'], 'drag', page='内容编辑器')
+
+    def test_generator_timeout_keeps_entry_checkpoint_and_advises_rerun(self):
+        entries.add(self.m, '内容编辑器=内容管理 → 产品 → 编辑')
+        cp = '```json\n{"checkpoint": "entry", "reached": false, "reached_entry": true, "route": ["click:text=产品"], "frames": ["#tiptap-iframe"]}\n```'
+        out = json.dumps({'type': 'item.completed', 'item': {'type': 'agent_message', 'text': cp}})
+        seen = {}
+        def runner(cmd, timeout):
+            seen['timeout'] = timeout
+            raise subprocess.TimeoutExpired(cmd, timeout, output=out)
+        with patch.object(exploration, 'codex_binary', return_value='/bin/codex'), \
+                patch.object(profiles, 'agent_env', return_value={'cwd': '/runner', 'env': {}}):
+            result = exploration.run_generator(self.base, self.m, 'insert.widget', 'observe', minutes=3,
+                                               runner=runner, entry='内容编辑器')
+        row = result['recorded']
+        self.assertEqual(seen['timeout'], 600)
+        self.assertEqual((row['failure_class'], row['reached_entry'], row['requested_minutes']), ('timeout', True, 3))
+        self.assertIn('默认预算', result['next'])
         self.m['cases']['C1']['unknown_nodes'] = ['insert.widget']
         with self.assertRaisesRegex(common.UiaError, 'generator'):
             exploration.demo_gate(self.m, 'insert.widget', ['C1'], 'drag', page='内容编辑器')

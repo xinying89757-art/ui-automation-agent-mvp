@@ -62,14 +62,14 @@ export async function main(args = process.argv.slice(2)) {
       ? args[snapshotAt + 1] : undefined;
     const result = snapshotAt >= 0
       ? { status: 'snapshot', structure: await snapshotSession(browser, cfg, {
-        area: snapshotArea, manual: args.includes('--manual'), frame: option('--frame'), scope: option('--scope'), openTarget: option('--open-target'), hover: option('--hover'), clicks: args.flatMap((arg, index) => arg === '--click' ? [args[index + 1]] : []) }) }
+        area: snapshotArea, manual: args.includes('--manual'), frame: option('--frame'), scope: option('--scope'), openTarget: option('--open-target'), goto: option('--goto'), steps: args.flatMap((arg, index) => arg === '--step' ? [args[index + 1]] : []), hover: option('--hover'), clicks: args.flatMap((arg, index) => arg === '--click' ? [args[index + 1]] : []) }) }
       : await runSession(cfg, browser, { checkOnly: args.includes('--check-only'), force: args.includes('--force'), manual: args.includes('--manual') });
     if (option('--output')) privateWrite(path.resolve(option('--output')), result);
     console.log(JSON.stringify({ ok: true, ...result }));
   } catch (error) {
     const known = error instanceof WorkflowError;
     console.log(JSON.stringify({ ok: false, code: known ? error.code : 'BROWSER_OPERATION_FAILED',
-      error: known ? error.message : safeError(error, cfg), choices: known ? error.choices : ['检查运行依赖', '重新执行预检', '暂停相关用例'] }));
+      error: safeError(error, cfg), choices: known ? error.choices : ['检查运行依赖', '重新执行预检', '暂停相关用例'] }));
     process.exitCode = 2;
   } finally { await browser?.close(); }
 }

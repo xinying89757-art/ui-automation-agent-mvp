@@ -13,6 +13,11 @@ The project root is three parents above this folder. Run CLI commands there usin
 API-backed agent server. Read and follow stage skills in the current conversation;
 do not invoke Claude Code `Task()` or assume a shell script can invoke the model.
 
+Before presenting the checklist, classify every unmatched workbook precondition; ai_prepare/explore are AI tasks, human_env joins the single upfront question block.
+Explore each node once: knowledge → snapshot --goto/--open-target/--step/--frame/--scope → generator_setup_page with tests/seed.spec.ts; Midscene only for visual expectations.
+Write named targets into page-map.yaml (+ routes into flows) before writing specs; keep writing/running other nodes while one is unknown.
+Demo/record_request requires navigation and a logged generator attempt for the specific node, and only cases whose specs reference it.
+
 ## One-command daily entry
 
 For go runs, this section supersedes the legacy human-question routing below.

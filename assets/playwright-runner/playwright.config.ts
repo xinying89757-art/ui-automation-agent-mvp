@@ -14,7 +14,10 @@ export default defineConfig({
   forbidOnly: true,
   // One case cannot hold the batch. Public-file polling has its own shorter budget.
   timeout: Math.min(cfg.execution?.timeout_ms ?? 180_000, 240_000),
-  testIgnore: process.env.UIA_HEALER_REHEARSAL ? [] : ['**/healer-rehearsal.spec.ts'],
+  testIgnore: [
+    ...(process.env.UIA_HEALER_REHEARSAL ? [] : ['**/healer-rehearsal.spec.ts']),
+    ...(process.env.UIA_BATCH_ID ? ['**/seed.spec.ts'] : []),
+  ],
   expect: { timeout: 15_000 },
   outputDir: path.join(results, 'artifacts'),
   reporter: [

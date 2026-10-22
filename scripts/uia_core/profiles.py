@@ -232,7 +232,7 @@ def invoke_login(cfg, runner=None, check_only=False, force=False, evidence=None,
         Path(temp).unlink(missing_ok=True)
 
 
-def invoke_snapshot(cfg, runner=None, area=None, manual=False, frame=None, scope=None, open_target=None, hover=None, clicks=None):
+def invoke_snapshot(cfg, runner=None, area=None, manual=False, frame=None, scope=None, open_target=None, hover=None, clicks=None, goto=None, steps=None):
     runner = Path(runner or runtime_root()).resolve()
     require((runner / "node_modules/@playwright/test").is_dir(),
             "Install Node dependencies first: npm --prefix " + str(runner) + " ci")
@@ -246,14 +246,16 @@ def invoke_snapshot(cfg, runner=None, area=None, manual=False, frame=None, scope
         command = ["node", str(runner / "scripts/session.mjs"), "--config", temp, "--snapshot"]
         if area:
             command.append(area)
-        for flag, value in (("--frame", frame), ("--scope", scope), ("--open-target", open_target), ("--hover", hover)):
+        for flag, value in (("--frame", frame), ("--scope", scope), ("--open-target", open_target), ("--hover", hover), ("--goto", goto)):
             if value:
                 command.extend([flag, value])
         if manual:
             command.append("--manual")
         for selector in clicks or []:
             command.extend(["--click", selector])
-        result = subprocess.run(command, cwd=runner, capture_output=True, text=True, timeout=180)
+        for step in steps or []:
+            command.extend(["--step", step])
+        result = subprocess.run(command, cwd=runner, capture_output=True, text=True, timeout=180 + 10 * len(steps or []))
         try:
             payload = json.loads(result.stdout)
         except (ValueError, TypeError):
@@ -263,3 +265,20 @@ def invoke_snapshot(cfg, runner=None, area=None, manual=False, frame=None, scope
         return {k: v for k, v in payload.items() if k != "ok"}
     finally:
         Path(temp).unlink(missing_ok=True)
+
+
+def agent_env(base, m):
+    """Private config projection; return only variable names and safe paths."""
+    from .common import digest
+    directory = ROOT / '.auth/agent-env' / digest(str(base.resolve()))[:16]
+    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    directory.chmod(0o700)
+    atomic_write(directory / 'config.json', m['config'])
+    atomic_write(directory / 'cases.json', {})
+    env = {'UIA_CONFIG': str(directory / 'config.json'), 'UIA_CASES_FILE': str(directory / 'cases.json'),
+           'UIA_STATE_DIR': str(directory / 'fixture-snapshots'),
+           'UIA_KNOWLEDGE_FILE': str((base / 'state/knowledge/llms-txt.json').resolve()),
+           'UIA_RESULTS_DIR': str(directory / 'results'), 'UIA_CONTAMINATION_DIR': str(directory / 'contaminated')}
+    for file in ('config.json', 'cases.json'):
+        (directory / file).chmod(0o600)
+    return {'cwd': str(runtime_root()), 'env': env}

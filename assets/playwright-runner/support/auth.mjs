@@ -294,7 +294,7 @@ export async function authenticatedSession(browser, cfg, { force = false, allowL
 /** Visible-only bounded DOM summaries. Never include form values or session refs. */
 export async function scopedStructure(page, { frame, scope } = {}) {
   const root = frame ? page.frameLocator(frame).locator(scope || 'body') : page.locator(scope || 'body');
-  await root.waitFor({ state: 'visible', timeout: 15000 });
+  await root.waitFor({ state: 'visible', timeout: 10000 });
   return root.evaluate(container => {
     const visible = node => {
       if (node.closest('[hidden], [aria-hidden="true"]')) return false;
@@ -311,7 +311,7 @@ export async function scopedStructure(page, { frame, scope } = {}) {
       !['SCRIPT', 'STYLE', 'NOSCRIPT'].includes(node.tagName)).slice(0, 300).map(node => ({
         tag: node.tagName.toLowerCase(), role: role(node), name: name(node), id: node.id || undefined,
         classes: typeof node.className === 'string' ? node.className.split(/\s+/u).filter(Boolean).slice(0, 6) : [],
-        attributes: Object.fromEntries(['role', 'aria-checked', 'aria-disabled', 'data-llms-enabled', 'data-enabled', 'data-value', 'type'].flatMap(key => node.hasAttribute(key) ? [[key, node.getAttribute(key)]] : []))
+        attributes: Object.fromEntries(['role', 'aria-checked', 'aria-disabled', 'data-llms-enabled', 'data-enabled', 'type'].flatMap(key => node.hasAttribute(key) ? [[key, node.getAttribute(key)]] : []))
       }));
     const pairs = new Map();
     for (const node of nodes) {
@@ -324,29 +324,41 @@ export async function scopedStructure(page, { frame, scope } = {}) {
   });
 }
 
-export async function snapshotSession(browser, cfg, { area, manual = false, frame, scope, openTarget, hover, clicks = [] } = {}) {
+export async function snapshotSession(browser, cfg, { area, manual = false, frame, scope, ...navigation } = {}) {
   const session = await authenticatedSession(browser, cfg, { allowLogin: true, manual });
   try {
     let page = session.page;
     if (area) page = await openSiteArea(page, cfg, area);
-    await page.waitForLoadState('domcontentloaded').catch(() => {});
-    if (area === '编辑网站') await page.locator('li.backstage-siteTool-setting').waitFor({state:'visible',timeout:60000});
-    if (openTarget) {
-      const { openLlms, openSettings } = await import('../flows/llms-txt.mjs');
-      if (openTarget === 'llms') await openLlms(page);
-      else if (openTarget === 'settings') await openSettings(page);
+    const { navigateSnapshot, urlPath } = await import('./navigation.mjs');
+    const reached = await navigateSnapshot(page, cfg, { ...navigation, frame, scope });
+    page = reached.page;
+    let structure;
+    try { structure = await scopedStructure(page, { frame, scope }); }
+    catch { structure = { nodes: [], unavailable: true }; }
+    Object.assign(structure, { frame: frame || null, scope: scope || 'body', path: urlPath(page.url()),
+      failed_step: reached.failed_step, popups: reached.popups });
+    structure.dialogs = [];
+    structure.iframes = [];
+    for (const candidate of page.frames()) {
+      try {
+        if (candidate !== page.mainFrame() && !await (await candidate.frameElement()).isVisible()) continue;
+        const details = await candidate.locator('body').evaluate(container => {
+          const visible = node => node.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }) &&
+            !node.closest('[hidden], [aria-hidden="true"]');
+          return {
+            dialogs: [...container.querySelectorAll('[role="dialog"], dialog, [aria-modal="true"]')].filter(visible).map(node =>
+              node.getAttribute('aria-label') || document.getElementById(node.getAttribute('aria-labelledby'))?.textContent ||
+              node.querySelector('h1,h2,h3,strong,.title')?.textContent || ''),
+            iframes: [...container.querySelectorAll('iframe')].filter(visible).map((node, index) => ({
+              selector: node.id ? '#' + CSS.escape(node.id) : node.name ? 'iframe[name=' + JSON.stringify(node.name) + ']' : 'iframe >> nth=' + index,
+              name: node.name || null, id: node.id || null,
+              path: (() => { try { return new URL(node.src, location.href).pathname; } catch { return null; } })() }))
+          };
+        });
+        structure.dialogs.push(...details.dialogs.map(title => ({ title: title.trim().slice(0, 120) })));
+        structure.iframes.push(...details.iframes.map(item => ({ ...item, parent_path: urlPath(candidate.url()) })));
+      } catch { /* Detached or inaccessible frames remain unavailable. */ }
     }
-    for (const selector of clicks) {
-      await page.locator(selector).click();
-      // Admin navigation replaces an iframe after the parent click resolves.
-      if (area === '内容管理') await page.waitForTimeout(1800);
-    }
-    if (hover) await page.locator(hover).hover();
-    if (area === '内容管理' && frame) {
-      const loading = page.frameLocator(frame).locator('#load');
-      await loading.waitFor({ state: 'hidden', timeout: 30000 });
-    }
-    const structure = { ...await scopedStructure(page, { frame, scope }), frame: frame || null, scope: scope || 'body' };
     if (!frame && !scope && await page.locator('#backstage-innerpage').count()) {
       try { structure.iframe = await scopedStructure(page, { frame: '#backstage-innerpage' }); }
       catch { structure.iframe = { unavailable: true }; }

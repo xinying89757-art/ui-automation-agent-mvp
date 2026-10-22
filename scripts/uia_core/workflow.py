@@ -50,6 +50,9 @@ def init(run_id, config_path):
 
 def question(m, kind, subject, prompt, case_ids, key=None, attempted=None, sheet=None, reopen=False):
     require(all(cid in m["cases"] for cid in case_ids), "Question refers to an unknown case")
+    if kind in {"demo", "record_request"}:
+        from .exploration import demo_gate
+        demo_gate(m, subject, case_ids)
     require(kind != "column_mapping" or sheet, "A column mapping question needs its source sheet")
     key = key or digest([kind, subject, sheet])[:16]
     existing = m["questions"].get(key)
@@ -484,6 +487,10 @@ def next_task(base, m):
         return {"action": "monitor" if running else "recover",
                 "skill": "uia-runtime", "batch_id": active["id"], "report": active["report"],
                 "wait": "python3 scripts/uia.py wait --run " + m["run_id"]}
+    from .preconditions import triage
+    unclassified = [row for row in triage(base, m) if row["classification"] == "unclassified"]
+    if unclassified:
+        return {"action": "classify_preconditions", "items": unclassified}
     refresh(base, m)
     if m["sources"] and file_hash(m["sources"][0]["path"]) != m["sources"][0]["sha256"]:
         return {"action": "import", "reason": "source_workbook_changed", "source": m["sources"][0]["path"]}
@@ -541,37 +548,14 @@ def next_task(base, m):
 
 
 def explore(base, m, flow_id, gap_id, strategy, seconds, outcome, evidence):
-    require(outcome in {"resolved", "unresolved"}, "Exploration outcome must be resolved or unresolved")
-    require(seconds > 0, "Record actual positive exploration duration")
-    require(evidence and inside(base, evidence).is_file(), "Exploration requires saved runtime evidence")
-    previous = [a for a in m["exploration"] if a["flow_id"] == flow_id]
-    per_gap = [a for a in previous if a["gap_id"] == gap_id]
-    require(not any(a["strategy"] == strategy and a["evidence_sha256"] == file_hash(inside(base, evidence)) for a in per_gap),
-            "Do not repeat the same strategy without new evidence")
-    limits = m["config"]["execution"]
-    require(sum(a["seconds"] for a in previous) < limits["exploration_minutes_per_flow"] * 60,
-            "Flow exploration budget exhausted; request a focused demonstration")
-    require(len({a["strategy"] for a in per_gap}) < limits["strategies_per_gap"],
-            "Gap strategy budget exhausted; request a focused demonstration")
-    attempt = {"at": now(), "flow_id": flow_id, "gap_id": gap_id, "strategy": strategy,
-               "seconds": seconds, "outcome": outcome, "evidence": evidence,
-               "evidence_sha256": file_hash(inside(base, evidence))}
-    m["exploration"].append(attempt)
-    exhausted = (sum(a["seconds"] for a in previous) + seconds >= limits["exploration_minutes_per_flow"] * 60 or
-                 len({a["strategy"] for a in per_gap} | {strategy}) >= limits["strategies_per_gap"])
-    if exhausted and outcome != "resolved":
-        affected = [c["case_id"] for c in m["cases"].values() if flow_id in c["flow_ids"] and c["work_status"] != "finished"]
-        question(m, "demo", flow_id + ":" + gap_id,
-                 "Demonstrate the unresolved operation from its documented start state; provide a Playwright action script.",
-                 affected, attempted=[a["strategy"] for a in per_gap] + [strategy])
-    return {"recorded": attempt, "budget_exhausted": exhausted}
+    raise UiaError("legacy explore is retired; use snapshot --goto/--step")
 
 
 def bind_specs(base, m):
     """Point imported cases at Playwright specs. This is the daily path: no intent YAML."""
     require(not m.get("active_batch"), "Recover the active batch before binding specs")
     runner = base / "runner"
-    specs = sorted(path for path in (runner / "tests").rglob("*.spec.ts") if path.name != "healer-rehearsal.spec.ts")
+    specs = sorted(path for path in (runner / "tests").rglob("*.spec.ts") if path.name not in {"healer-rehearsal.spec.ts", "seed.spec.ts"})
     # Empty fresh runners simply queue case-spec tasks.
     found = {}
     legacy_claims = {}

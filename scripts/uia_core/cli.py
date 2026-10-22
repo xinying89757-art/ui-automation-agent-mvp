@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from urllib.parse import urlsplit
 from pathlib import Path
 
 from . import checks, reports, runtime, workflow, profiles, specs
@@ -76,7 +77,11 @@ def parser():
     snapshot.add_argument("--scope", help="dialog or container selector")
     snapshot.add_argument("--hover")
     snapshot.add_argument("--click", action="append", default=[])
-    snapshot.add_argument("--open-target", choices=["settings", "llms"], help="open a known node before snapshot")
+    snapshot.add_argument("--open-target", help="open a known node before snapshot")
+    snapshot.add_argument("--goto")
+    snapshot.add_argument("--step", action="append", default=[])
+    snapshot.add_argument("--save-as")
+    snapshot.add_argument("--purpose", default="")
     spec = commands.add_parser("spec")
     spec.add_argument("action", choices=["lint", "gen", "render"])
     spec.add_argument("--run", required=True)
@@ -89,9 +94,20 @@ def parser():
     for name in ("import", "status", "next", "bind", "advance", "match", "scaffold", "register", "preflight",
                  "question", "answer", "explore", "run-batch", "record-run", "recover", "repair", "classify",
                  "feedback", "resolve-fixture", "replay-demo", "report", "validate",
-                 "bind-specs", "absorb-locators", "heal-review", "preconditions", "wait"):
+                 "bind-specs", "absorb-locators", "heal-review", "preconditions", "wait", "agent-env", "exploration-log"):
         cmd = commands.add_parser(name)
         cmd.add_argument("--run", required=name != "validate")
+        if name == "preconditions":
+            cmd.add_argument("action", nargs="?", choices=["classify"])
+            cmd.add_argument("--key")
+            cmd.add_argument("--as", dest="classification", choices=["ai_prepare", "explore", "human_env", "ignore"])
+            cmd.add_argument("--label")
+            cmd.add_argument("--match", action="append", default=[])
+        if name == "exploration-log":
+            cmd.add_argument("--method", choices=["generator", "midscene"], required=True)
+            cmd.add_argument("--purpose", required=True)
+            cmd.add_argument("--result", choices=["ok", "failed"], required=True)
+            cmd.add_argument("--note", required=True)
         if name == "import":
             cmd.add_argument("--excel", required=True)
             cmd.add_argument("--mapping")
@@ -106,10 +122,10 @@ def parser():
             cmd.add_argument("--isolated", action="store_true")
         if name in {"register", "feedback"}:
             cmd.add_argument("--file", required=True)
-        if name in {"preflight", "explore", "repair", "resolve-fixture", "replay-demo"}:
+        if name in {"preflight", "repair", "resolve-fixture", "replay-demo"}:
             cmd.add_argument("--evidence", required=True)
         if name == "question":
-            cmd.add_argument("--kind", choices=["login", "environment", "product", "demo", "column_mapping", "preconditions"], required=True)
+            cmd.add_argument("--kind", choices=["login", "environment", "product", "demo", "record_request", "column_mapping", "preconditions"], required=True)
             cmd.add_argument("--subject", required=True)
             cmd.add_argument("--prompt", required=True)
             cmd.add_argument("--cases", nargs="*", default=[])
@@ -122,11 +138,12 @@ def parser():
             cmd.add_argument("--file", help="Legacy non-secret JSON answer")
             cmd.add_argument("sentence", nargs="?")
         if name == "explore":
-            cmd.add_argument("--flow", required=True)
-            cmd.add_argument("--gap", required=True)
-            cmd.add_argument("--strategy", required=True)
-            cmd.add_argument("--seconds", type=float, required=True)
-            cmd.add_argument("--outcome", choices=["resolved", "unresolved"], required=True)
+            cmd.add_argument("--evidence", default="")
+            cmd.add_argument("--flow", default="")
+            cmd.add_argument("--gap", default="")
+            cmd.add_argument("--strategy", default="")
+            cmd.add_argument("--seconds", type=float, default=0)
+            cmd.add_argument("--outcome", choices=["resolved", "unresolved"], default="unresolved")
         if name == "run-batch":
             cmd.add_argument("--cases", nargs="+", required=True)
         if name == "recover":
@@ -187,6 +204,8 @@ def dispatch(args, path, m):
         workflow.refresh(base, m)
         return runtime.preflight(base, m, args.evidence)
     if cmd == "question":
+        from .exploration import index_unknown_nodes
+        index_unknown_nodes(base, m)
         return workflow.question(m, args.kind, args.subject, args.prompt, args.cases, args.key, args.attempted, args.sheet)
     if cmd == "session-turn":
         from .experience import session_turn
@@ -276,8 +295,17 @@ def dispatch(args, path, m):
     if cmd == "bind-specs":
         workflow.scaffold(base)
         return workflow.bind_specs(base, m)
+    if cmd == "agent-env":
+        return profiles.agent_env(base, m)
+    if cmd == "exploration-log":
+        from .exploration import log
+        return log(m, args.method, args.purpose, args.result, args.note)
     if cmd == "preconditions":
-        from .preconditions import sync_preconditions
+        from .preconditions import sync_preconditions, classify_precondition
+        if args.action == "classify":
+            require(args.key and args.classification and args.label, "classify requires --key --as --label")
+            result = classify_precondition(base, m, args.key, args.classification, args.label, args.match)
+            return {**result, **sync_preconditions(base, m)}
         return sync_preconditions(base, m)
     if cmd == "absorb-locators":
         return workflow.absorb_locators(base, m)
@@ -363,11 +391,12 @@ def execute(args):
     if args.command == "snapshot":
         from .common import config
         area = {"page": None, "content-admin": "内容管理", "editor": "编辑网站"}[args.node]
+        require(not args.save_as or args.run, "--save-as requires --run")
         if args.run:
             with locked_run(args.run) as (path, m):
                 import time as _time
                 started, t0 = now(), _time.monotonic()
-                snapshot_result = profiles.invoke_snapshot(m["config"], path.parent / "runner", area, args.manual, args.frame, args.scope, args.open_target, args.hover, args.click)
+                snapshot_result = profiles.invoke_snapshot(m["config"], path.parent / "runner", area, args.manual, args.frame, args.scope, args.open_target, args.hover, args.click, args.goto, args.step)
                 known = any(c.get("registration") for c in m["cases"].values())
                 # Exploration baseline: one row per snapshot (method/where/how long); no page content.
                 m.setdefault("exploration", []).append({"node": args.node, "known_page": known,
@@ -375,12 +404,17 @@ def execute(args):
                                                          "duration_ms": int((_time.monotonic() - t0) * 1000),
                                                          "method": "snapshot", "frame": args.frame, "scope": args.scope,
                                                          "open_target": args.open_target, "clicks": len(args.click or []),
-                                                         "hover": bool(args.hover)})
+                                                         "hover": bool(args.hover), "goto": urlsplit(args.goto or "").path or None,
+                                                         "steps_count": len(args.step), "purpose": redact(args.purpose, m["config"]),
+                                                         "failed_step": snapshot_result.get("structure", {}).get("failed_step")})
+                if args.save_as:
+                    from .exploration import save_route
+                    save_route(path.parent, m, args, snapshot_result)
                 event(m, "snapshot_completed", node=args.node, known_page=known)
                 save(path, m)
                 return snapshot_result
         cfg = config(profiles.profile_path(args.profile) if args.profile else args.config)
-        return profiles.invoke_snapshot(cfg, area=area, manual=args.manual, frame=args.frame, scope=args.scope, open_target=args.open_target, hover=args.hover, clicks=args.click)
+        return profiles.invoke_snapshot(cfg, area=area, manual=args.manual, frame=args.frame, scope=args.scope, open_target=args.open_target, hover=args.hover, clicks=args.click, goto=args.goto, steps=args.step)
     if args.command == "init":
         return workflow.init(args.run_id, profiles.profile_path(args.profile) if args.profile else args.config)
     if args.command == "validate" and not args.run:

@@ -43,16 +43,12 @@ steps emit throwing TODO markers and cannot run. Specs must import test/expect/
 businessAssertion from support/fixtures, whose page fixture opens the editor.
 Coverage derives from // @step S1 and await businessAssertion('A1', ...); no hand-filled lines.
 
-Explore once per node: knowledge, then bounded snapshot --node editor --frame
-'#backstage-innerpage' or --open-target llms --scope '#dialog', then generator only if
-needed. External invocation: timeout 2h codex exec ... < /dev/null. No delegation is
-required. Each new page node: explore once, write its named targets into page-map.yaml and the
-case-specs before generating; later cases reuse them. Snapshot calls are logged in
-run.json exploration (method/time). Generator = Playwright Test Agents sub-agent with
-default_tools_approval_mode=approve; its/healer output may change locators/waits only.
-Midscene (DeepSeek key only from /home/box/.secrets/deepseek.env) only for visual
-expectations during exploration, never in replay. Strip icon glyphs, scope dialog locators, disambiguate repeated role/name
-pairs with a container. Never persist session snapshot refs in knowledge.
+Classify unmatched workbook preconditions before finalizing the upfront checklist; AI preparation/exploration are tasks, only human_env enters the one question block.
+Explore each node once: knowledge → snapshot --goto/--open-target/--step/--frame/--scope → generator_setup_page with tests/seed.spec.ts; Midscene only for visual expectations.
+Write named targets into page-map.yaml (+ routes into flows) before writing specs; never persist snapshot refs. Continue writing/running other nodes while one is unknown.
+Generator/healer output may change locators/waits only (approval mode approve); Midscene uses the DeepSeek key only from /home/box/.secrets/deepseek.env, exploration only, never in replay.
+Strip icon glyphs, scope dialog locators, disambiguate repeated role/name pairs with a container.
+Record generator attempts with exploration-log --purpose NODE; demo/record_request only after the ladder, for cases referencing that unknown node. External calls: timeout 2h codex exec ... < /dev/null.
 
 Run with run-batch/wait; triage environment → session → data → locator/timing → business.
 Only locator/timing changes may be repaired automatically. Never relax assertions.

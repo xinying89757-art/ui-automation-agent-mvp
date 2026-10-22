@@ -424,10 +424,10 @@ def generate(base, m, cid):
             lines.append('  networks[' + json.dumps(name) + '].release();')
         elif verb in {'double_click', 'attempt_click'}:
             lines.append('  await ' + ('doubleClick' if verb == 'double_click' else 'attemptClick') + '(page, ' + loc + ');')
-        elif not loc or verb == 'open' and not pages['targets'].get(name, {}).get('open'):
+        elif (not loc and verb != 'open') or name.startswith('?'):
             todo(sid + ' ' + name)
         elif verb == 'open':
-            lines.append('  await openTarget(page, ' + json.dumps(pages['targets'][name]['open']) + ');')
+            lines.append('  page = await openTarget(page, ' + json.dumps(name) + ');')
         elif verb in {'click', 'hover', 'check', 'uncheck', 'close'}:
             lines.append('  await ' + loc + '.' + ('click' if verb == 'close' else verb) + '();')
         elif verb in {'fill', 'select', 'press', 'upload'}:
@@ -479,7 +479,7 @@ def generate(base, m, cid):
             for index, target_name in enumerate(rb['reopen']):
                 entry = pages['targets'][target_name]
                 if index == 0 and entry.get('open'):
-                    lines.append('  await openTarget(page, ' + json.dumps(entry['open']) + ');')
+                    lines.append('  page = await openTarget(page, ' + json.dumps(target_name) + ');')
                 else:
                     reopen_loc = locator_expression(target_name, pages)
                     if not reopen_loc:

@@ -78,3 +78,60 @@ TC-0048 保留空字符串及纯空格，不把禁用态代替 Excel 要求的�
 `faq.count` 使用可恢复 FAQ 准备器：完整快照原始条目 ID、列表顺序、分类/时间元数据、答案文字与 HTML；增加当前 owner 的条目达到 N，重读验证；恢复时只删除 owner 新增项，再比较原始快照哈希。分页不完整或 N 小于既有条数时在变更前明确拒绝，不能删除原始记录冒充精确恢复。当前真实样本从 1 条增至 5 条再恢复。富文本有两层子 iframe，page-map 保留实际结构，不保留会话 ref。
 
 FAQ 创建使用实测成功的 `faq.create` 表单接口（网络目录记录方法、路径和字段名），每次读取当前添加表单并保留其站点及保护字段，仅在内存内覆盖本次问题/答案后提交；不记录或传出保护字段值。拒绝带既有记录 ID 的创建表单，避免覆盖原记录。创建后仍由真实 FAQ 管理页重新读取数量、内容及顺序。该接口仅用于可恢复的数据准备，业务断言仍使用编辑器实际保存和远程公开文件。
+
+## 新需求的前置分流与探索阶梯
+
+导入后先 `bind-specs`；已有可执行用例先预检/执行。每个目录未识别的前置条件按规范化全文
+归并为 `unclassified`（即使新 spec 的 required_env 为空也保留）。`go` / `next` 返回
+`classify_preconditions`，`checklist.md` 保持草稿，不能向人工呈现或回答。逐项分类：
+
+```bash
+python3 scripts/uia.py preconditions classify --run R --key raw:KEY --as explore --label '定位详情入口' --match '打开详情页'
+python3 scripts/uia.py preconditions classify --run R --key raw:OTHER --as human_env --label '特殊权限环境'
+```
+
+`ai_prepare` / `explore` 进入 run.json 的 `precondition_tasks`（AI 自行完成，非问题）；`ignore`
+必须给说明标签；`human_env` 合并进清单 A 块。运行目录 `preconditions.yaml` 是本地目录投影，
+不会自动改根目录。已有环境记忆仍自动回答；分类完并完成规格后才呈现一次清单。
+
+每个未知节点只探索一次，阶梯为：知识 → bounded snapshot → Test Agents generator；
+Midscene 仅补充视觉期望。明确命名 `--purpose NODE`，知识落入 page-map.yaml 命名目标及 flows
+路由后再编写 specs；一个节点未知时继续编写/执行其他节点。
+
+```bash
+python3 scripts/uia.py snapshot --run R --node content-admin --goto /known/path --step 'click:text=入口' --purpose node.entry
+python3 scripts/uia.py snapshot --run R --open-target named.target --frame '#known-frame' --scope '#dialog' --step 'fill:field.name=示例' --step 'press:Tab' --save-as candidate-entry --purpose node.entry
+```
+
+`--open-target` 与生成脚本共用 `support/navigation.mjs` 的 page-map 解析器，支持 pages.entry、
+pages/targets.path 或 url、targets.open 别名和 route 动作数组，保留 settings/llms。
+`--goto` 仅允许环境 entry/login/cloud URL 的来源及 environment.allowed_hosts 明列的来源；
+拒绝外部来源、非 HTTP(S)、URL 用户凭据。每步最多 10 秒，失败返回已到达快照和
+`failed_step`（1 起始索引；含前置 goto/open-target）。有序 `--step` 支持 click/hover/fill/press/wait，
+目标可用命名目标、精确 `text=…`、`role=button[name=…]` 或 CSS；选首个可见匹配，遵循 frame/scope。
+fill 在目标后的第一个分隔等号切开（CSS 属性/role 括号里的等号保留，值可为空或含等号），press 使用当前焦点。
+命名入口的初始化最多 60 秒；后续每个 --step 最多 10 秒。
+旧 --click/--hover 保留顶层 CSS 定位语义，先于 --step 执行。快照保留脱敏可见节点，附路径（无 query）、可见 dialog 标题、
+iframe selector/name/id 及其父路径、popup 路径；动作打开新页时跟随最新页。
+`--save-as` 只接受 run，写 exploration-routes.yaml 候选投影，fill 值替换为 `${INPUT}`，不保存 ref。
+运行日志保存方法、耗时、goto 路径、步骤数、failed_step 和 purpose，不保存输入值。
+
+Test Agents 必须先设置 seed，不能直接调用 browser_snapshot：
+
+1. 先在测试 tracing 外 `python3 scripts/uia.py login --run R`，保证受保护认证状态可用。
+2. `python3 scripts/uia.py agent-env --run R`：仅输出 cwd 和非敏感路径映射。为 MCP server 进程
+   设置返回的 `UIA_CONFIG`、`UIA_CASES_FILE`、`UIA_STATE_DIR`、`UIA_KNOWLEDGE_FILE`、
+   `UIA_RESULTS_DIR`、`UIA_CONTAMINATION_DIR`；cwd 为 `assets/playwright-runner`。
+   UIA_CONFIG 指向权限 0600 的私有配置投影，配置只引用本地认证文件；不要打印其内容。
+   不设置 UIA_BATCH_ID（正常批次用此变量排除 seed）。不需要传账号/密码/令牌环境变量。
+3. 调用 `generator_setup_page({"plan":"探索 NODE 的入口和可观察完成信号", "seedFile":"tests/seed.spec.ts"})`，
+   然后使用 browser_* 工具。seed 从 support/fixtures 取得已认证编辑器 page，禁用用例数据生命周期，
+   不准备业务数据、不保存；不参与 bind-specs 或正常批次，也不计作业务用例。
+4. 在项目根记录真实尝试：
+   `python3 scripts/uia.py exploration-log --run R --method generator --purpose NODE --result failed --note '具体失败和已尝试路径'`。
+   可用同一环境执行 `npx playwright test tests/seed.spec.ts` 验证 seed（runner cwd）。
+
+`question --kind demo|record_request --subject NODE` 仅在同 purpose 有导航快照和 generator 尝试时
+允许；缺少阶梯会明确拒绝。每个关联 case-spec 必须通过 `?NODE` 引用同一未知节点，不能批量
+附上无关用例。`exploration-log --method midscene` 记录视觉补充，不替代 generator。
+旧 `uia.py explore` 已退役，返回迁移提示；不再使用历史 flow_id 格式。

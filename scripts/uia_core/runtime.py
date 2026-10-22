@@ -213,6 +213,7 @@ def begin_batch(base, m, case_ids):
                     'Another run holds environment data for remote verification; only read-only cases may run')
     caps = (m.get("preflight") or {}).get("capabilities") or {}
     for c in selected:
+        require(Path(c["registration"]["script"]).name != "seed.spec.ts", "Exploration seed cannot run as a case")
         require(c["work_status"] == "runnable", "Case is not runnable", c["case_id"])
         require(not set(c["fixture_ids"] or ["case:" + c["case_id"]]) & set(m["contaminated_fixtures"]), "Fixture requires verified recovery", c["case_id"])
         if caps.get("public_frontend") is False and case_needs_public(base, c):

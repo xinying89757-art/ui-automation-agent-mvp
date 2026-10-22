@@ -46,7 +46,10 @@ def rows(base, m):
                 scopes.setdefault(key, []).append(cid)
         for text in spec.get('questions', []):
             business.setdefault(text, []).append(cid)
-    result = []
+    from .preconditions import triage
+    triaged = triage(base, m)
+    result = [{'key': 'env:' + row['key'], 'block': 'A', 'label': row['label'], 'cases': row['cases'],
+               'options': ['可用', '缺少，相关用例挂起']} for row in triaged if row['classification'] == 'human_env']
     for key, owners in env.items():
         result.append({'key': 'env:' + key, 'block': 'A', 'label': labels().get(key, key), 'cases': owners,
                        'options': ['可用', '缺少，相关用例挂起']})
@@ -66,6 +69,9 @@ def rows(base, m):
 def sync_checklist(base, m):
     from .preconditions import QUESTION_KEY
     entries = rows(base, m)
+    unclassified = [r for r in m.get('precondition_triage', []) if r['classification'] == 'unclassified']
+    spec_draft = any(not (base / c.get('case_spec', f'cases/{cid}/case-spec.yaml')).is_file() and not c.get('registration') for cid, c in m['cases'].items())
+    m['checklist_draft'] = bool(unclassified or spec_draft)
     memory_answers = load_memory(m)['answers']
     answers = memory_answers
     old = m['questions'].get(QUESTION_KEY)
@@ -100,11 +106,14 @@ def sync_checklist(base, m):
                 continue
             add_review(m, 'new_ambiguity' if row['block'] == 'C' else 'new_permission', row['cases'], row['label'])
     apply_checklist(m, q)
+    q['unclassified'] = unclassified
+    q['draft'] = m['checklist_draft']
     text = checklist_text(q)
     (base / 'checklist.md').write_text(scrub_text(text, m['config']), encoding='utf-8')
     return {'question_id': QUESTION_KEY, 'question_count': len(pending) if not issued and not m.get('checklist_draft') else 0,
             'memory_answer_count': q['memory_answer_count'], 'entry_count': len(entries),
-            'draft': bool(m.get('checklist_draft')),
+            'draft': bool(m.get('checklist_draft')), 'unclassified': unclassified,
+            'ai_tasks': m.get('precondition_tasks', []),
             'pending_review_count': len(pending) if issued else 0, 'status': q['status'],
             'checklist': str(base / 'checklist.md')}
 
@@ -139,6 +148,11 @@ def apply_checklist(m, q):
 def checklist_text(q):
     answers = q.get('answer', {}).get('entries', {})
     lines = ['# 执行前清单', '', '只需一句中文回答；缺少条件的用例挂起，其余照跑。', '']
+    if q.get('draft'):
+        lines = ['# 执行前清单草稿（尚未向人工提问）', '']
+    if q.get('unclassified'):
+        lines += ['## 未分类前置条件（AI 必须先分流）', '']
+        lines += ['- ' + r['key'] + ' ' + r['label'] + '（' + '、'.join(r['cases']) + '）' for r in q['unclassified']]
     for block, title in [('A', '需要的站点、账号、编辑器和迁移条件'), ('B', '临时修改并还原的数据范围'), ('C', '业务歧义及选项')]:
         lines += ['## ' + block + ' ' + title, '']
         if block == 'A':
@@ -161,6 +175,7 @@ def answer_sentence(base, m, sentence):
     from .preconditions import QUESTION_KEY
     require(scrub_text(sentence, m['config']) == sentence, '回答含敏感信息，请只回答条件及选项')
     q = m['questions'].get(QUESTION_KEY)
+    require(q and not q.get('draft'), '清单仍是草稿；请先分类前置条件并完成规格')
     require(q and q['status'] in {'open', 'deferred'} and not q.get('answered_at'), '没有待回答的开跑前清单；运行中问题请异步审核')
     parts = {a: b.strip(' ，,；;。') for a, b in re.findall(r'(?:^|[，,；;]\s*)([ABC])\s*[:：]?\s*(.*?)(?=(?:[，,；;]\s*[ABC](?![A-Za-z0-9])\s*[:：]?)|$)', sentence, re.S)}
     answers = dict(q.get('answer', {}).get('entries', {}))
@@ -215,6 +230,9 @@ def answer_sentence(base, m, sentence):
 
 def add_review(m, kind, cases, text, **detail):
     key = digest([kind, sorted(cases), text])[:16]
+    if kind == 'record_request':
+        from .exploration import demo_gate
+        demo_gate(m, detail.get('node'), cases)
     entry = {'id': key, 'kind': kind, 'case_ids': cases, 'summary': scrub_text(text, m['config']),
              'status': '待审核', 'applied': False, **detail}
     import json
@@ -226,9 +244,15 @@ def add_review(m, kind, cases, text, **detail):
 def review(base, m):
     for q in m['questions'].values():
         if q['status'] in {'open', 'deferred'} and q.get('subject') != 'run-preconditions':
-            kind = 'record_request' if q['kind'] == 'demo' else 'new_ambiguity' if q['kind'] == 'product' else 'environment'
+            kind = 'record_request' if q['kind'] in {'demo', 'record_request'} else 'new_ambiguity' if q['kind'] == 'product' else 'environment'
             detail = {}
             if kind == 'record_request':
+                from .exploration import demo_gate
+                try:
+                    demo_gate(m, q['subject'], q['case_ids'])
+                except UiaError:
+                    continue
+                detail['node'] = q['subject']
                 detail['command'] = 'node assets/playwright-runner/node_modules/@playwright/test/cli.js codegen --load-storage "$UIA_CODEGEN_STATE" https://www.leadong.com/website.html -o recorded.spec.ts'
                 detail['instructions'] = '受保护变量 UIA_CODEGEN_STATE 指向已认证状态；复用登录后录制，只提交脱敏动作脚本，勿录制密码或导出登录态。'
             add_review(m, kind, q['case_ids'], q['prompt'], **detail)
@@ -430,7 +454,7 @@ def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_m
         return {'run_id': m['run_id'], 'run_reused': bool(matches),
                 'run_selection': '复用同一工作簿与环境的 run；用例子集已更新' if matches else '新建 run；当前环境和工作簿没有匹配的既有 run',
                 'checklist_message': memory_note, **checklist, 'spec_tasks': tasks, 'report': output, 'armed_watches': armed,
-                'next': {'action': 'complete_spec_tasks' if checklist['draft'] else 'answer_checklist' if checklist['question_count'] else 'continue_spec_tasks_or_review', 'mid_run_questions': 0}}
+                'next': {'action': 'classify_preconditions' if checklist['unclassified'] else 'complete_spec_tasks' if checklist['draft'] else 'answer_checklist' if checklist['question_count'] else 'continue_spec_tasks_or_review', 'unclassified': checklist['unclassified'], 'ai_tasks': checklist['ai_tasks'], 'mid_run_questions': 0}}
 
 
 def _arm_requested_watches(base, m, arm_watch, lead_minutes, watch_minutes):

@@ -73,6 +73,10 @@ def sync_preconditions(base, m):
     if m.get("interaction_mode") == "once":
         from .experience import sync_checklist
         return sync_checklist(base, m)
+    triaged = triage(base, m)
+    if any(row["classification"] != "ignore" for row in triaged):
+        from .experience import sync_checklist
+        return sync_checklist(base, m)
     from .workflow import question
     grouped = {}
     affected = []
@@ -118,3 +122,54 @@ def sync_preconditions(base, m):
     queued["prompt"] = prompt
     queued["checklist"] = present
     return {"question_id": queued["id"], "status": queued["status"], "cases": affected, "items": present}
+
+
+def normalize(text):
+    import re
+    import unicodedata
+    return re.sub(r'\s+', '', unicodedata.normalize('NFKC', text or '')).strip()
+
+
+def triage(base, m):
+    """Keep workbook conditions even when a later spec omits required_env."""
+    catalog = m.setdefault('precondition_catalog', {})
+    grouped = {}
+    for cid, case in m['cases'].items():
+        source = base / case.get('source', '__missing__')
+        raw = read_json(source).get('preconditions', '') if source.is_file() else ''
+        import re
+        for text in re.split(r'[\n；;]+', raw or ''):
+            normalized = normalize(text)
+            if not normalized:
+                continue
+            matches = [key for key, entry in vocabulary().items()
+                       if any(normalize(needle) in normalized for needle in entry.get('match', []))]
+            if matches:
+                continue
+            key = 'raw:' + digest(normalized)[:16]
+            entry = next((entry for entry in catalog.values() if normalized in entry.get('match', [])), None)
+            grouped.setdefault(key, {'key': key, 'label': text.strip(), 'text': text.strip(), 'cases': [],
+                                     'classification': (entry or {}).get('classification', 'unclassified')})['cases'].append(cid)
+            if entry:
+                grouped[key]['label'] = entry['label']
+    m['precondition_triage'] = list(grouped.values())
+    m['precondition_tasks'] = [dict(row, action=row['classification']) for row in grouped.values()
+                              if row['classification'] in {'ai_prepare', 'explore'}]
+    return m['precondition_triage']
+
+
+def classify_precondition(base, m, key, classification, label, matches):
+    from .common import atomic_write, require
+    from .secrets import scrub_text
+    rows = triage(base, m)
+    row = next((row for row in rows if row['key'] == key), None)
+    require(row, 'Unknown precondition key')
+    require(classification in {'ai_prepare', 'explore', 'human_env', 'ignore'}, 'Invalid precondition classification')
+    require(label and scrub_text(label, m['config']) == label, 'Label must be non-secret')
+    patterns = list(dict.fromkeys([normalize(row['text'])] + [normalize(x) for x in matches or []]))
+    require(all(scrub_text(x, m['config']) == x for x in patterns), 'Match must be non-secret')
+    m.setdefault('precondition_catalog', {})[key] = {'label': label, 'match': patterns, 'classification': classification}
+    # Projection only; run.json remains the source of progress.
+    atomic_write(base / 'preconditions.yaml', {'schema_version': 'preconditions.run.v1', 'preconditions': m['precondition_catalog']}, as_yaml=True)
+    triage(base, m)
+    return {'classified': key, 'as': classification}

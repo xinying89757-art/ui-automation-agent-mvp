@@ -147,6 +147,7 @@ class ProfilesTest(unittest.TestCase):
             'TC-0001': {'case_id': 'TC-0001', 'source': 'cases/TC-0001/source.json', 'title': '设置面板',
                         'result': 'passed', 'work_status': 'finished', 'stage': 'finished',
                         'attempts': [{'result': 'passed'}], 'stability': 'stable'}}}
+        m['precondition_catalog'] = {'login': {'classification': 'ignore', 'label': '登录由预检验证', 'match': ['已登录']}}
         queued = sync_preconditions(base, m)
         self.assertEqual(m['cases']['TC-0002']['result'], None)
         self.assertEqual(m['cases']['TC-0002']['work_status'], 'waiting_human')

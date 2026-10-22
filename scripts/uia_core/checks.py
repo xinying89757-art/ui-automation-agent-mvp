@@ -207,6 +207,8 @@ def run_errors(base, m):
         if c["work_status"] == "finished" and c.get("result") not in RESULTS:
             errors.append(cid + ": finished without a classified result")
         if c.get("stability") == "stable":
+            if c.get("remote_status") and c.get("remote_status") != "pass":
+                errors.append(cid + ": stable without remote checks passing")
             need = int(m["config"]["execution"].get("stability_passes") or 2)
             passes = c.get("attempts", [])[-need:]
             if len(passes) != need or any(a.get("result") != "passed" or not a.get("cleanup_verified") for a in passes):

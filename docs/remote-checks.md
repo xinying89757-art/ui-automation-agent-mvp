@@ -1,0 +1,102 @@
+# 公开文件远程检查
+
+这是文件交接协议，不依赖云服务或仓库运行时。编辑器、认证、数据准备和恢复留在本机；外部执行端只收到 `request.json` 和 `check.mjs`，不接收 `.auth/`、run.json、state 或账号信息。
+
+## 产生与执行
+
+case-spec 使用 page-map 中声明 `resource: {path: /任意公开文件}` 的目标，`defer_public` 步骤，以及 `remote_file` 检查。每个断言的 `excel` 必须逐字引用导入的 Excel 单元格或完整行。`contains`、`equals`、`ordered_pairs` 是可执行条件，不能代替原文；FAQ 条件从准备后真实列表读取问题、答案及顺序。`ordered_pairs` 用 `section` 指定二级标题，要求该节恰好是 N 组问题/答案两行，拒绝缺项、多项、乱序或合并一行。
+
+```yaml
+steps:
+- {id: S2, verb: defer_public, target: public.llms}
+assertions:
+- id: A2
+  after: S2
+  excel: 2. 公开文件立即显示新的网站概述。
+  checks:
+  - target: public.llms
+    op: remote_file
+    value: {op: contains, value: example-overview}
+```
+
+本机成功完成该断言之前的操作后，`uia.py` 自动生成：
+
+- `runs/<run-id>/remote-checks/request.json`
+- `runs/<run-id>/remote-checks/check.mjs`
+
+`// @deferred A2` 只表示交接覆盖，不执行空断言、不计本机通过。用例结果为“待远程检查”；不因本机 HTTP 前台不可达而挂起后台准备。
+
+将上述两个文件复制到可访问目标前台的机器，Node 18+ 执行：
+
+```bash
+node /path/to/remote-checks/check.mjs
+```
+
+脚本总是读取自身目录的 `request.json`，原子写入同目录 `results.json`。每条仅 fetch 一次，有超时和 1 MiB 响应上限；不自动等待一小时、不轮询。外部调度器根据 `earliest_check_at` 调度，缓存期内也可先试一次。使用原始 HTTP URL，不切成 HTTPS、不加缓存穿透参数、不带凭据或自定义认证头、不跟随跳转；输出不含原始响应、响应头或网络错误详情。URL 不允许凭据、查询参数。
+
+回到本机导入：
+
+```bash
+.venv/bin/python scripts/uia.py remote-checks ingest --run RUN /path/to/results.json
+```
+
+## request.json v1
+
+顶层：`schema_version: uia-remote-request.v1`、`run_id`、`checks` 数组。每条：
+
+| 字段 | 含义 |
+|---|---|
+| id | run/批次/用例/断言绑定的唯一 ID；重跑后旧 ID 失效 |
+| case_id / assertion_id | 规范用例及原始断言 ID |
+| expected | Excel 完整行原文；不会为了缓存改写“立即”等要求 |
+| url / method | page-map 相对文件路径结合配置的公开站点；当前方法 GET |
+| conditions | `{op, value}`，有序问答另有 `section`；无定位器、认证信息 |
+| saved_at | 本机观察保存成功后生成交接的时间 |
+| earliest_check_at | saved_at + 1 小时，普通内容差异在此前归为 still-cached |
+| deadline | saved_at + 2 小时；超过后为无法验证，不计通过 |
+| timeout_ms | 单次 fetch/读流超时，默认 10000 |
+| max_latency_seconds | 可选；TC-0036 为 5 秒观察窗口，延迟执行不能证明“立即更新” |
+| restored_at | 可选；本机已恢复数据的时间；此后的观察不能作为该准备版本的业务通过/失败 |
+
+`max_latency_seconds` 是执行证据窗口，不能使缓存后成功变成“立即更新”成功。TC-0036 必须由已准备好的远程执行器在保存后立刻读取；一小时后的内容即使正确也只能记录 `immediate_timing_unverified`。若需不同“立即”时间定义，需业务明确确认后更改资源契约。
+
+## results.json v1
+
+机器 schema：[`schemas/remote-results.schema.json`](../schemas/remote-results.schema.json)。顶层字段严格为：
+
+- `schema_version: uia-remote-results.v1`
+- `run_id`：必须匹配。
+- `request_sha256`：所执行 request.json **原始文件字节** SHA-256，包含换行；不能重新格式化后配旧结果。
+- `results`：非空数组，可分批回传；同一文件内 ID 不可重复。
+
+结果行字段严格为 `id`、`checked_at`（带时区 ISO 时间）、`status`、`http_status`（整数或 null）、`conditions`（与请求条件对应的布尔数组；传输失败可为空）、`reason`（schema 中的有限枚举）。不允许自由错误信息、响应 body、cookie、storage 等额外字段。
+
+| status | 中文报告 | 归并 |
+|---|---|---|
+| pass | 远程通过 | 所有远程断言通过且本机准备/恢复核验成功，才计用例通过及稳定性 |
+| fail | 远程业务失败 | 缓存窗口后内容不符合，或及时性要求在有效窗口内不符合，计业务失败 |
+| still-cached | 公开文件仍在缓存期 | 暂不判业务失败；保留待远程状态，可再回传新时间的观察 |
+| unreachable | 远程不可达或无法验证 | 网络/HTTP 权限或服务错误、超时、过期、数据已还原、无法证明立即更新；不计通过 |
+
+导入先校验整个文件再改 manifest：run/hash、ID、当前批次和版本、时间窗口、条件长度和布尔类型、通过与 HTTP 状态/条件结果的一致性。旧版本回执、恢复后的通过、缓存期结束后仍宣称 still-cached 等会被拒绝。同一回执重复导入幂等；更新的结果保留全部历史。用例结果、中文 Markdown/HTML/Excel、JSON 和 `metrics.remote_checks` 同步更新。JSON 保留机器状态码。
+
+## 数据有效期与恢复
+
+远程读取临时数据时，不能提前恢复后再把不匹配判成产品错误。因此默认 fixture 在发出远程检查后保留已保存的数据，**清理标为 pending，而不是 verified**；本机受保护 `state/fixture-snapshots/` 先保存原始快照。普通用例仍立即恢复。
+
+所有活跃检查均收到 pass/fail/unreachable 后，ingest 在本机使用共享认证模块恢复数据，按准备的反序恢复重叠快照，并重读核验。still-cached 或尚未回传的检查继续保留准备状态。恢复失败保留证据及 pending，禁止计通过；可重试：
+
+```bash
+.venv/bin/python scripts/uia.py remote-checks restore --run RUN
+```
+
+外部编排器必须在 deadline 后调用此命令，或调用 go 续跑触发到期恢复；项目没有后台守护进程。要取消检查也用此命令，不能直接覆盖快照或重跑写操作。恢复后请求写入 restored_at，旧请求字节哈希的结果不再适用。重新验证需重新准备并生成新批次请求。不要将受保护快照发送到远程执行端。
+
+已恢复后的再次验证，可明确重新编译/登记相关契约再续跑（原批次和回执仍保留）：
+
+```bash
+.venv/bin/python scripts/uia.py spec gen --run RUN --cases TC-0033 TC-0036
+.venv/bin/python scripts/uia.py go /path/to/cases.xlsx --profile PROFILE --cases TC-0033,TC-0036,TC-0055
+```
+
+恢复或重跑导致 request.json 改变时，旧请求原始字节按 SHA-256 留存在 `remote-checks/requests/`；已导入结果在 `remote-checks/ingested-<receipt-hash>.json`，便于复核历史结果关联的确切请求。

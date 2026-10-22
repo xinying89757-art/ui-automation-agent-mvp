@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "uia-remote-results.v1",
+  "type": "object", "additionalProperties": false,
+  "required": ["schema_version", "run_id", "request_sha256", "results"],
+  "properties": {
+    "schema_version": {"const": "uia-remote-results.v1"},
+    "run_id": {"type": "string", "minLength": 1},
+    "request_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "results": {"type": "array", "minItems": 1, "items": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "checked_at", "status", "http_status", "conditions", "reason"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "checked_at": {"type": "string", "format": "date-time"},
+        "status": {"enum": ["pass", "fail", "still-cached", "unreachable"]},
+        "http_status": {"type": ["integer", "null"], "minimum": 100, "maximum": 599},
+        "conditions": {"type": "array", "items": {"type": "boolean"}},
+        "reason": {"enum": ["network", "deadline", "data_restored", "immediate_timing_unverified", "conditions_met", "cache_window", "http_unavailable", "conditions_mismatch"]}
+      }
+    }}
+  }
+}

@@ -106,6 +106,8 @@ def case_needs_public(base, case):
     if case.get("case_spec"):
         from .common import read_yaml
         spec = read_yaml(inside(base, case['case_spec']))
+        if any(s.get('verb') == 'defer_public' for s in spec.get('steps', [])):
+            return False
         if 'public_frontend' in spec.get('required_env', []):
             return True
     if registration.get("needs_public"):
@@ -182,6 +184,7 @@ def preflight(base, m, evidence):
 
 
 def begin_batch(base, m, case_ids):
+    require(not any(c.get('attempts') and c['attempts'][-1].get('cleanup_pending') for c in m['cases'].values()), 'Remote data is held; ingest results or remote-checks restore before another batch')
     require(not m.get("active_batch"), "Recover the active batch before starting another")
     refresh(base, m)
     require(case_ids and len(case_ids) == len(set(case_ids)), "Select distinct case IDs")
@@ -270,7 +273,7 @@ def execute_process(base, batch, cfg):
     cases_file = Path(base) / "state/cases.json"
     knowledge_overlay = Path(base) / "state/knowledge/llms-txt.json"
     env = dict(os.environ, UIA_BATCH_ID=batch["id"], UIA_CONFIG=str(directory / "config.json"),
-               UIA_CASES_FILE=str(cases_file),
+               UIA_CASES_FILE=str(cases_file), UIA_STATE_DIR=str(base / "state/fixture-snapshots"),
                UIA_KNOWLEDGE_FILE=str(knowledge_overlay),
                UIA_RESULTS_DIR=str(directory), UIA_CONTAMINATION_DIR=str(base / "state/contaminated"))
     stop = threading.Event()
@@ -337,18 +340,19 @@ def consume_batch(base, m, exit_code=None):
         result = row.get("result")
         require(result in RESULTS, "Unknown reporter result")
         clean = lifecycle.get("cleanup_verified") is True
+        cleanup_pending = lifecycle.get("cleanup_pending") is True and (base / batch["directory"] / ("remote-" + cid + ".json")).is_file()
         prepared = lifecycle.get("setup_verified") is True
         current_version = case_version(base, m, c)
         version = batch["versions"][cid]
         if current_version != version:
             result = "interrupted"
             row.setdefault("errors", []).append("Source/dependency changed during execution")
-        if result == "passed" and (not prepared or not clean or lifecycle.get("batch_id") != batch["id"] or row.get("retry") != 0):
+        if result == "passed" and (not prepared or not (clean or cleanup_pending) or lifecycle.get("batch_id") != batch["id"] or row.get("retry") != 0):
             result = "automation_failure"
         attempt = {"batch_id": batch["id"], "at": now(), "version": version, "result": result,
                    "evidence": batch["report"], "evidence_sha256": file_hash(report_path),
                    "executed": cid in by_id and row.get("playwright_status") not in {"skipped", None},
-                   "setup_verified": prepared, "cleanup_verified": clean,
+                   "setup_verified": prepared, "cleanup_verified": clean, "cleanup_pending": cleanup_pending,
                    "setup_started": row.get("setup_started", False),
                    "duration_ms": row.get("duration_ms", 0), "errors": row.get("errors", []),
                    "attachments": row.get("attachments", []),
@@ -364,7 +368,9 @@ def consume_batch(base, m, exit_code=None):
         if attempt["executed"] and not m.get("first_result_at"):
             m["first_result_at"] = now()
         c["result"] = result
-        if result == "passed":
+        if result == "passed" and cleanup_pending:
+            c.update(result="remote_pending", pass_streak=0, stability="not_run", stage="remote", work_status="remote_pending")
+        elif result == "passed":
             need = int(m["config"]["execution"]["stability_passes"])
             if c.get("preserve_delivery"):
                 c["pass_streak"] = max(c.get("pass_streak", 0), c.get("delivery_pass_streak", 0)) + 1
@@ -390,7 +396,7 @@ def consume_batch(base, m, exit_code=None):
                 c["stage"] = "execution"
             elif result == "automation_failure" and clean and c["repair_rounds"] < m["config"]["execution"]["repair_rounds"]:
                 c.update(work_status="pending", stage="repair")
-        if not clean and c["registration"]["fixture"]["mutates"] and (row.get("setup_started") or cid not in by_id):
+        if not clean and not cleanup_pending and c["registration"]["fixture"]["mutates"] and (row.get("setup_started") or cid not in by_id):
             contaminated = c["fixture_ids"] or ["case:" + cid]
             for fid in contaminated:
                 m["contaminated_fixtures"][fid] = {"batch_id": batch["id"], "evidence": batch["report"]}
@@ -409,6 +415,9 @@ def consume_batch(base, m, exit_code=None):
     m["delivery"] = {}
     event(m, "batch_finished", batch_id=batch["id"])
     absorbed = None
+    from .remote_checks import collect
+    for cid in batch["case_ids"]:
+        collect(base, m, batch, cid, m["cases"][cid]["attempts"][-1])
     if any(m["cases"][cid]["result"] == "passed" for cid in batch["case_ids"]):
         from .workflow import absorb_locators
         absorbed = absorb_locators(base, m)
@@ -444,7 +453,7 @@ def abandon_batch(base, m, evidence):
 def repair(base, m, cid, evidence):
     c = m["cases"][cid]
     require(c.get("attempts") and c["attempts"][-1]["result"] == "automation_failure", "Only automation failures enter repair")
-    require(c["attempts"][-1].get("cleanup_verified") or c.get("cleanup_recovery", {}).get("batch_id") == c["attempts"][-1]["batch_id"],
+    require(c["attempts"][-1].get("cleanup_verified") or c["attempts"][-1].get("setup_started", True) is False or c.get("cleanup_recovery", {}).get("batch_id") == c["attempts"][-1]["batch_id"],
             "Restore the fixture before a repair rerun")
     require(c["repair_rounds"] < m["config"]["execution"]["repair_rounds"], "Repair budget exhausted")
     require(inside(base, evidence).is_file(), "Repair needs a saved diagnosis")

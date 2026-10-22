@@ -25,14 +25,18 @@ def load_memory(m):
 
 
 def rows(base, m):
-    from .preconditions import derive_items, case_text, labels
+    from .preconditions import derive_items, case_text, labels, local_env
     env, scopes, business = {}, {}, {}
     for cid, c in m['cases'].items():
         path = base / c.get('case_spec', f'cases/{cid}/case-spec.yaml')
         spec = read_yaml(path) if path.is_file() else {}
-        items = spec.get('required_env', derive_items(case_text(base, c)))
+        items = local_env(spec) if spec else derive_items(case_text(base, c))
         c['precondition_items'] = items
         for key in items:
+            if key == 'public_frontend' and any(s.get('verb') == 'defer_public' for s in spec.get('steps', [])):
+                continue
+            if key == 'delayed_save' and any(s.get('verb') == 'network_delay' for s in spec.get('steps', [])):
+                continue
             env.setdefault(key, []).append(cid)
         for key in spec.get('mutation_scope', []):
             scopes.setdefault(key, []).append(cid)
@@ -126,6 +130,8 @@ def checklist_text(q):
     lines = ['# 执行前清单', '', '只需一句中文回答；缺少条件的用例挂起，其余照跑。', '']
     for block, title in [('A', '需要的站点、账号、编辑器和迁移条件'), ('B', '临时修改并还原的数据范围'), ('C', '业务歧义及选项')]:
         lines += ['## ' + block + ' ' + title, '']
+        if block == 'A':
+            lines += ['公开文件检查在远程执行，不挂起关联用例；本机先完成编辑器保存和数据准备，交接 remote-checks/request.json。远程回执后恢复并核验数据；到期须续跑或调用恢复命令。请求延迟由浏览器拦截器提供。', '']
         if block == 'B':
             lines += ['配置的测试站可自由编辑、保存和发布；实际可行时恢复快照。清单答案不扩大配置授权。', '']
         subset = [r for r in q['entries'] if r['block'] == block]
@@ -215,7 +221,7 @@ def review(base, m):
             source = read_json(base / c['source'])
             attempt = c['attempts'][-1]
             add_review(m, 'suspected_defect', [cid], c['title'], reproduction=source.get('steps'),
-                       expected=source.get('expected'), actual=scrub_text('\n'.join(attempt.get('errors', [])), m['config']),
+                       expected=source.get('expected'), actual=scrub_text('\n'.join(attempt.get('errors', [])), m['config']) or ('远程文件条件不符合；见 remote_checks 回执' if c.get('remote_status') == 'fail' else ''),
                        evidence=attempt['evidence'], screenshot=attempt.get('redacted_screenshot'),
                        screenshot_status='已脱敏' if attempt.get('redacted_screenshot') else '未采集，禁止附原始截图')
         if c.get('stage') == 'discovery' and c.get('work_status') != 'waiting_human':
@@ -229,6 +235,16 @@ def review(base, m):
     for entry in m.get('review_items', {}).values():
         if entry['kind'] == 'record_request' and entry['summary'] == '页面目标或数据准备器尚未实现':
             entry['status'] = '已替换为自动化缺口'
+    for entry in m.get('review_items', {}).values():
+        owners = [m['cases'][cid] for cid in entry.get('case_ids', []) if cid in m['cases']]
+        if entry['kind'] == 'suspected_defect' and owners and all(c.get('result') == 'passed' for c in owners):
+            entry['status'] = '已复验通过（历史保留）'
+        elif entry['kind'] == 'suspected_defect' and owners and all(c.get('remote_status') in {'pending', 'unreachable', 'still-cached'} and c.get('attempts') and c['attempts'][-1]['result'] == 'passed' for c in owners):
+            entry['status'] = '本机原失败已复验，公开文件仍待验证'
+        if entry['kind'] == 'automation_gap' and owners and all(c.get('registration') and c.get('stage') != 'discovery' for c in owners):
+            entry['status'] = '已补齐（历史保留）'
+        if entry['kind'] == 'environment' and not any(q['status'] in {'open', 'deferred'} and q.get('prompt') == entry['summary'] for q in m['questions'].values()):
+            entry['status'] = '已恢复（历史保留）'
     items = [x for x in m.get('review_items', {}).values() if x['status'] == '待审核']
     merged = {}
     for item in items:
@@ -291,6 +307,8 @@ def go(excel, profile=None, cases=None):
         workflow.scaffold(base)
         if not m['sources'] or m['sources'][0]['sha256'] != file_hash(source):
             workflow.import_excel(base, m, source)
+        from .remote_checks import expire
+        expire(base, m)
         workflow.refresh(base, m)
         workflow.bind_specs(base, m)
         # Reuse only source-fingerprint-matched example contracts, never by case ID alone.
@@ -302,6 +320,17 @@ def go(excel, profile=None, cases=None):
                 shutil.copyfile(ROOT / item['spec'], dest)
                 if not c.get('registration'):
                     c['case_spec'] = str(dest.relative_to(base))
+        # A legacy script that substitutes editor values for a public-file assertion is
+        # incompatible with the source-matched deferred contract. Preserve its history,
+        # then compile the contract instead of silently running the partial legacy test.
+        for cid, c in m['cases'].items():
+            contract = specs.spec_path(base, c)
+            if c.get('daily_spec') and contract.is_file():
+                spec = read_yaml(contract)
+                if any(s.get('verb') == 'defer_public' for s in spec.get('steps', [])):
+                    from .common import reset_case
+                    c.update(registration=None, daily_spec=False, case_spec=str(contract.relative_to(base)))
+                    reset_case(c, 'legacy_script_missing_public_assertions', 'spec')
         m['checklist_draft'] = any(not specs.spec_path(base, c).is_file() and not c.get('registration') for c in m['cases'].values())
         checklist = sync_checklist(base, m)
         if not checklist['draft']:

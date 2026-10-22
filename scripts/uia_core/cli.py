@@ -18,6 +18,10 @@ class JsonParser(argparse.ArgumentParser):
 def parser():
     p = JsonParser(description="Local UI automation workflow; commands emit JSON")
     commands = p.add_subparsers(dest="command", required=True)
+    remote = commands.add_parser("remote-checks")
+    remote.add_argument("action", choices=["ingest", "restore"])
+    remote.add_argument("--run", required=True)
+    remote.add_argument("file", nargs="?")
     go = commands.add_parser("go")
     go.add_argument("excel")
     go.add_argument("--profile")
@@ -136,6 +140,12 @@ def dispatch(args, path, m):
     cmd = args.command
     if hasattr(args, "case"):
         require(args.case in m["cases"], "Unknown case: " + args.case)
+    if cmd == "remote-checks":
+        from .remote_checks import ingest, restore
+        require(args.action != "ingest" or args.file, "ingest requires results.json")
+        result = ingest(base, m, args.file) if args.action == "ingest" else restore(base, m)
+        result["report"] = reports.make_report(base, m)
+        return result
     if cmd == "spec":
         if args.action == "lint":
             return specs.lint(base, m, args.cases)

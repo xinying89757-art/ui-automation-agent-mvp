@@ -2,14 +2,14 @@
 
 Start: editor
 
-Environment: public_frontend
+Environment:
 Data: {"llms.enabled": true, "llms.source": "system"}
 
 ## Steps
 
 - S1: fill txt.overview = 'phase2-immediate-public-overview'
 - S2: click txt.save
-- S3: open ?public.llms
+- S3: defer_public public.llms.immediate
 
 ## Excel expectations
 

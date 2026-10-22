@@ -56,7 +56,7 @@ export default class UiaReporter implements Reporter {
     }
     const errors = result.errors.map(error => this.clean(error.message ?? String(error)));
     const message = errors.join('\n');
-    const passed = result.status === 'passed' && lifecycle.setup_verified === true && lifecycle.cleanup_verified === true;
+    const passed = result.status === 'passed' && lifecycle.setup_verified === true && (lifecycle.cleanup_verified === true || lifecycle.cleanup_pending === true);
     const status = passed ? 'passed' : /UIA_ENVIRONMENT_BLOCKED/u.test(message) ? 'environment_blocked'
       : /UIA_PRODUCT_CONFIRMATION/u.test(message) ? 'product_confirmation'
       : /UIA_SETUP_FAILED/u.test(message) ? 'automation_failure'

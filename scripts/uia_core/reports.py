@@ -14,7 +14,7 @@ from .secrets import drop_unsafe_artifacts, scrub_text, unsafe_attachment
 from . import metrics as run_metrics
 
 
-STATUS_ZH = {"passed": "通过", "business_failure": "业务失败", "automation_failure": "自动化失败",
+STATUS_ZH = {"remote_pending": "待远程检查", "remote_cached": "公开文件仍在缓存期", "remote_unreachable": "远程不可达或无法验证","passed": "通过", "business_failure": "业务失败", "automation_failure": "自动化失败",
              "environment_blocked": "环境阻断", "product_confirmation": "待业务确认", "not_suitable": "不适合自动化",
              "interrupted": "已中断", "stable": "已稳定", "unstable": "未稳定", "candidate": "待复验",
              "not_run": "未执行", "pending": "待处理", "runnable": "可执行", "running": "执行中",
@@ -32,6 +32,9 @@ def opening(m, metrics, review):
     counts = Counter(zh(c.get('result')) if c.get('work_status') != 'waiting_human' else '等待前置' for c in m['cases'].values())
     conclusion = '本次共 ' + str(len(m['cases'])) + ' 条：' + '，'.join(str(n) + ' 条' + label for label, n in counts.items()) + '。'
     waiting = [cid + '：' + c.get('classification', {}).get('reason', '见审核单') for cid, c in m['cases'].items() if c.get('work_status') == 'waiting_human']
+    remote = [cid for cid, c in m['cases'].items() if c.get('work_status') == 'remote_pending']
+    if remote:
+        waiting.append('公开文件待远程验证：' + '、'.join(remote) + '；见 remote-checks/request.json，不计通过。')
     needs = waiting + ([f"异步审核单 {len(review['items'])} 项；断言建议默认不应用。"] if review['items'] else [])
     metrics_text = (f"清单问题 {metrics['checklist_questions']}，清单回答 {metrics['checklist_answers']}，中途提问 {metrics['mid_run_questions']}，"
                     f"计划外人工介入 {metrics['unplanned_interventions']}，会话轮次 {metrics['session_turns']}；"
@@ -72,7 +75,7 @@ def make_report(base, m):
     for c in m["cases"].values():
         records.append({k: c.get(k) for k in ("case_id", "original_id", "title", "module", "priority",
                        "sheet", "rows", "stage", "work_status", "result", "stability", "pass_streak",
-                       "flow_ids", "fixture_ids", "repair_rounds", "attempts", "feedback", "classification", "case_spec", "spec_first_lint", "spec_lint")})
+                       "flow_ids", "fixture_ids", "repair_rounds", "attempts", "feedback", "classification", "case_spec", "spec_first_lint", "spec_lint", "remote_status")})
         records[-1]['result_label'] = zh(c.get('result'))
         records[-1]['work_status_label'] = zh(c.get('work_status'))
         records[-1]['stability_label'] = zh(c.get('stability'))
@@ -109,7 +112,7 @@ def make_report(base, m):
     questions = [{k: q.get(k) for k in ("id", "kind", "subject", "prompt", "case_ids", "status", "attempted")}
                  for q in m["questions"].values()]
     payload = {"schema_version": "uia-results.v1", "run_id": m["run_id"], "generated_at": now(),
-               "opening": blocks, "summary": s, "metrics": metrics, "flow_metrics": flow_metrics, "source": m["sources"], "cases": records,
+               "remote_checks": m.get("remote_checks", {}), "opening": blocks, "summary": s, "metrics": metrics, "flow_metrics": flow_metrics, "source": m["sources"], "cases": records,
                "questions": questions, "unresolved_sheets": [x for src in m["sources"] for x in src.get("unresolved_sheets", [])],
                "source_update_required": m.get("source_update_required", False), "delivery_complete": False}
     diff = {"schema_version": "uia-asset-review.v1", "writeback": "not_applied", "cases": []}

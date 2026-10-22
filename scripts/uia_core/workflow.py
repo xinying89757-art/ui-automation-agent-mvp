@@ -122,6 +122,7 @@ def answer(m, qid, value, base):
 
 def import_excel(base, m, excel, mapping=None):
     require(not m.get("active_batch"), "Finish or recover the active batch before importing")
+    require(not any(c.get("attempts") and c["attempts"][-1].get("cleanup_pending") for c in m["cases"].values()), "Restore held remote data before importing another workbook version")
     mappings = copy.deepcopy(mapping or {})
     for q in m["questions"].values():
         if q["kind"] == "column_mapping" and q["status"] == "answered":

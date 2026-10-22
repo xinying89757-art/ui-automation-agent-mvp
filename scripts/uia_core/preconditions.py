@@ -12,6 +12,12 @@ def vocabulary():
     return read_yaml(path)["preconditions"]
 
 
+def local_env(spec):
+    verbs = {step.get('verb') for step in spec.get('steps', [])}
+    supplied = ({'public_frontend'} if 'defer_public' in verbs else set()) | ({'delayed_save'} if 'network_delay' in verbs else set())
+    return [item for item in spec.get('required_env', []) if item not in supplied]
+
+
 def labels():
     return {key: value["label"] for key, value in vocabulary().items()}
 
@@ -75,7 +81,7 @@ def sync_preconditions(base, m):
         spec_path = base / case.get("case_spec", "__missing__")
         if spec_path.is_file():
             from .common import read_yaml
-            items = list(read_yaml(spec_path).get("required_env", []))
+            items = local_env(read_yaml(spec_path))
         case["precondition_items"] = items
         if not items or _protected(case):
             continue

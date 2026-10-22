@@ -155,6 +155,29 @@ class PhaseThreeTests(unittest.TestCase):
             self.assertEqual(run.call_count, 1)
             self.assertEqual(second['spec_tasks'][0]['case_id'], 'NEW-2')
 
+    def test_remote_checklist_does_not_gate_public_or_delayed_cases(self):
+        import yaml
+        for cid in ('TC-0033', 'TC-0055'):
+            self.add_case(cid, ['public_frontend'] if cid == 'TC-0033' else ['delayed_save'])
+            target=self.base/'cases'/cid/'case-spec.yaml'
+            spec=common.read_yaml(target)
+            spec['steps']=[{'id':'S1','verb':'defer_public' if cid=='TC-0033' else 'network_delay','target':'public.llms'}]
+            target.write_text(yaml.safe_dump(spec, allow_unicode=True))
+        result=experience.rows(self.base,self.m)
+        self.assertFalse(any(row['key'] in {'env:public_frontend','env:delayed_save'} for row in result))
+        text=experience.checklist_text({'entries': result})
+        self.assertIn('公开文件检查在远程执行，不挂起关联用例',text)
+
+    def test_remote_statuses_have_chinese_report_and_metrics(self):
+        self.m['cases']['T2'].update(result='remote_unreachable',work_status='remote_pending')
+        self.m['remote_checks']={'a':{'status':'unreachable'},'b':{'status':'pass','active':False}}
+        flow=metrics.calculate(self.base,self.m)
+        self.assertEqual(flow['remote_checks']['unreachable'],1)
+        self.assertEqual(flow['remote_checks']['pass'],0)
+        text=reports.opening(self.m,flow,{'items':[]})[0]['text']
+        self.assertIn('远程不可达或无法验证',text)
+        self.assertNotIn('remote_',text)
+
 
 class DisabledStateTests(unittest.TestCase):
     def test_blocked_save_is_observation_and_native_or_aria_disabled(self):

@@ -15,7 +15,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 RESULTS = {"passed", "business_failure", "automation_failure", "environment_blocked",
-           "product_confirmation", "not_suitable", "interrupted"}
+           "product_confirmation", "not_suitable", "interrupted", "remote_pending", "remote_cached", "remote_unreachable"}
 DEFAULTS = {"batch_size": 10, "workers": 1, "stability_passes": 1, "repair_rounds": 2,
             "exploration_minutes_per_flow": 10, "strategies_per_gap": 2, "timeout_ms": 180000}
 

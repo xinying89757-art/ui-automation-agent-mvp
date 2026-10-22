@@ -75,7 +75,7 @@ export const test = base.extend<{ caseContext: CaseContext; lifecycle: void; adm
       }
     };
     await use({ caseId, batchId, ownerMarker: `uia-${batchId}-${caseId}`,
-      spec: binding?.spec, targets: cfg.targets ?? {}, dataRules: dataRules(rules) as Record<string, unknown>, browser, context, page, openAdmin });
+      spec: binding?.spec, networkCatalog: binding?.network_catalog, targets: cfg.targets ?? {}, dataRules: dataRules(rules) as Record<string, unknown>, browser, context, page, openAdmin });
   },
   adminPage: async ({ caseContext }, use) => { await use(await caseContext.openAdmin()); },
   adminContext: async ({ adminPage }, use) => { await use(adminPage.context()); },
@@ -128,7 +128,7 @@ export const test = base.extend<{ caseContext: CaseContext; lifecycle: void; adm
       try {
         await hooks.cleanup(caseContext, state ?? caseContext.fixtureState);
         cleanupVerified = await hooks.verifyCleanup(caseContext, state ?? caseContext.fixtureState);
-        if (!cleanupVerified) throw new Error('Restored baseline was not verified');
+        if (!cleanupVerified && !(caseContext as any).cleanupPending) throw new Error('Restored baseline was not verified');
       } catch (error) {
         cleanupError = error;
         if (entry.mutates) {
@@ -140,7 +140,7 @@ export const test = base.extend<{ caseContext: CaseContext; lifecycle: void; adm
       }
       await info.attach('uia-lifecycle', { contentType: 'application/json', body: Buffer.from(JSON.stringify({
         case_id: caseContext.caseId, batch_id: caseContext.batchId,
-        setup_verified: setupVerified, cleanup_verified: cleanupVerified,
+        setup_verified: setupVerified, cleanup_verified: cleanupVerified, cleanup_pending: Boolean((caseContext as any).cleanupPending),
         owner_marker: caseContext.ownerMarker, fixture_ids: entry.fixture_ids,
       })) });
       if (cleanupError) throw new Error(`UIA_CLEANUP_FAILED: ${String(cleanupError)}`);

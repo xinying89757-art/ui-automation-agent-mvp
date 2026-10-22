@@ -117,5 +117,6 @@ def calculate(base, m, final_report_at=None):
         "scope_violations": int(m.get("scope_violations", 0)),
         "leak_hits": len(m.get("leak_hits", [])),
         "unreviewed_assertion_changes": max(int(m.get("unreviewed_assertion_changes", 0)), assertion_changes),
+        "remote_checks": {status: sum(r.get("active", True) and r["status"] == status for r in m.get("remote_checks", {}).values()) for status in ("pending", "pass", "fail", "still-cached", "unreachable")},
         "measured_at": now(),
     }

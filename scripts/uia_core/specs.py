@@ -24,9 +24,14 @@ def has_snapshot_ref(value):
 
 
 def catalogs():
+    pages = read_yaml(ROOT / 'assets/playwright-runner/knowledge/page-map.yaml')
+    networks = read_yaml(ROOT / 'assets/playwright-runner/knowledge/network.yaml')['rules']
+    for entry in pages['targets'].values():
+        if entry.get('network_rule'):
+            entry['network'] = networks[entry['network_rule']]
     return (read_yaml(ROOT / 'preconditions.yaml')['preconditions'],
             read_yaml(ROOT / 'assets/playwright-runner/knowledge/data-prep.yaml')['data'],
-            read_yaml(ROOT / 'assets/playwright-runner/knowledge/page-map.yaml'))
+            pages)
 
 
 def spec_path(base, case):
@@ -88,8 +93,17 @@ def schema_errors(spec, source, env, data, pages):
         fail(step.get('verb') in VERBS, 'step verb is not supported')
         target(step.get('target'))
         entry = pages['targets'].get(step.get('target'), {})
-        if entry.get('mutation') and step.get('verb') in {'click', 'fill', 'select', 'check', 'uncheck', 'press', 'upload'}:
+        if entry.get('mutation') and step.get('verb') in {'click', 'double_click', 'attempt_click', 'fill', 'select', 'check', 'uncheck', 'press', 'upload'}:
             fail(entry['mutation'] in spec['mutation_scope'], 'step mutation scope must be declared: ' + str(sid))
+        if step.get('verb') == 'observe':
+            fail(isinstance(entry.get('observe_text'), str), 'observe needs a catalog text')
+        if step.get('verb') == 'network_delay':
+            fail(isinstance(step.get('value'), str) and step['value'].isdigit() and 1 <= int(step['value']) <= 30000, 'network delay must be 1..30000 ms')
+            fail(bool(entry.get('network')), 'network verb requires a catalog rule')
+        if step.get('verb') == 'network_release':
+            fail(bool(entry.get('network')), 'network verb requires a catalog rule')
+        if step.get('verb') == 'defer_public':
+            fail(bool(entry.get('resource')), 'deferred check requires a public resource')
         if step.get('verb') in {'fill', 'select', 'press', 'upload'}:
             fail(isinstance(step.get('value'), str), 'step value must be an explicit string (blank allowed)')
     for assertion in spec['assertions']:
@@ -110,7 +124,7 @@ def schema_errors(spec, source, env, data, pages):
         attached = next((s for s in spec['steps'] if isinstance(s, dict) and s.get('id') == assertion.get('after')), {})
         blocked = blocked or bool(re.search(r'为空|空白|仅空格|empty', spec.get('intent', ''), re.I) and re.search(r'被拦截|blocked|无法保存|不能保存', spec.get('intent', ''), re.I) and attached.get('verb') == 'click' and re.search(r'save|submit|保存|提交', str(attached.get('target')), re.I))
         if blocked and isinstance(checks, list):
-            fail(any(isinstance(c, dict) and c.get('op') == 'disabled' for c in checks),
+            fail(any(isinstance(c, dict) and c.get('op') in {'disabled', 'blocked'} for c in checks),
                  'blocked/cannot-save expectation requires a disabled-state assertion')
             fail(attached.get('verb') != 'click' or bool(re.search(r'保存中|处理中|processing', quote, re.I)), 'blocked action must be observed, not clicked')
         if isinstance(checks, list) and not re.search(r'保存中|处理中|processing', quote, re.I):
@@ -123,6 +137,17 @@ def schema_errors(spec, source, env, data, pages):
             fail(not set(check) - {'target', 'op', 'value', 'attribute'}, 'unknown check fields')
             target(check.get('target'))
             fail(check.get('op') in OPS, 'unknown assertion operator')
+            if check.get('op') == 'occurrence_count':
+                fail(type(check.get('value')) is int and check['value'] >= 0 and bool(pages['targets'].get(check.get('target'), {}).get('observe_text')), 'occurrence_count needs an observable target and integer')
+            if check.get('op') == 'visible_text':
+                fail(isinstance(check.get('value'), str), 'visible_text needs an explicit string')
+            if check.get('op') == 'remote_file':
+                fail(all(isinstance(c, dict) and c.get('op') == 'remote_file' for c in checks), 'deferred assertions cannot mix local checks')
+                value = check.get('value', {})
+                fail(attached.get('verb') == 'defer_public' and check.get('target') == attached.get('target'), 'remote_file needs its deferred resource step')
+                fail(isinstance(value, dict) and value.get('op') in {'contains', 'equals', 'ordered_pairs'} and isinstance(value.get('value'), (str, list)), 'invalid remote file condition')
+            if check.get('op') == 'request_count':
+                fail(type(check.get('value')) is int and check['value'] >= 0 and bool(pages['targets'].get(check.get('target'), {}).get('network')), 'request_count requires a network rule and integer')
             if check.get('op') == 'left_of':
                 target(check.get('value'))
             if check.get('op') in {'text', 'contains', 'value', 'attribute', 'count'}:
@@ -162,6 +187,8 @@ def locator_expression(name, pages):
     root = 'page'
     if entry.get('frame'):
         root += '.frameLocator(' + json.dumps(entry['frame']) + ')'
+    for frame in entry.get('nested_frames', []):
+        root += '.frameLocator(' + json.dumps(frame) + ')'
     if entry.get('scope'):
         root += '.locator(' + json.dumps(entry['scope']) + ')'
     if 'selector' in entry:
@@ -226,14 +253,14 @@ def locator_errors(body, pages):
 def coverage(body, file):
     result = {'steps': {}, 'assertions': {}}
     for line, text in enumerate(body.splitlines(), 1):
-        for field, pattern in [('steps', r'^\s*//\s*@step\s+(S\d+)\s*$'), ('assertions', r"\bawait\s+businessAssertion\(['\"](A\d+)['\"]")]:
+        for field, pattern in [('steps', r'^\s*//\s*@step\s+(S\d+)\s*$'), ('assertions', r"(?:\bawait\s+businessAssertion\(['\"]|//\s*@deferred\s+)(A\d+)")]:
             for match in re.finditer(pattern, text):
                 require(match[1] not in result[field], 'Duplicate coverage marker: ' + match[1])
                 result[field][match[1]] = {'file': file, 'line': line}
     return result
 
 
-def lint(base, m, case_ids=None, record=True):
+def lint(base, m, case_ids=None, record=True, check_scripts=True):
     env, data, pages = catalogs()
     selected = case_ids or [cid for cid, c in m['cases'].items() if spec_path(base, c).is_file()]
     # Cross-case duplication cannot be bypassed with --cases or a single-case generation.
@@ -265,7 +292,7 @@ def lint(base, m, case_ids=None, record=True):
                 seen[signature] = (cid, assertion['id'])
         reg = case.get('registration') or {}
         script = inside(base, reg['script']) if reg.get('case_spec') else base / 'runner/tests/generated' / (cid + '.spec.ts')
-        if script.is_file():
+        if script.is_file() and check_scripts:
             body = script.read_text()
             errors.extend(locator_errors(body, pages))
             try:
@@ -292,7 +319,8 @@ def lint(base, m, case_ids=None, record=True):
             case['spec_lint'] = copy.deepcopy(row)
             if not row['errors']:
                 spec = read_yaml(spec_path(base, case))
-                case['precondition_items'] = spec['required_env']
+                from .preconditions import local_env
+                case['precondition_items'] = local_env(spec)
                 if not case.get('registration'):
                     case['stage'] = 'spec'
                 if spec['automatable']['status'] == 'manual':
@@ -322,7 +350,8 @@ def lint(base, m, case_ids=None, record=True):
 
 def generate(base, m, cid):
     require(not m.get('active_batch'), 'Cannot generate during an active batch')
-    result = lint(base, m, [cid])
+    require(not any(c.get('attempts') and c['attempts'][-1].get('cleanup_pending') for c in m['cases'].values()), 'Restore held remote data before generating another version')
+    result = lint(base, m, [cid], check_scripts=False)
     require(not result['errors'] and not result['cases'][cid]['errors'], 'case-spec lint failed', result)
     case = m['cases'][cid]; spec = read_yaml(spec_path(base, case)); _, catalog, pages = catalogs()
     scopes = set(spec['mutation_scope'])
@@ -336,8 +365,15 @@ def generate(base, m, cid):
     require(spec['automatable']['status'] != 'manual', 'Manual case cannot generate executable code')
     lines = ["// Generated deterministically from case-spec.v1; edit the spec or explicitly review an AI repair.",
              "import { test, expect, businessAssertion } from '../../support/fixtures.js';",
-             "import { openTarget } from '../../support/case-spec.js';", '',
-             'test(' + json.dumps('[' + cid + '] ' + spec['intent'], ensure_ascii=False) + ', async ({ page }) => {']
+             "import { openTarget } from '../../support/case-spec.js';",
+             "import { delayRequests, doubleClick, attemptClick, observeOccurrences } from '../../flows/network-control.mjs';",
+             "import { deferPublic, trackSave } from '../../support/remote-checks.mjs';", '',
+             'test(' + json.dumps('[' + cid + '] ' + spec['intent'], ensure_ascii=False) + ', async ({ page, caseContext }) => {', '  const networks: Record<string, any> = {};', '  const observations: Record<string, any> = {};', '  try {']
+    for name in dict.fromkeys(s['target'] for s in spec['steps'] if s['verb'] == 'defer_public'):
+        resource = pages['targets'].get(name, {}).get('resource', {})
+        if resource.get('saved_by'):
+            rule = pages['targets'][resource['saved_by']]['network']
+            lines.append('  observations[' + json.dumps('save-clock:' + name) + '] = trackSave(page, caseContext, ' + json.dumps(rule) + ');')
     todos = []
     def todo(label):
         todos.append(label)
@@ -347,7 +383,18 @@ def generate(base, m, cid):
         sid, verb, name = step['id'], step['verb'], step['target']
         lines.append('  // @step ' + sid)
         loc = locator_expression(name, pages)
-        if not loc or verb == 'open' and not pages['targets'].get(name, {}).get('open'):
+        if verb == 'observe':
+            lines.append('  observations[' + json.dumps(name) + '] = await observeOccurrences(page, ' + json.dumps(pages['targets'][name]['observe_text'], ensure_ascii=False) + ');')
+        elif verb == 'defer_public':
+            lines.append('  // Public assertions are handed off after the editor save.')
+        elif verb == 'network_delay':
+            rule = pages['targets'][name]['network']
+            lines.append('  networks[' + json.dumps(name) + '] = await delayRequests(page, ' + json.dumps(rule) + ', ' + step['value'] + ');')
+        elif verb == 'network_release':
+            lines.append('  networks[' + json.dumps(name) + '].release();')
+        elif verb in {'double_click', 'attempt_click'}:
+            lines.append('  await ' + ('doubleClick' if verb == 'double_click' else 'attemptClick') + '(page, ' + loc + ');')
+        elif not loc or verb == 'open' and not pages['targets'].get(name, {}).get('open'):
             todo(sid + ' ' + name)
         elif verb == 'open':
             lines.append('  await openTarget(page, ' + json.dumps(pages['targets'][name]['open']) + ');')
@@ -360,9 +407,28 @@ def generate(base, m, cid):
             lines.append('  await expect(' + loc + ').toBeVisible();')
         for assertion in (a for a in spec['assertions'] if a['after'] == sid):
             lines.append('  // Excel: ' + assertion['excel'].replace('\n', '\n  // '))
+            if all(c['op'] == 'remote_file' for c in assertion['checks']):
+                resource = pages['targets'][name]['resource']
+                conditions = [c['value'] for c in assertion['checks']]
+                lines.append('  deferPublic(caseContext, ' + json.dumps({'id': assertion['id'], 'excel': assertion['excel']}, ensure_ascii=False) + ', ' + json.dumps(resource) + ', ' + json.dumps(conditions, ensure_ascii=False) + ');')
+                lines.append("  // Deferred marker; not a local businessAssertion PASS.")
+                lines.append("  // @deferred " + assertion["id"])
+                continue
             lines.append("  await businessAssertion('" + assertion['id'] + "', async () => {")
             for check in assertion['checks']:
                 loc = locator_expression(check['target'], pages)
+                if check['op'] == 'occurrence_count':
+                    lines.append('    await expect.poll(() => observations[' + json.dumps(check['target']) + '].count()).toBe(' + str(check['value']) + ');')
+                    continue
+                if check['op'] == 'request_count':
+                    lines.append('    await expect.poll(() => networks[' + json.dumps(check['target']) + '].count()).toBe(' + str(check['value']) + ');')
+                    continue
+                if check['op'] == 'visible_text':
+                    lines.append('    await expect.poll(() => ' + loc + '.innerText()).toBe(' + json.dumps(check['value'], ensure_ascii=False) + ');')
+                    continue
+                if check['op'] == 'blocked':
+                    lines.append('    expect(await ' + loc + '.evaluate(el => el.matches(":disabled") || el.getAttribute("aria-disabled") === "true" || /disabled/i.test(el.className) || getComputedStyle(el).pointerEvents === "none")).toBe(true);')
+                    continue
                 if not loc:
                     todo(assertion['id'] + ' ' + check['target']); continue
                 if check['op'] == 'left_of':
@@ -378,7 +444,7 @@ def generate(base, m, cid):
                     args.append(check['value'])
                 lines.append('    await expect(' + loc + ').' + method + '(' + ', '.join(json.dumps(x, ensure_ascii=False) for x in args) + ');')
             lines.append('  });')
-    lines += ['});', '']
+    lines += ['  } finally {', '    for (const network of Object.values(networks)) await network.dispose();', '    for (const observation of Object.values(observations)) await observation.dispose();', '  }', '});', '']
     body = '\n'.join(lines)
     require(not locator_errors(body, pages), 'Generated locator lint failed', locator_errors(body, pages))
     relative = 'tests/generated/' + cid + '.spec.ts'
@@ -388,7 +454,7 @@ def generate(base, m, cid):
     unsupported_data = [key for key in spec['data_prep'] if not catalog[key].get('handler')]
     if unsupported_data:
         markers = ['  // TODO explore: data-prep ' + key + '\n  throw new Error(' + json.dumps('UIA_EXPLORATION_REQUIRED: data-prep ' + key) + ');' for key in unsupported_data]
-        body = body.replace('async ({ page }) => {', 'async ({ page }) => {\n' + '\n'.join(markers))
+        body = body.replace('  try {', '  try {\n' + '\n'.join(markers))
         script.write_text(body)
     todos += ['data-prep ' + key for key in unsupported_data]
     if todos or spec['questions']:
@@ -422,7 +488,7 @@ def register_script(base, m, cid, script_path):
         require(set(refs[field]) == {x['id'] for x in spec[field]}, 'Coverage markers differ from case-spec ' + field)
     reg = {'case_id':cid, 'case_spec':True, 'script':'runner/' + relative,
            'fixture':{'hooks':'fixtures/case-spec.mjs', 'mutates':bool(spec['mutation_scope']), 'mutation_scope':spec['mutation_scope']},
-           'dependencies':[], 'needs_public':pages['pages'][spec['start_page']].get('public', False) or 'public_frontend' in spec['required_env'],
+           'dependencies':['knowledge/page-map.yaml', 'knowledge/data-prep.yaml', 'knowledge/network.yaml'], 'needs_public':pages['pages'][spec['start_page']].get('public', False) or ('public_frontend' in spec['required_env'] and not any(s['verb'] == 'defer_public' for s in spec['steps'])),
            'coverage':refs}
     previous = case.get('version')
     case.update(registration=reg, daily_spec=False, case_spec=str(spec_path(base, case).relative_to(base)),
@@ -453,5 +519,5 @@ def render(base, m, cid):
     lines += [f"- {a['id']} after {a['after']}: {a['excel']}" for a in spec['assertions']]
     lines += ['', '## Business questions', ''] + ['- ' + q for q in spec['questions']]
     target = spec_path(base, m['cases'][cid]).with_suffix('.md')
-    target.write_text('\n'.join(lines) + '\n')
+    target.write_text('\n'.join(line.rstrip() for line in lines) + '\n')
     return {'markdown':str(target.relative_to(base))}

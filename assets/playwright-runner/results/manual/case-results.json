@@ -1,8 +1,8 @@
 {
   "schema_version": "uia-batch-results.v1",
   "batch_id": null,
-  "started_at": "2026-10-22T10:26:39.761Z",
-  "finished_at": "2026-10-22T10:26:51.087Z",
+  "started_at": "2026-10-22T10:35:50.746Z",
+  "finished_at": "2026-10-22T10:36:01.762Z",
   "status": "failed",
   "complete": true,
   "cases": [
@@ -87,7 +87,7 @@
       "result": "automation_failure",
       "playwright_status": "failed",
       "setup_started": false,
-      "duration_ms": 2,
+      "duration_ms": 3,
       "retry": 0,
       "errors": [
         "Error: 请先选择环境并配置初始入口"
@@ -144,7 +144,7 @@
       "result": "automation_failure",
       "playwright_status": "failed",
       "setup_started": false,
-      "duration_ms": 2,
+      "duration_ms": 3,
       "retry": 0,
       "errors": [
         "Error: 请先选择环境并配置初始入口"

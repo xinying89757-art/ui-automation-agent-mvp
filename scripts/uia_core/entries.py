@@ -249,3 +249,103 @@ def snapshot_route(args, cfg):
     count = len(steps) + bool(args.goto) + bool(args.open_target)
     args.step = steps + args.step
     return hint, count
+
+
+FRAME_JOIN = ' >> internal:control=enter-frame >> '
+
+
+def _split_top(text):
+    """Split on whitespace outside quotes/brackets."""
+    parts, depth, quote, cur = [], 0, None, ''
+    for ch in text:
+        if quote:
+            quote = None if ch == quote else quote
+        elif ch in '"\'':
+            quote = ch
+        elif ch in '[(':
+            depth += 1
+        elif ch in '])':
+            depth -= 1
+        elif ch.isspace() and depth == 0:
+            if cur:
+                parts.append(cur)
+            cur = ''
+            continue
+        cur += ch
+    return parts + ([cur] if cur else [])
+
+
+def locator_target(text):
+    """'iframe#a >> #b >> iframe.c button.x filtered by exact text 取消' -> page-map target row."""
+    text = text.strip()
+    exact = re.search(r'\s+filtered by (?:exact )?text\s+["“]?([^"”()]+?)["”]?\s*$', text)
+    if exact:
+        text = text[:exact.start()]
+    text = re.sub(r'\s*\((?:[^()]|\([^()]*\))*\)\s*$', '', text).strip()
+    parts = [p.strip() for p in re.split(r'\s*>>\s*', text) if p.strip()]
+    frames, last = parts[:-1], parts[-1] if parts else ''
+    tokens = _split_top(last)
+    while len(tokens) > 1 and re.match(r'^iframe\b', tokens[0]):
+        frames.append(tokens.pop(0))
+    selector = ' '.join(tokens)
+    require(selector, 'unsupported locator: ' + text)
+    if exact:
+        selector += ':text-is(' + json.dumps(exact.group(1).strip(), ensure_ascii=False) + ')'
+    row = {'selector': selector}
+    if frames:
+        row['frame'] = frames[0]
+        if frames[1:]:
+            row['nested_frames'] = frames[1:]
+    return row
+
+
+def promote(base, m, report, prefix=None, page=None, overwrite=False):
+    """Promote a generator report's targets and route into shared knowledge (page-map + confirmed entry)."""
+    path = (base / report) if not Path(report).is_absolute() else Path(report)
+    require(path.is_file(), 'generator report not found: ' + str(report))
+    data = json.loads(path.read_text(encoding='utf-8'))
+    route = data.get('route') or {}
+    require(route and (route.get('reached') or route.get('reached_entry')), 'report has no reached route to promote')
+    prefix = (prefix or data.get('purpose') or 'explored').strip('.')
+    slug = lambda name: re.sub(r'[^A-Za-z0-9.-]+', '.', name).strip('.').lower()
+    map_path = knowledge_path('page-map.yaml')
+    catalog = read_yaml(map_path) if map_path.is_file() else {'schema_version': 'page-map.v1', 'pages': {}, 'targets': {}}
+    targets = catalog.setdefault('targets', {})
+    added, skipped = [], []
+    source = 'generator:' + path.stem.replace('generator-', '')
+
+    def put(name, row):
+        if name in targets and not overwrite:
+            skipped.append(name)
+            return
+        targets[name] = dict(row, source=source, confirmed=False)
+        added.append(name)
+    for name, locator in (route.get('targets') or {}).items():
+        put(prefix + '.' + slug(name), locator_target(locator))
+    steps = []
+    for index, step in enumerate(route.get('route') or [], 1):
+        verb, _, rest = step.partition(':')
+        require(verb in {'goto', 'click', 'hover', 'fill', 'press', 'wait'} and rest, 'unsupported route step: ' + step)
+        rest = rest.strip()
+        if verb in {'goto', 'press', 'wait'} or re.match(r'^(text|role)=', rest) and '>>' not in rest or rest in targets:
+            steps.append(verb + ':' + re.sub(r'\s*\([^()]*\)\s*$', '', rest))
+            continue
+        target, value = (rest.split('=${INPUT}')[0], '=${INPUT}') if verb == 'fill' else (rest, '')
+        name = prefix + '.route.' + str(index)
+        put(name, locator_target(target))
+        steps.append(verb + ':' + name + value)
+    safe(catalog, m['config'])
+    atomic_write(map_path, catalog, as_yaml=True)
+    result = {'page_map': str(map_path), 'targets_added': added, 'targets_skipped': skipped, 'route_steps': steps}
+    page = page or data.get('entry')
+    if page and route.get('reached_entry') and steps:
+        hint = resolve(page)
+        require(hint, '页面入口未知：请先 hints add')
+        node = navigation_hint(hint).get('node')
+        lead = ['click:' + node] if node and not steps[0].startswith(('goto:', 'click:' + node)) else []
+        frames = route.get('frames') or []
+        frame = FRAME_JOIN.join(frames) if frames else hint.get('frame')
+        result.update(confirm(m, page, lead + steps, frame))
+        result['entry_confirmed'] = page
+    m.setdefault('knowledge_promotions', []).append({'at': now(), 'report': str(report), 'targets': added, 'entry': result.get('entry_confirmed')})
+    return result

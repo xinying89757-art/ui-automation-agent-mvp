@@ -239,5 +239,8 @@ def run_generator(base, m, purpose, plan, minutes=20, model=None, max_actions=40
                   + '不要把超时转成审核问题或演示请求。')
     elif failure_class == 'subagent_start':
         advice = '子代理启动失败属于环境问题：修复后重试，不算演示依据。'
+    if (reached or reached_entry) and failure_class is None:
+        advice = ('把路线和目标写入共享知识：uia.py hints promote --run <RUN> --report exploration/generator-' + slug
+                  + '.json' + (" --page '" + entry + "'" if entry else '') + '；然后在 case-spec 中引用 ' + purpose + '.<名称> 目标，不要手改 page-map 或读框架源码。')
     return {'next': advice, 'recorded': row, 'report': str((out_dir / ('generator-' + slug + '.json')).relative_to(base)),
             'route': report['route']}

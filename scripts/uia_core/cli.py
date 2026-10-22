@@ -34,7 +34,10 @@ def parser():
     go.add_argument("--cases", help="Comma-separated case IDs")
     go.add_argument("--hints", help="Optional page=rough path lines or a UTF-8 file")
     hints = commands.add_parser("hints")
-    hints.add_argument("action", choices=["add", "confirm"])
+    hints.add_argument("action", choices=["add", "confirm", "promote"])
+    hints.add_argument("--report", help="promote: exploration/generator-<slug>.json")
+    hints.add_argument("--prefix")
+    hints.add_argument("--overwrite", action="store_true")
     hints.add_argument("--run", required=True)
     hints.add_argument("text", nargs="?")
     hints.add_argument("--page")
@@ -184,7 +187,11 @@ def dispatch(args, path, m):
     if cmd == "hints":
         from .entries import add, confirm
         from .experience import sync_checklist
-        if args.action == "add":
+        if args.action == "promote":
+            from .entries import promote
+            require(args.report, "hints promote requires --report exploration/generator-<slug>.json")
+            result = promote(base, m, args.report, args.prefix, args.page, args.overwrite)
+        elif args.action == "add":
             require(args.text, "hints add requires 页面=路径")
             result = add(m, args.text)
         else:

@@ -19,6 +19,8 @@ Follow the hinted backend area first; never start component exploration in anoth
 A generator failure classified `subagent_start` is infrastructure failure and never a demo rung.
 A generator `timeout` is not evidence either: rerun once with the default budget (omit --minutes;
 the CLI enforces a 10-minute floor) before recording any gap; follow the returned `next`.
+When a generator reaches its node, run `uia.py hints promote --run R --report exploration/generator-<slug>.json`
+(--page <entry>): it adds `<purpose>.<name>` page-map targets and confirms the entry route. Do not hand-edit page-map.
 Explore each node once: knowledge → snapshot --goto/--open-target/--step/--frame/--scope → generator_setup_page with tests/seed.spec.ts; Midscene only for visual expectations.
 Write named targets into page-map.yaml (+ routes into flows) before writing specs; keep writing/running other nodes while one is unknown.
 Demo requires a known entry, entry_reached evidence and generator-cli --entry failure on the requested --interaction; unknown entries join checklist D (later discoveries go to review).

@@ -65,6 +65,7 @@ def question(m, kind, subject, prompt, case_ids, key=None, attempted=None, sheet
     q = existing or {"id": key, "kind": kind, "subject": subject, "prompt": prompt,
                      "case_ids": [], "attempted": [], "created_at": now(), "status": "open",
                      "resume_states": {}, "sheet": sheet}
+    require(not (kind == "environment" and PUBLIC_RE.search(prompt or "")), PUBLIC_GUIDE)
     if kind in {"demo", "record_request"}:
         q.update(interaction=interaction, page=page)
     elif page:
@@ -557,6 +558,11 @@ def refresh(base, m):
                     m["cases"][cid]["work_status"] = "waiting_human"
 
 
+PUBLIC_RE = re.compile(r"公开(?:前台|页面|站点)|前台不可达|public[ _-]?(?:front|site|page)", re.I)
+PUBLIC_GUIDE = ("公开前台不可达不是人工阻断：在 case-spec 中先做后台部分，公开断言用 defer_public + remote_file，"
+                "运行后生成 remote-check 请求（结果 remote_pending），不要排队环境问题")
+
+
 def release_resolved(m):
     """A deferred review item about a page is closed once shared knowledge confirms that page's entry."""
     from .entries import resolve
@@ -566,9 +572,11 @@ def release_resolved(m):
             continue
         page = q.get("page")
         hint = resolve(page) if page else None
-        if not (hint and hint.get("confirmed") and not hint.get("not_a_page")):
+        public = q.get("kind") == "environment" and PUBLIC_RE.search(q.get("prompt") or "")
+        if not public and not (hint and hint.get("confirmed") and not hint.get("not_a_page")):
             continue
-        q.update(status="closed", resolution="entry_confirmed_by_knowledge", closed_at=now())
+        q.update(status="closed", resolution="public_checks_use_remote_handoff" if public else "entry_confirmed_by_knowledge",
+                 closed_at=now())
         for cid in q["case_ids"]:
             c = m["cases"].get(cid)
             if c and c["work_status"] == "waiting_human":

@@ -103,3 +103,16 @@ class EarnedOutcomeTests(unittest.TestCase):
         self.assertEqual(sorted(workflow.reopen_unearned(m)), ['C1', 'C3'])
         self.assertEqual((c['stage'], c['work_status'], c['result']), ('spec', 'pending', None))
         self.assertEqual(m['cases']['C2']['result'], 'automation_failure')
+
+
+class PublicHandoffTests(unittest.TestCase):
+    def test_public_frontend_env_items_are_refused_and_released(self):
+        m = {'cases': {'C1': {'case_id': 'C1', 'work_status': 'pending', 'stage': 'spec', 'result': None}},
+             'questions': {}, 'history': [], 'interaction_mode': 'once'}
+        with self.assertRaisesRegex(common.UiaError, 'defer_public'):
+            workflow.question(m, 'environment', 'public', '公开前台不可达，需要可访问的前台', ['C1'])
+        m['questions']['old'] = {'id': 'old', 'kind': 'environment', 'subject': 's', 'status': 'deferred',
+                                 'prompt': '需读取公开页面 FAQPage；当前环境公开前台不可达', 'case_ids': ['C1'], 'resume_states': {'C1': 'pending'}}
+        m['cases']['C1']['work_status'] = 'waiting_human'
+        self.assertEqual(workflow.release_resolved(m), ['old'])
+        self.assertEqual(m['cases']['C1']['work_status'], 'pending')

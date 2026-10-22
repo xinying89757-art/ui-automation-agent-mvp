@@ -13,6 +13,13 @@ test('fetch + semantic checks distinguish pass, cached, failure and unreachable'
  assert.equal((await checkOne(check,async()=>{throw Error('private detail')},()=>start+1000)).status,'unreachable');
  assert.equal((await checkOne(check,response('new',503),()=>start+3600001)).status,'unreachable');
 });
+test('cache-bust checks use a unique query variant and return its identity',async()=>{
+ let requested;
+ const result=await checkOne({...check,cache_bust:true},async url=>{requested=String(url);return new Response('new')},()=>start+1234);
+ assert.match(requested,/\?uia_cb=1767225601234-c$/);
+ assert.equal(result.variant,'cache_busted');
+ assert.equal((await checkOne(check,response('new'),()=>start+1234)).variant,'default');
+});
 test('late immediate fetch and restored data cannot prove business success',async()=>{
  assert.equal((await checkOne({...check,max_latency_seconds:5},response('new'),()=>start+6000)).reason,'immediate_timing_unverified');
  assert.equal((await checkOne({...check,restored_at:new Date(start+500).toISOString()},response('new'),()=>start+1000)).reason,'data_restored');

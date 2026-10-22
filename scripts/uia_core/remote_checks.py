@@ -55,13 +55,53 @@ def collect(base, m, batch, cid, attempt):
         require(item.get('method') == 'GET' and isinstance(item.get('conditions'), list) and item['conditions'], 'Invalid deferred file check')
         saved = timestamp(item['saved_at'])
         identity = digest([m['run_id'], batch['id'], cid, item['assertion_id']])[:24]
+        immediate = bool(item.get('max_latency_seconds'))
         request = {**item, 'id': identity, 'case_id': cid,
-                   'earliest_check_at': (saved + dt.timedelta(hours=1)).isoformat(),
+                   'cache_bust': True, 'immediate': immediate,
+                   'earliest_check_at': (saved if immediate else saved + dt.timedelta(hours=1)).isoformat(),
                    'deadline': (saved + dt.timedelta(hours=2)).isoformat(), 'timeout_ms': 10000}
         registry[identity] = {'request': request, 'status': 'pending', 'batch_id': batch['id'],
                               'version': attempt['version'], 'active': True, 'history': []}
     fold(m, cid)
-    export(base, m)
+    if any(c.get('attempts') and c['attempts'][-1].get('cleanup_pending') for c in m['cases'].values()):
+        persist_hold(m)
+    # The caller exports only after independent cases and all deferred preparations finish.
+
+
+def environment_key(m):
+    from .profiles import connection_settings
+    return digest(connection_settings(m['config']))
+
+
+def hold_path(m):
+    return ROOT / '.auth' / 'remote-holds' / (environment_key(m) + '.json')
+
+
+def persist_hold(m, case_ids=None):
+    path = hold_path(m)
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    path.parent.chmod(0o700)
+    active = list(case_ids) if case_ids is not None else [cid for cid, c in m['cases'].items()
+              if c.get('attempts') and c['attempts'][-1].get('cleanup_pending')]
+    atomic_write(path, {'run_id': m['run_id'], 'environment_key': environment_key(m),
+                        'case_ids': sorted(active), 'created_at': now()})
+    path.chmod(0o600)
+
+
+def clear_hold(m):
+    path = hold_path(m)
+    if path.is_file():
+        path.unlink()
+
+
+def finalize(base, m):
+    pending = [cid for cid, c in m['cases'].items()
+               if c.get('attempts') and c['attempts'][-1].get('cleanup_pending')]
+    if pending:
+        persist_hold(m)
+    else:
+        clear_hold(m)
+    return export(base, m)
 
 
 def fold(m, cid):
@@ -112,9 +152,10 @@ def ingest(base, m, file):
     registry = m.get('remote_checks', {})
     # Validate every row before mutating anything. No arbitrary body/error fields accepted.
     for row in payload['results']:
-        require(isinstance(row, dict) and set(row) == {'id', 'checked_at', 'status', 'http_status', 'conditions', 'reason'}, 'Invalid remote result row')
+        require(isinstance(row, dict) and set(row) == {'id', 'checked_at', 'status', 'http_status', 'conditions', 'reason', 'variant'}, 'Invalid remote result row')
         key = row['id']; require(isinstance(key, str) and key in registry and key not in ids and registry[key].get('active', True), 'Unknown, stale or duplicate remote check')
         ids.add(key); entry = registry[key]; req = entry['request']; c = m['cases'][req['case_id']]
+        require(row['variant'] == ('cache_busted' if req.get('cache_bust') else 'default'), 'Remote result used the wrong cache variant')
         require(entry['version'] == c['version'] and entry['batch_id'] == c['attempts'][-1]['batch_id'], 'Remote result targets an obsolete attempt')
         if c.get('registration'):
             from .workflow import case_version
@@ -208,7 +249,9 @@ def restore(base, m):
                         row['status'] = 'unreachable'
                         row['history'].append({'id': row['request']['id'], 'checked_at': now(), 'status': 'unreachable', 'http_status': None, 'conditions': [], 'reason': 'data_restored'})
             fold(m, cid)
-    export(base, m)
+    if not any(c.get('attempts') and c['attempts'][-1].get('cleanup_pending') for c in m['cases'].values()):
+        clear_hold(m)
+    finalize(base, m)
     event(m, 'remote_data_restored', case_ids=sorted(restored), evidence=str(target.relative_to(base)))
     return {'cleanup_verified': proof.get('cleanup_verified') is True, 'leases': len(pending), 'evidence': str(target.relative_to(base))}
 

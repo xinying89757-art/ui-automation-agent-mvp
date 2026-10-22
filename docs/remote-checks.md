@@ -32,7 +32,9 @@ assertions:
 node /path/to/remote-checks/check.mjs
 ```
 
-脚本总是读取自身目录的 `request.json`，原子写入同目录 `results.json`。每条仅 fetch 一次，有超时和 1 MiB 响应上限；不自动等待一小时、不轮询。外部调度器根据 `earliest_check_at` 调度，缓存期内也可先试一次。使用原始 HTTP URL，不切成 HTTPS、不加缓存穿透参数、不带凭据或自定义认证头、不跟随跳转；输出不含原始响应、响应头或网络错误详情。URL 不允许凭据、查询参数。
+脚本总是读取自身目录的 `request.json`，原子写入同目录 `results.json`。每条仅 fetch 一次，有超时和 1 MiB 响应上限；不自动等待、不轮询。普通检查根据 `earliest_check_at` 调度。带 `max_latency_seconds` 的立即检查会设置 `immediate: true`、`cache_bust: true`，并把 `earliest_check_at` 设为 `saved_at`；脚本追加每检查唯一的 `uia_cb` 查询参数，结果 `variant` 标为 `cache_busted`。其他检查的 variant 是 `default`，导入会核对实际 variant 与请求一致。
+
+调度会先运行不需要 hold 的用例，再准备 deferred 用例，所有准备完成后才生成最终 `request.json`。数据 hold 写入私有 `.auth/remote-holds/`，供同环境的其他 run/clone 阻止数据修改；只读用例仍可运行。导入或 restore 完成恢复后清除 hold。
 
 回到本机导入：
 
@@ -52,9 +54,10 @@ node /path/to/remote-checks/check.mjs
 | url / method | page-map 相对文件路径结合配置的公开站点；当前方法 GET |
 | conditions | `{op, value}`，有序问答另有 `section`；无定位器、认证信息 |
 | saved_at | 本机观察保存成功后生成交接的时间 |
-| earliest_check_at | saved_at + 1 小时，普通内容差异在此前归为 still-cached |
+| earliest_check_at | 普通检查为 saved_at + 1 小时；立即检查为 saved_at |
 | deadline | saved_at + 2 小时；超过后为无法验证，不计通过 |
 | timeout_ms | 单次 fetch/读流超时，默认 10000 |
+| cache_bust / immediate | 可选布尔值；立即检查使用 `cache_bust: true`，并把 `immediate` 设为 true |
 | max_latency_seconds | 可选；TC-0036 为 5 秒观察窗口，延迟执行不能证明“立即更新” |
 | restored_at | 可选；本机已恢复数据的时间；此后的观察不能作为该准备版本的业务通过/失败 |
 
@@ -69,7 +72,7 @@ node /path/to/remote-checks/check.mjs
 - `request_sha256`：所执行 request.json **原始文件字节** SHA-256，包含换行；不能重新格式化后配旧结果。
 - `results`：非空数组，可分批回传；同一文件内 ID 不可重复。
 
-结果行字段严格为 `id`、`checked_at`（带时区 ISO 时间）、`status`、`http_status`（整数或 null）、`conditions`（与请求条件对应的布尔数组；传输失败可为空）、`reason`（schema 中的有限枚举）。不允许自由错误信息、响应 body、cookie、storage 等额外字段。
+结果行字段严格为 `id`、`checked_at`（带时区 ISO 时间）、`status`、`http_status`（整数或 null）、`conditions`（与请求条件对应的布尔数组；传输失败可为空）、`reason`（schema 中的有限枚举）和 `variant`（`default` 或 `cache_busted`）。不允许自由错误信息、响应 body、cookie、storage 等额外字段。
 
 | status | 中文报告 | 归并 |
 |---|---|---|

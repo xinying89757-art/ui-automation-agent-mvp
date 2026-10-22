@@ -18,10 +18,11 @@ export function evaluate(body, condition) {
 }
 export async function checkOne(check, fetcher = fetch, clock = () => Date.now()) {
   const checked_at = new Date(clock()).toISOString();
-  const row = { id: check.id, checked_at, status: 'unreachable', http_status: null, conditions: [], reason: 'network' };
+  const row = { id: check.id, checked_at, status: 'unreachable', http_status: null, conditions: [], reason: 'network', variant: check.cache_bust ? 'cache_busted' : 'default' };
   try {
     const url = new URL(check.url);
     if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search) throw new Error('Unsafe URL');
+    if (check.cache_bust) url.searchParams.set('uia_cb', String(clock()) + '-' + encodeURIComponent(check.id));
     const response = await fetcher(url, { method: check.method, credentials: 'omit', redirect: 'error', signal: AbortSignal.timeout(check.timeout_ms) });
     row.http_status = response.status;
     // Bounded stream; never save/print response text or headers.

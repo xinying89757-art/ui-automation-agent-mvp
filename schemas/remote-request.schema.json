@@ -80,6 +80,8 @@
             "minimum": 1,
             "maximum": 60000
           },
+          "cache_bust": {"type": "boolean"},
+          "immediate": {"type": "boolean"},
           "max_latency_seconds": {
             "type": "integer",
             "minimum": 1

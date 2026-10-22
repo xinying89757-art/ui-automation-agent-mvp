@@ -28,7 +28,7 @@ class RemoteChecksTests(unittest.TestCase):
         common.atomic_write(self.request, {'schema_version':'uia-remote-request.v1','run_id':'R','checks':[self.check]})
     def payload(self, status='pass'):
         return {'schema_version':'uia-remote-results.v1','run_id':'R', 'request_sha256':common.file_hash(self.request),
-                'results':[{'id':'check1','checked_at':common.now(),'status':status,'http_status':200 if status!='unreachable' else None,
+                'results':[{'id':'check1','checked_at':common.now(),'status':status,'variant':'cache_busted' if self.check.get('cache_bust') else 'default','http_status':200 if status!='unreachable' else None,
                             'conditions':[True] if status=='pass' else [False] if status!='unreachable' else [],
                             'reason':{'pass':'conditions_met','fail':'conditions_mismatch','still-cached':'cache_window','unreachable':'network'}[status]}]}
     def ingest(self, payload):
@@ -47,7 +47,7 @@ class RemoteChecksTests(unittest.TestCase):
         self.check['earliest_check_at']=(dt.datetime.now(dt.timezone.utc)+dt.timedelta(minutes=30)).isoformat()
         self.assertEqual(self.ingest(self.payload('still-cached'))['cases']['C'],'remote_cached')
     def test_rejects_wrong_run_hash_unknown_duplicate_and_inconsistent_pass_atomically(self):
-        for kind in ('run','hash','unknown','duplicate','condition','cleanup','obsolete','future','extra'):
+        for kind in ('run','hash','unknown','duplicate','condition','cleanup','obsolete','future','extra','variant'):
             with self.subTest(kind=kind):
                 original=copy.deepcopy(self.m); p=self.payload()
                 if kind=='run':p['run_id']='other'
@@ -59,6 +59,7 @@ class RemoteChecksTests(unittest.TestCase):
                 if kind=='obsolete':self.m['cases']['C']['version']='changed'
                 if kind=='future':p['results'][0]['checked_at']='2999-01-01T00:00:00Z'
                 if kind=='extra':p['results'][0]['body']='not allowed'
+                if kind=='variant':p['results'][0]['variant']='cache_busted'
                 with self.assertRaises(common.UiaError):self.ingest(p)
                 self.m=original
     def test_rejects_restored_or_late_immediate_pass(self):
@@ -101,13 +102,17 @@ class RemoteChecksTests(unittest.TestCase):
         (folder/'case-spec.yaml').write_text(yaml.safe_dump({'assertions':[{'id':'A2','excel':self.check['expected']}]}))
         directory=self.base/'batches/b';directory.mkdir(parents=True)
         self.m['active_batch']={'id':'b','directory':'batches/b','case_ids':['C'],'report':'batches/b/case-results.json','versions':{'C':'v'}}
-        common.atomic_write(directory/'remote-C.json',[{k:self.check[k] for k in ('assertion_id','expected','url','method','saved_at','conditions')}])
+        common.atomic_write(directory/'remote-C.json',[{**{k:self.check[k] for k in ('assertion_id','expected','url','method','saved_at','conditions')},'max_latency_seconds':5}])
         common.atomic_write(directory/'case-results.json',{'schema_version':'uia-batch-results.v1','batch_id':'b','complete':True,
           'cases':[{'case_id':'C','result':'passed','playwright_status':'passed','setup_started':True,'retry':0,
                     'lifecycle':{'batch_id':'b','setup_verified':True,'cleanup_verified':False,'cleanup_pending':True}}]})
         self.m['remote_checks']={}
-        with patch.object(runtime,'case_version',return_value='v'):
+        with patch.object(runtime,'case_version',return_value='v'), patch('uia_core.remote_checks.ROOT', self.base):
             result=runtime.consume_batch(self.base,self.m)
+            hold=remote.hold_path(self.m)
+            self.assertTrue(hold.is_file())
+            self.assertEqual(common.read_json(hold)['run_id'],'R')
+            remote.finalize(self.base,self.m)
         self.assertEqual(result['results']['C'],'remote_pending')
         self.assertEqual(self.m['contaminated_fixtures'],{})
         self.assertEqual(self.m['questions'],{})
@@ -115,3 +120,5 @@ class RemoteChecksTests(unittest.TestCase):
         request=common.read_json(self.request)
         self.assertEqual(request['checks'][0]['expected'],self.check['expected'])
         self.assertTrue((self.base/'remote-checks/check.mjs').is_file())
+        self.assertTrue(request['checks'][0]['cache_bust'])
+        self.assertEqual(remote.timestamp(request['checks'][0]['earliest_check_at']), remote.timestamp(request['checks'][0]['saved_at']))

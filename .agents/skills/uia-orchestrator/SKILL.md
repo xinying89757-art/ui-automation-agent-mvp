@@ -28,7 +28,10 @@ A confirmed entry closes deferred review items about that page automatically. Ne
 Outcomes are earned by execution: classify product_confirmation/automation_failure/business_failure only
 after run-batch evidence; public-frontend assertions use defer_public + remote-check requests (remote_pending),
 never environment_blocked. Breadth first: `next` refines/runs never-executed cases before more repair
-rounds; follow its order instead of iterating one hard case. Validation messages, re-edit, toolbars: explore them (snapshot/generator), do not park.
+rounds; follow its order instead of iterating one hard case.
+Need saves/validation/re-edit inside an editor? use `generator --draft` (component saves, empty submits; never outer
+save/publish). Public checks: find the record's public path (edit page URL/SEO field, list 预览/查看 link) and register it
+with `hints target --name <x>.public --resource /path --evidence ...`, then defer_public to it. Validation messages, re-edit, toolbars: explore them (snapshot/generator), do not park.
 Explore each node once: knowledge → snapshot --goto/--open-target/--step/--frame/--scope → generator_setup_page with tests/seed.spec.ts; Midscene only for visual expectations.
 Write named targets into page-map.yaml (+ routes into flows) before writing specs; keep writing/running other nodes while one is unknown.
 Demo requires a known entry, entry_reached evidence and generator-cli --entry failure on the requested --interaction; unknown entries join checklist D (later discoveries go to review).

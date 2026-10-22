@@ -113,3 +113,29 @@ class LiteralRouteTests(unittest.TestCase):
         h = entries.literal_route({'steps': ['goto:/a', 'click:x', 'fill:y=${INPUT}', 'click:text=FAQ']})
         self.assertEqual(h['steps'], ['goto:/a', 'click:x'])
         self.assertEqual(h['route_truncated_at'], 'fill:y')
+
+
+class DraftAndResourceTests(PromoteTests):
+    def test_resource_target(self):
+        r = entries.add_target(self.base, self.m, 'product.public', None, 'exploration/generator-faq-editor.entry.json',
+                               resource='/products/demo.html')
+        self.assertEqual(r['row']['resource'], {'path': '/products/demo.html'})
+        with self.assertRaises(common.UiaError):
+            entries.add_target(self.base, self.m, 'product.public2', None, 'exploration/generator-faq-editor.entry.json',
+                               resource='https://x.test/p')
+
+    def test_draft_generator_prompt_and_gate(self):
+        import argparse
+        from uia_core import exploration, profiles
+        seen = {}
+        def runner(cmd, timeout):
+            seen['prompt'] = cmd[-1]
+            return argparse.Namespace(stdout='', stderr='', returncode=0)
+        with patch.object(exploration, 'codex_binary', return_value='/bin/codex'), \
+                patch.object(profiles, 'agent_env', return_value={'cwd': '/runner', 'env': {}}):
+            with self.assertRaises(common.UiaError):
+                exploration.run_generator(self.base, self.m, 'p', 'plan', runner=runner, draft=True)
+            self.m['config']['mutation'] = {'allowed': True}
+            exploration.run_generator(self.base, self.m, 'p', 'plan', runner=runner, draft=True)
+        self.assertIn('Draft mode', seen['prompt'])
+        self.assertNotIn('Read-only', seen['prompt'])

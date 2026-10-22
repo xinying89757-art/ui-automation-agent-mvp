@@ -96,7 +96,7 @@ Starting entry (reach this route before exploring the interaction): {entry_hint}
 Rules: call generator_setup_page with seedFile "tests/seed.spec.ts" first (the page is the authenticated backend area), then
 follow Starting entry's node/open_target and ordered steps FIRST. The seed already opens its node area;
 do not switch to another area. Entry clicks run outside frame_hint; use that frame only after reaching entry.
-use browser_* tools to reach the node and its observable completion signal. Read-only: do not click save/publish/delete,
+use browser_* tools to reach the node and its observable completion signal. {mutation_rule}
 do not type credentials, do not print cookies/storage. Do not edit files except writing the generated test via
 generator_write_test to tests/explore/{slug}.spec.ts if you get that far. Stop after at most {max_actions} browser actions.
 Checkpoint: the moment you reach the Starting entry, send one short progress message with a ```json block
@@ -168,7 +168,12 @@ def parse_generator_output(text):
     return final, usage, route
 
 
-def run_generator(base, m, purpose, plan, minutes=20, model=None, max_actions=40, runner=None, entry=None):
+READ_ONLY_RULE = 'Read-only: do not click save/publish/delete,'
+DRAFT_RULE = ('Draft mode: you MAY click save/confirm/delete INSIDE an editor or component form and submit empty forms '
+              'to observe validation, but never save the outer page/record, never publish, and leave via the page cancel/back,')
+
+
+def run_generator(base, m, purpose, plan, minutes=20, model=None, max_actions=40, runner=None, entry=None, draft=False):
     """Launch an isolated Codex sub-agent with the Test Agents MCP + seed; record a real generator rung."""
     import json, re, subprocess, time
     from .common import atomic_write
@@ -184,7 +189,11 @@ def run_generator(base, m, purpose, plan, minutes=20, model=None, max_actions=40
     if hint and hint.get('node'):
         setup['env']['UIA_SEED_ENTRY'] = hint['node']
     slug = re.sub(r'[^A-Za-z0-9_.-]+', '-', purpose).strip('-')[:60] or 'node'
+    if draft:
+        mutation = m['config'].get('mutation', {})
+        require(mutation.get('allowed'), '--draft 需要运行配置允许变更（清单 B 块同意）')
     prompt = GENERATOR_PROMPT.format(purpose=purpose, plan=plan, slug=slug, max_actions=max_actions,
+                                     mutation_rule=DRAFT_RULE if draft else READ_ONLY_RULE,
                                      entry_hint=json.dumps(hint, ensure_ascii=False) if hint else 'No entry supplied; cannot request a demo.')
     model = model or 'gpt-6-luna'
     from .common import DEFAULTS
@@ -232,7 +241,7 @@ def run_generator(base, m, purpose, plan, minutes=20, model=None, max_actions=40
            'entry': entry, 'entry_reached': reached_entry, 'reached_entry': reached_entry,
            'failed_interaction': failed_interaction,
            'tokens': {k: usage.get(k) for k in ('input_tokens', 'cached_input_tokens', 'output_tokens') if k in usage},
-           'budget_minutes': minutes, 'requested_minutes': requested_minutes,
+           'budget_minutes': minutes, 'draft': bool(draft), 'requested_minutes': requested_minutes,
            'note': 'route' if reached else ('no route; exit ' + str(code))}
     m.setdefault('exploration', []).append(row)
     advice = None

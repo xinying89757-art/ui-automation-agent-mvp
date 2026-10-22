@@ -38,6 +38,8 @@ def parser():
     hints.add_argument("--name")
     hints.add_argument("--locator", help='target: JSON {"frames":[...],"css"|"role"+"name"|"text":...}')
     hints.add_argument("--evidence", help="target: exploration artifact that shows it")
+    hints.add_argument("--resource", help="target: public relative path (e.g. /products/x.html) for defer_public/remote checks")
+    hints.add_argument("--saved-by", help="target --resource: network rule/target that saves it")
     hints.add_argument("--report", help="promote: exploration/generator-<slug>.json")
     hints.add_argument("--prefix")
     hints.add_argument("--overwrite", action="store_true")
@@ -125,6 +127,7 @@ def parser():
             cmd.add_argument("--minutes", type=int, default=20)
             cmd.add_argument("--model")
             cmd.add_argument("--entry")
+            cmd.add_argument("--draft", action="store_true", help="allow in-editor/component saves and empty submits (never outer save/publish)")
         if name == "exploration-log":
             cmd.add_argument("--method", choices=["generator", "midscene"], required=True)
             cmd.add_argument("--purpose", required=True)
@@ -192,7 +195,7 @@ def dispatch(args, path, m):
         from .experience import sync_checklist
         if args.action == "target":
             from .entries import add_target
-            result = add_target(base, m, args.name, args.locator, args.evidence, args.overwrite)
+            result = add_target(base, m, args.name, args.locator, args.evidence, args.overwrite, resource=args.resource, saved_by=args.saved_by)
         elif args.action == "promote":
             from .entries import promote
             require(args.report, "hints promote requires --report exploration/generator-<slug>.json")
@@ -343,7 +346,7 @@ def dispatch(args, path, m):
         return profiles.agent_env(base, m)
     if cmd == "generator":
         from .exploration import run_generator
-        return run_generator(base, m, args.purpose, args.plan, args.minutes, args.model, entry=args.entry)
+        return run_generator(base, m, args.purpose, args.plan, args.minutes, args.model, entry=args.entry, draft=args.draft)
     if cmd == "exploration-log":
         from .exploration import log
         return log(m, args.method, args.purpose, args.result, args.note)

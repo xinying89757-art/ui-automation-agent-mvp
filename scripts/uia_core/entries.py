@@ -408,16 +408,21 @@ def promote(base, m, report, prefix=None, page=None, overwrite=False):
     return result
 
 
-def add_target(base, m, name, locator, evidence, overwrite=False):
+def add_target(base, m, name, locator, evidence, overwrite=False, resource=None, saved_by=None):
     """Register one observed target (from a snapshot/generator artifact) without fabricating a report."""
     require(re.fullmatch(r'[a-z0-9][a-z0-9.-]*', name or ''), 'target name: lowercase dotted, e.g. faq-editor.add')
     path = base / evidence
     require(evidence and path.is_file() and base.resolve() in path.resolve().parents, '--evidence must be an existing artifact inside the run (exploration/... or evidence/...)')
-    try:
-        value = json.loads(locator)
-    except ValueError:
-        value = locator
-    row = locator_target(value)
+    if resource:
+        require(re.fullmatch(r'/[^\s?#]*(?:\?[^\s#]*)?', resource) and '://' not in resource, '--resource 需为公开站点相对路径，如 /products/x.html')
+        row = {'resource': {'path': resource, **({'saved_by': saved_by} if saved_by else {})}}
+    else:
+        require(locator, '--locator or --resource required')
+        try:
+            value = json.loads(locator)
+        except ValueError:
+            value = locator
+        row = locator_target(value)
     map_path = knowledge_path('page-map.yaml')
     catalog = read_yaml(map_path) if map_path.is_file() else {'schema_version': 'page-map.v1', 'pages': {}, 'targets': {}}
     targets = catalog.setdefault('targets', {})

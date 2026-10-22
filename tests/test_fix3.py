@@ -100,3 +100,21 @@ class Fix3Tests(unittest.TestCase):
         self.m['cases']['C1']['unknown_nodes'] = ['insert.widget']
         with self.assertRaisesRegex(common.UiaError, 'generator'):
             exploration.demo_gate(self.m, 'insert.widget', ['C1'], 'drag', page='内容编辑器')
+
+
+class BlanketBusinessAnswerTests(unittest.TestCase):
+    def test_blanket_c_answer_selects_keep_original(self):
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+        from uia_core import experience as E
+        from uia_core.preconditions import QUESTION_KEY
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            rows = [{'key': 'c1', 'block': 'C', 'number': 1, 'label': 'x', 'cases': ['C1'], 'options': ['保持原期望', '暂挂待确认']},
+                    {'key': 'c2', 'block': 'C', 'number': 2, 'label': 'y', 'cases': ['C2'], 'options': ['保持原期望', '暂挂待确认']}]
+            m = {'run_id': 'R', 'cases': {}, 'questions': {QUESTION_KEY: {'id': QUESTION_KEY, 'status': 'open', 'entries': rows, 'case_ids': []}},
+                 'history': [], 'config': {'auth': {}, 'targets': {}, 'network': {'mode': 'direct'}}}
+            with patch.object(E, 'memory_path', return_value=base / 'memory.json'), patch.object(E, 'apply_checklist'):
+                E.answer_sentence(base, m, 'A 都可用，B 同意，C 无歧义')
+            self.assertEqual(m['questions'][QUESTION_KEY]['answer']['entries'], {'c1': '保持原期望', 'c2': '保持原期望'})

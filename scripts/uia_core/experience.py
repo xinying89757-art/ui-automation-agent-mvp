@@ -248,8 +248,11 @@ def answer_sentence(base, m, sentence, finalizing=False):
             business_count = sum(r['block'] == 'C' for r in q['entries'])
             if business_count > 1:
                 segments = dict(re.findall(r'(?:^|[、，,；;])\s*(\d+)\s*[:：=]?\s*(.*?)(?=[、，,；;]\s*\d+|$)', block))
-                block = segments.get(str(row['number']), '')
+                # A blanket answer ("全部保持原期望" / "无歧义") applies to every C item.
+                block = segments.get(str(row['number']), '') or (block if not segments else '')
             chosen = [x for x in row['options'] if x in block]
+            if not chosen and re.search(r'无歧义|按原文|保持原期望|都保持', block):
+                chosen = [x for x in row['options'] if '原期望' in x or '按原文' in x][:1]
             require(len(chosen) == 1, 'C 块请逐项选择清单中的选项，不接受默认猜测')
             value = chosen[0]
         answers[row['key']] = value
@@ -527,7 +530,8 @@ def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_m
         return {'run_id': m['run_id'], 'run_reused': bool(matches),
                 'run_selection': '复用同一工作簿与环境的 run；用例子集已更新' if matches else '新建 run；当前环境和工作簿没有匹配的既有 run',
                 'checklist_message': memory_note, **checklist, 'spec_tasks': tasks, 'report': output, 'armed_watches': armed,
-                'next': {'action': 'classify_preconditions' if checklist['unclassified'] else 'complete_spec_tasks' if checklist['draft'] else 'answer_checklist' if checklist['question_count'] else 'continue_spec_tasks_or_review', 'unclassified': checklist['unclassified'], 'ai_tasks': checklist['ai_tasks'], 'mid_run_questions': 0}}
+                'next': {'action': 'classify_preconditions' if checklist['unclassified'] else 'complete_spec_tasks' if checklist['draft'] else 'answer_checklist' if checklist['question_count'] else 'continue_spec_tasks_or_review', 'unclassified': checklist['unclassified'], 'ai_tasks': checklist['ai_tasks'], 'mid_run_questions': 0,
+                         **({'present_checklist': False, 'instruction': '清单仍是草稿：不要向人展示或提问；先分类全部前置条件并写完全部 case-spec（未知目标写 ?名称），再次运行 go 得到最终清单后一次性展示。'} if checklist['draft'] else {'present_checklist': bool(checklist['question_count'])})}}
 
 
 def _arm_requested_watches(base, m, arm_watch, lead_minutes, watch_minutes):

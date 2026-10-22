@@ -31,8 +31,9 @@ case subset; it reports the selected run and whether the subset changed. Existin
 specs from lint-passing case-specs take precedence over duplicate handwritten specs, and
 the report names the selected script and warns when a duplicate exists. It checks the
 environment, binds existing scripts first, queues missing case-spec tasks and writes
-checklist.md with A/B/C blocks in Chinese. Finish missing case-spec tasks before presenting
-the checklist; its draft is not a question. Present the final checklist once; record
+checklist.md with A/B/C/D blocks in Chinese. Finish missing case-spec tasks before presenting
+the checklist; its draft is not a question. While go returns present_checklist false, do not
+end the turn to ask: classify preconditions, write all specs, rerun go. Present the final checklist once; record
 `uia.py answer --run R "A ...，B 同意，C ..."`. Explicit answers persist in environment
 memory; zero unknown answers means zero questions. When every checklist item came from
 environment memory, report `清单全部来自环境记忆（N 项），本次 0 问`.

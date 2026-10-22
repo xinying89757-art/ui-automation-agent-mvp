@@ -1,13 +1,59 @@
 """Credential-free file hand-off; run.json owns pending checks and ingestion history."""
 import copy
 import datetime as dt
+import hashlib
+import re
 import shutil
 from pathlib import Path
 from .common import ROOT, atomic_write, digest, event, file_hash, now, read_json, require
 from .secrets import scrub_text
 
 LABELS = {'pending': '待远程检查', 'pass': '远程通过', 'fail': '远程业务失败',
-          'still-cached': '公开文件仍在缓存期', 'unreachable': '远程不可达或无法验证'}
+          'pass_reevaluated': '本机证据复核通过', 'still-cached': '公开文件仍在缓存期', 'unreachable': '远程不可达或无法验证'}
+
+def evaluate_condition(body_or_section, condition):
+    """Python port of the credential-free checker evaluator (version 2)."""
+    body = str(body_or_section); op = condition.get('op'); value = condition.get('value')
+    if op == 'contains': return str(value) in body
+    if op == 'equals': return body == value
+    if op != 'ordered_pairs': raise ValueError('Unsupported condition')
+    lines = body.splitlines(); wanted = str(condition.get('section', '')).strip().lower()
+    start = None; level = 0
+    for i, line in enumerate(lines):
+        match = re.match(r'^(#{2,6})\s+(.+?)\s*#*\s*$', line)
+        if match and match.group(2).strip().lower() == wanted:
+            start, level = i, len(match.group(1)); break
+    if start is None: return False
+    end = len(lines)
+    for i in range(start + 1, len(lines)):
+        match = re.match(r'^(#{1,6})\s+', lines[i])
+        if match and len(match.group(1)) <= level: end = i; break
+    pairs, question = [], None
+    def strip(line):
+        line = re.sub(r'^(?:[-*+]\s+|\d+\.\s+)', '', line.strip()).strip()
+        line = line.replace('**', '').replace('__', '')
+        return re.sub(r'(^|\s)\*([^*]+)\*', r'\1\2', line).strip()
+    qmark = re.compile(r'^(?:Q\s*[:：]\s*|问\s*[:：]\s*)', re.I)
+    amark = re.compile(r'^(?:A\s*[:：]\s*|答\s*[:：]\s*)', re.I)
+    combined = re.compile(r'^(?:Q\s*[:：]\s*|问\s*[:：]\s*)([\s\S]*?)\s+(?:A\s*[:：]\s*|答\s*[:：]\s*)([\s\S]*)$', re.I)
+    for raw in lines[start + 1:end]:
+        line = strip(raw)
+        if not line: continue
+        both = combined.match(line)
+        if both: pairs.append([both.group(1).strip(), both.group(2).strip()]); question = None; continue
+        q, a = qmark.match(line), amark.match(line)
+        if q: question = line[q.end():].strip(); continue
+        if a and question is not None: pairs.append([question, line[a.end():].strip()]); question = None; continue
+        if question is not None: pairs.append([question, line]); question = None; continue
+        question = line
+    if question is not None: pairs.append([question, None])
+    return pairs == value
+
+def redact_evidence(value, config=None):
+    text = scrub_text(value, config)
+    text = re.sub(r'(?i)\bbearer\s+[^&\s"\']+', 'Bearer [REDACTED]', text)
+    text = re.sub(r'(?i)\b(authorization|access_token|token|password)\s*[:=]\s*[^&\s"\']+', r'\1=[REDACTED]', text)
+    return re.sub(r'\d{7,}', '[REDACTED]', text)
 
 
 def timestamp(value):
@@ -110,23 +156,29 @@ def fold(m, cid):
     if not entries:
         return
     statuses = {r['status'] for r in entries}
-    status = next((s for s in ('fail', 'unreachable', 'still-cached', 'pending') if s in statuses), 'pass')
+    failures = [r for r in entries if r['status'] == 'fail']
+    if failures and all(r.get('local_reevaluation', {}).get('all_conditions') is True for r in failures):
+        c.update(result='automation_failure', pass_streak=0, stability='unstable', stage='finished', work_status='finished')
+        c['remote_status'] = 'fail'
+        c['classification'] = {'reason': '远程检查器解析失败，原始证据符合预期：检查器缺陷，非产品缺陷', 'at': now()}
+        return
+    status = 'pass_reevaluated' if statuses == {'pass_reevaluated'} else next((s for s in ('fail', 'unreachable', 'still-cached', 'pending') if s in statuses), 'pass')
     c['remote_status'] = status
     c['classification'] = {'reason': LABELS[status], 'at': now()}
-    if status == 'pass' and not c['attempts'][-1].get('cleanup_verified'):
+    if status in {'pass', 'pass_reevaluated'} and not c['attempts'][-1].get('cleanup_verified'):
         c.update(result='remote_pending', pass_streak=0, stability='not_run', stage='remote', work_status='remote_pending')
         c['classification']['reason'] = '远程通过，等待本机恢复数据并核验'
         return
-    if status == 'pass':
+    if status in {'pass', 'pass_reevaluated'}:
         # Only an independently clean local batch plus all remote assertions can pass.
         attempt = c['attempts'][-1]
         require(attempt['result'] == 'passed' and attempt['cleanup_verified'] and attempt['setup_verified'], 'Local lifecycle did not pass')
         streak = 0
         for a in reversed(c['attempts']):
-            if a['version'] != c['version'] or a['result'] != 'passed' or a.get('remote_status') != 'pass' and a is not attempt:
+            if a['version'] != c['version'] or a['result'] != 'passed' or a.get('remote_status') not in {'pass', 'pass_reevaluated'} and a is not attempt:
                 break
             streak += 1
-        attempt['remote_status'] = 'pass'
+        attempt['remote_status'] = status
         stable = streak >= m['config']['execution']['stability_passes']
         c.update(result='passed', pass_streak=streak, stability='stable' if stable else 'candidate',
                  stage='feedback' if stable else 'execution', work_status='finished' if stable else 'runnable')
@@ -152,7 +204,8 @@ def ingest(base, m, file):
     registry = m.get('remote_checks', {})
     # Validate every row before mutating anything. No arbitrary body/error fields accepted.
     for row in payload['results']:
-        require(isinstance(row, dict) and set(row) == {'id', 'checked_at', 'status', 'http_status', 'conditions', 'reason', 'variant'}, 'Invalid remote result row')
+        required = {'id', 'checked_at', 'status', 'http_status', 'conditions', 'reason', 'variant'}
+        require(isinstance(row, dict) and required <= set(row) and set(row) <= required | {'evidence'}, 'Invalid remote result row')
         key = row['id']; require(isinstance(key, str) and key in registry and key not in ids and registry[key].get('active', True), 'Unknown, stale or duplicate remote check')
         ids.add(key); entry = registry[key]; req = entry['request']; c = m['cases'][req['case_id']]
         require(row['variant'] == ('cache_busted' if req.get('cache_bust') else 'default'), 'Remote result used the wrong cache variant')
@@ -167,6 +220,14 @@ def ingest(base, m, file):
         require(isinstance(row['reason'], str) and row['reason'] in {'network', 'deadline', 'data_restored', 'immediate_timing_unverified', 'conditions_met', 'cache_window', 'http_unavailable', 'conditions_mismatch'}, 'Invalid remote reason')
         require(row['http_status'] is None or type(row['http_status']) is int and 100 <= row['http_status'] <= 599, 'Invalid HTTP status')
         require(isinstance(row['conditions'], list) and all(type(x) is bool for x in row['conditions']), 'Invalid condition outcomes')
+        if 'evidence' in row:
+            require(isinstance(row['evidence'], list) and len(row['evidence']) == len(req['conditions']), 'Invalid remote evidence')
+            for ev in row['evidence']:
+                require(isinstance(ev, dict) and set(ev) == {'section_sha256', 'excerpt'} and
+                        isinstance(ev['section_sha256'], str) and re.fullmatch(r'[a-f0-9]{64}', ev['section_sha256']) and
+                        isinstance(ev['excerpt'], str) and len(ev['excerpt']) <= 2000 and
+                        redact_evidence(ev['excerpt']) == ev['excerpt'] and
+                        hashlib.sha256(ev['excerpt'].encode()).hexdigest() == ev['section_sha256'], 'Invalid remote evidence')
         if row['status'] != 'unreachable':
             require(len(row['conditions']) == len(req['conditions']), 'Incomplete condition outcomes')
             require(checked <= timestamp(req['deadline']), 'Expired remote result cannot settle a case')
@@ -181,6 +242,9 @@ def ingest(base, m, file):
         if row['status'] == 'fail':
             require(checked >= timestamp(req['earliest_check_at']) or req.get('max_latency_seconds'), 'Mismatch inside cache window is still-cached')
             require(not (row['http_status'] is not None and 200 <= row['http_status'] < 300 and all(row['conditions'])), 'Failure contradicts observations')
+            if 'evidence' in row and (row['status'] == 'fail' or not all(row['conditions'])):
+                outcomes = [evaluate_condition(ev['excerpt'], cond) for ev, cond in zip(row['evidence'], req['conditions'])]
+                row['local_reevaluation'] = {'conditions': outcomes, 'all_conditions': all(outcomes), 'evaluator_version': '2'}
     receipt = digest(payload)
     receipts = m.setdefault('remote_ingests', [])
     if receipt in receipts:
@@ -192,6 +256,8 @@ def ingest(base, m, file):
         entry = registry[row['id']]
         require(not entry['history'] or timestamp(row['checked_at']) >= timestamp(entry['history'][-1]['checked_at']), 'Remote observation is older than the previous receipt')
         entry['history'].append(copy.deepcopy(row))
+        if row.get('local_reevaluation', {}).get('all_conditions'):
+            entry['local_reevaluation'] = row['local_reevaluation']
         entry['status'] = row['status']; affected.add(entry['request']['case_id'])
     receipts.append(receipt)
     active = [r for r in registry.values() if r.get('active', True)]
@@ -202,6 +268,32 @@ def ingest(base, m, file):
         fold(m, cid)
     event(m, 'remote_checks_ingested', receipt=receipt, case_ids=sorted(affected))
     return {'ingested': len(payload['results']), 'cleanup': cleanup, 'cases': {cid: m['cases'][cid]['result'] for cid in sorted(affected)}}
+
+
+def reevaluate(base, m, file):
+    """Settle a failed remote check from operator-supplied, auditable section text."""
+    payload = read_json(file)
+    require(isinstance(payload, dict) and set(payload) == {'id', 'section'}, 'Evidence must contain id and section')
+    cid = payload['id']; text = payload['section']
+    require(isinstance(cid, str) and cid in m.get('remote_checks', {}) and isinstance(text, str) and len(text) <= 2000, 'Invalid reevaluation evidence')
+    entry = m['remote_checks'][cid]; req = entry['request']; case = m['cases'][req['case_id']]
+    require(entry.get('active', True) and entry.get('status') == 'fail', 'Only active failed checks can be reevaluated')
+    attempt = case['attempts'][-1]
+    require(attempt['result'] == 'passed' and attempt.get('setup_verified') and attempt.get('cleanup_verified'), 'Local lifecycle and cleanup must be verified')
+    outcomes = [evaluate_condition(text, cond) for cond in req['conditions']]
+    require(all(outcomes), 'Local reevaluation does not satisfy every condition')
+    safe_text = redact_evidence(text, m['config'])
+    evidence_hash = hashlib.sha256(safe_text.encode()).hexdigest()
+    target = base / 'remote-checks' / ('reevaluated-' + cid + '-' + evidence_hash + '.json')
+    atomic_write(target, {'id': cid, 'section': safe_text, 'sha256': evidence_hash})
+    row = {'id': cid, 'checked_at': now(), 'status': 'pass_reevaluated', 'http_status': None,
+           'conditions': outcomes, 'reason': 'conditions_met', 'variant': 'local_reevaluation',
+           'evidence_source': 'local_reevaluation', 'evidence_file': str(target.relative_to(base)),
+           'evidence_sha256': evidence_hash,
+           'local_reevaluation': {'conditions': outcomes, 'evaluator_version': '2'}}
+    entry['history'].append(row); entry['status'] = 'pass_reevaluated'; entry['local_reevaluation'] = row['local_reevaluation']
+    fold(m, req['case_id'])
+    return {'id': cid, 'case': req['case_id'], 'result': case['result'], 'evidence_sha256': evidence_hash}
 
 
 def restore(base, m):

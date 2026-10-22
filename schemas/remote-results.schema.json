@@ -17,7 +17,11 @@
         "http_status": {"type": ["integer", "null"], "minimum": 100, "maximum": 599},
         "conditions": {"type": "array", "items": {"type": "boolean"}},
         "reason": {"enum": ["network", "deadline", "data_restored", "immediate_timing_unverified", "conditions_met", "cache_window", "http_unavailable", "conditions_mismatch"]},
-        "variant": {"enum": ["default", "cache_busted"]}
+        "variant": {"enum": ["default", "cache_busted"]},
+        "evidence": {"type": "array", "items": {"type": "object", "additionalProperties": false,
+          "required": ["section_sha256", "excerpt"],
+          "properties": {"section_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+                         "excerpt": {"type": "string", "maxLength": 2000}}}}
       }
     }}
   }

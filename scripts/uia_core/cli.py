@@ -19,7 +19,7 @@ def parser():
     p = JsonParser(description="Local UI automation workflow; commands emit JSON")
     commands = p.add_subparsers(dest="command", required=True)
     remote = commands.add_parser("remote-checks")
-    remote.add_argument("action", choices=["ingest", "restore"])
+    remote.add_argument("action", choices=["ingest", "restore", "reevaluate"])
     remote.add_argument("--run", required=True)
     remote.add_argument("file", nargs="?")
     go = commands.add_parser("go")
@@ -141,9 +141,9 @@ def dispatch(args, path, m):
     if hasattr(args, "case"):
         require(args.case in m["cases"], "Unknown case: " + args.case)
     if cmd == "remote-checks":
-        from .remote_checks import ingest, restore
-        require(args.action != "ingest" or args.file, "ingest requires results.json")
-        result = ingest(base, m, args.file) if args.action == "ingest" else restore(base, m)
+        from .remote_checks import ingest, restore, reevaluate
+        require(args.action == "restore" or args.file, args.action + " requires a JSON file")
+        result = ingest(base, m, args.file) if args.action == "ingest" else reevaluate(base, m, args.file) if args.action == "reevaluate" else restore(base, m)
         result["report"] = reports.make_report(base, m)
         return result
     if cmd == "spec":

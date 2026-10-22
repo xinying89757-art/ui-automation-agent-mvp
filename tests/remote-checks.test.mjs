@@ -29,3 +29,25 @@ test('ordered FAQ pairs reject missing extra reversed or single-line data',()=>{
  assert.ok(evaluate('## FAQ\nQ1\nA1\nQ2\nA2\n',condition));
  for(const text of ['Q1 A1\nQ2 A2','Q2\nA2\nQ1\nA1','Q1\nA1\nQ2\nA2\nQ3\nA3']) assert.equal(evaluate('## FAQ\n'+text,condition),false);
 });
+const faq = '## FAQ\n' +
+  '- **Q: UIA FAQ uia-0b66f30241cd450fa08f93aafdb8746d-TC-0033 5**\nA: UIA answer 5\n' +
+  '- **Q: UIA FAQ uia-0b66f30241cd450fa08f93aafdb8746d-TC-0033 4**\nA: UIA answer 4\n' +
+  '- **Q: UIA FAQ uia-0b66f30241cd450fa08f93aafdb8746d-TC-0033 3**\nA: UIA answer 3\n' +
+  '- **Q: UIA FAQ uia-0b66f30241cd450fa08f93aafdb8746d-TC-0033 2**\nA: UIA answer 2\n' +
+  '- **Q: faq标题**\nA: 内容内容\n';
+const faqPairs = [5,4,3,2].map(n => [`UIA FAQ uia-0b66f30241cd450fa08f93aafdb8746d-TC-0033 ${n}`, `UIA answer ${n}`]).concat([['faq标题','内容内容']]);
+test('exact markdown FAQ fixture parses in order; reordered and missing pairs fail',()=>{
+ const condition={op:'ordered_pairs',section:'FAQ',value:faqPairs};
+ assert.equal(evaluate(faq,condition),true);
+ const reordered=faq.replace('5**\nA: UIA answer 5','TEMP**\nA: TEMP').replace('4**\nA: UIA answer 4','5**\nA: UIA answer 5').replace('TEMP**\nA: TEMP','4**\nA: UIA answer 4');
+ assert.equal(evaluate(reordered,condition),false);
+ assert.equal(evaluate(faq.replace('- **Q: UIA FAQ uia-0b66f30241cd450fa08f93aafdb8746d-TC-0033 3**\nA: UIA answer 3\n',''),condition),false);
+ assert.equal(evaluate('## FAQ\nQ1\nA1\nQ2\nA2\n',{op:'ordered_pairs',section:'faq',value:[['Q1','A1'],['Q2','A2']]}),true);
+ assert.equal(evaluate('### FAQ\n1. **问：你好**\n答：世界\nQ: one A: two\n### Other\nignored\n',{op:'ordered_pairs',section:' faq ',value:[['你好','世界'],['one','two']]}),true);
+});
+test('checker evidence is bounded and redacts contact and credential patterns',async()=>{
+ const body='safe target person@example.com eyJabcdefghijk.abcdefghijk.abcdefghijk 13812345678';
+ const result=await checkOne({...check,conditions:[{op:'contains',value:'safe target'}]},response(body),()=>start+1000);
+ assert.equal(result.evidence.length,1); assert.ok(result.evidence[0].excerpt.length<=2000);
+ assert.doesNotMatch(result.evidence[0].excerpt,/person@example\.com|eyJabcdefghijk|13812345678/);
+});

@@ -24,6 +24,8 @@ assertions:
 - `runs/<run-id>/remote-checks/request.json`
 - `runs/<run-id>/remote-checks/check.mjs`
 
+远程检查器会随每个条件返回限长、脱敏证据。检查器解析错误属于自动化问题，不是产品缺陷；导入失败回执时会用本机同版解析器复核证据。也可将 `{ "id": "检查 ID", "section": "## FAQ\\n..." }` 保存为 JSON 并运行 `.venv/bin/python scripts/uia.py remote-checks reevaluate --run RUN evidence.json`，无需再次访问远端。该命令仅在本机生命周期和清理都已核验后结案，并保存证据及 SHA-256。
+
 `// @deferred A2` 只表示交接覆盖，不执行空断言、不计本机通过。用例结果为“待远程检查”；不因本机 HTTP 前台不可达而挂起后台准备。
 
 将上述两个文件复制到可访问目标前台的机器，Node 18+ 执行：

@@ -1,5 +1,6 @@
 import copy
 import datetime as dt
+import hashlib
 import json
 import sys
 import tempfile
@@ -9,6 +10,20 @@ from unittest.mock import patch
 from types import SimpleNamespace
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 from uia_core import common, remote_checks as remote
+
+FAQ_BODY = '''## FAQ
+- **Q: UIA FAQ uia-0b66f30241cd450fa08f93aafdb8746d-TC-0033 5**
+A: UIA answer 5
+- **Q: UIA FAQ uia-0b66f30241cd450fa08f93aafdb8746d-TC-0033 4**
+A: UIA answer 4
+- **Q: UIA FAQ uia-0b66f30241cd450fa08f93aafdb8746d-TC-0033 3**
+A: UIA answer 3
+- **Q: UIA FAQ uia-0b66f30241cd450fa08f93aafdb8746d-TC-0033 2**
+A: UIA answer 2
+- **Q: faq标题**
+A: 内容内容
+'''
+FAQ_PAIRS = [[f'UIA FAQ uia-0b66f30241cd450fa08f93aafdb8746d-TC-0033 {n}', f'UIA answer {n}'] for n in (5,4,3,2)] + [['faq标题','内容内容']]
 
 class RemoteChecksTests(unittest.TestCase):
     def setUp(self):
@@ -33,6 +48,41 @@ class RemoteChecksTests(unittest.TestCase):
                             'reason':{'pass':'conditions_met','fail':'conditions_mismatch','still-cached':'cache_window','unreachable':'network'}[status]}]}
     def ingest(self, payload):
         f=self.base/'fake-results.json'; common.atomic_write(f,payload); return remote.ingest(self.base,self.m,f)
+    def configure_faq(self):
+        self.check['conditions']=[{'op':'ordered_pairs','section':'FAQ','value':FAQ_PAIRS}]
+        common.atomic_write(self.request, {'schema_version':'uia-remote-request.v1','run_id':'R','checks':[self.check]})
+    def evidence(self, text):
+        return [{'section_sha256':hashlib.sha256(text.encode()).hexdigest(),'excerpt':text}]
+    def test_ordered_pairs_parser_matches_exact_markdown_and_legacy(self):
+        condition={'op':'ordered_pairs','section':'FAQ','value':FAQ_PAIRS}
+        self.assertTrue(remote.evaluate_condition(FAQ_BODY,condition))
+        self.assertFalse(remote.evaluate_condition(FAQ_BODY.replace('answer 5','answer 4',1),condition))
+        missing=FAQ_BODY.replace('- **Q: UIA FAQ uia-0b66f30241cd450fa08f93aafdb8746d-TC-0033 3**\nA: UIA answer 3\n','')
+        self.assertFalse(remote.evaluate_condition(missing,condition))
+        self.assertTrue(remote.evaluate_condition('## FAQ\nQ1\nA1\nQ2\nA2\n',{'op':'ordered_pairs','section':'faq','value':[['Q1','A1'],['Q2','A2']]}))
+        self.assertTrue(remote.evaluate_condition('### FAQ\n- **问：你好**\n答：世界\nQ: one A: two\n### Else\nignored',{'op':'ordered_pairs','section':'FAQ','value':[['你好','世界'],['one','two']]}))
+    def test_fail_with_matching_evidence_is_checker_automation_failure(self):
+        self.configure_faq(); p=self.payload('fail'); p['results'][0]['evidence']=self.evidence(FAQ_BODY)
+        self.assertEqual(self.ingest(p)['cases']['C'],'automation_failure')
+        history=self.m['remote_checks']['check1']['history'][0]
+        self.assertTrue(history['local_reevaluation']['all_conditions'])
+        self.assertEqual(history['local_reevaluation']['evaluator_version'],'2')
+    def test_fail_with_nonmatching_evidence_is_business_failure(self):
+        self.configure_faq(); p=self.payload('fail'); p['results'][0]['evidence']=self.evidence(FAQ_BODY.replace('UIA answer 5','wrong'))
+        self.assertEqual(self.ingest(p)['cases']['C'],'business_failure')
+    def test_evidence_redaction_and_manual_reevaluation_path(self):
+        self.configure_faq()
+        text='## FAQ\n- **Q: contact person@example.com eyJabcdefghijk.abcdefghijk.abcdefghijk 13812345678 1234567890123**\nA: secret'
+        clean=remote.redact_evidence(text)
+        for secret in ('person@example.com','eyJabcdefghijk','13812345678','1234567890123'): self.assertNotIn(secret,clean)
+        self.assertTrue(remote.evaluate_condition(FAQ_BODY, self.check['conditions'][0]))
+        self.assertEqual(self.ingest(self.payload('fail'))['cases']['C'],'business_failure')
+        evidence=self.base/'evidence.json'; common.atomic_write(evidence,{'id':'check1','section':FAQ_BODY})
+        result=remote.reevaluate(self.base,self.m,evidence)
+        self.assertEqual(result['result'],'passed')
+        self.assertEqual(self.m['cases']['C']['remote_status'],'pass_reevaluated')
+        self.assertEqual(self.m['remote_checks']['check1']['history'][-1]['evidence_source'],'local_reevaluation')
+        self.assertTrue((self.base/self.m['remote_checks']['check1']['history'][-1]['evidence_file']).is_file())
     def test_pass_requires_local_and_remote_and_is_idempotent(self):
         payload=self.payload(); self.assertEqual(self.ingest(payload)['cases']['C'],'passed')
         self.assertEqual(self.m['cases']['C']['stability'],'stable')

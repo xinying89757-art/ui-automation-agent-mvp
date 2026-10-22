@@ -365,10 +365,17 @@ def execute(args):
         area = {"page": None, "content-admin": "内容管理", "editor": "编辑网站"}[args.node]
         if args.run:
             with locked_run(args.run) as (path, m):
+                import time as _time
+                started, t0 = now(), _time.monotonic()
                 snapshot_result = profiles.invoke_snapshot(m["config"], path.parent / "runner", area, args.manual, args.frame, args.scope, args.open_target, args.hover, args.click)
                 known = any(c.get("registration") for c in m["cases"].values())
+                # Exploration baseline: one row per snapshot (method/where/how long); no page content.
                 m.setdefault("exploration", []).append({"node": args.node, "known_page": known,
-                                                         "re_explored": known, "at": now()})
+                                                         "re_explored": known, "at": now(), "started_at": started,
+                                                         "duration_ms": int((_time.monotonic() - t0) * 1000),
+                                                         "method": "snapshot", "frame": args.frame, "scope": args.scope,
+                                                         "open_target": args.open_target, "clicks": len(args.click or []),
+                                                         "hover": bool(args.hover)})
                 event(m, "snapshot_completed", node=args.node, known_page=known)
                 save(path, m)
                 return snapshot_result

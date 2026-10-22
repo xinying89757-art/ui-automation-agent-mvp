@@ -29,12 +29,13 @@ Assertions have A-number, after S-number, exact imported expectation cell/line i
 and nonempty checks. Preserve numbering, punctuation, all business clauses and blank
 negative inputs. Never replace public-file expectations with editor-value assertions.
 Absent/ambiguous expectations become questions in the upfront checklist. Locator
+uncertainty goes to exploration, not business questions.
 For each mutating save, add an optional top-level read_back entry with an R-number, the
 save step, field target and intended value, a named reopen target sequence, and save_target
 that references its network rule. The generated test checks the save business response,
 reopens the editor and records redacted intended/actual evidence; mismatches are classified
 as save_not_persisted. Lint warns when a mutating save has no read-back declaration.
-uncertainty goes to exploration, not business questions. Cross-case duplicate checks
+Cross-case duplicate checks
 are invalid. Close steps require hidden assertions; technical teardown stays in fixtures.
 
 Run spec lint, spec gen and optionally spec render through scripts/uia.py. Unknown
@@ -45,7 +46,12 @@ Coverage derives from // @step S1 and await businessAssertion('A1', ...); no han
 Explore once per node: knowledge, then bounded snapshot --node editor --frame
 '#backstage-innerpage' or --open-target llms --scope '#dialog', then generator only if
 needed. External invocation: timeout 2h codex exec ... < /dev/null. No delegation is
-required. Strip icon glyphs, scope dialog locators, disambiguate repeated role/name
+required. Each new page node: explore once, write its named targets into page-map.yaml and the
+case-specs before generating; later cases reuse them. Snapshot calls are logged in
+run.json exploration (method/time). Generator = Playwright Test Agents sub-agent with
+default_tools_approval_mode=approve; its/healer output may change locators/waits only.
+Midscene (DeepSeek key only from /home/box/.secrets/deepseek.env) only for visual
+expectations during exploration, never in replay. Strip icon glyphs, scope dialog locators, disambiguate repeated role/name
 pairs with a container. Never persist session snapshot refs in knowledge.
 
 Run with run-batch/wait; triage environment → session → data → locator/timing → business.

@@ -336,6 +336,47 @@ def code_files(base, registration):
     return {str(p.relative_to(runner.resolve())): file_hash(p) for p in sorted(visited)}
 
 
+def page_map_slice(base, c):
+    """Only the page-map entries a case-spec references (transitively) version the case; new targets do not rerun it."""
+    path = base / "runner/knowledge/page-map.yaml"
+    if not path.is_file():
+        path = ROOT / "assets/playwright-runner/knowledge/page-map.yaml"
+    catalog = read_yaml(path) if path.is_file() else {}
+    spec_path = inside(base, c["case_spec"])
+    spec = read_yaml(spec_path) if spec_path.is_file() else {}
+    sections = {k: catalog.get(k) or {} for k in ("pages", "targets")}
+    strings = set()
+    def walk(value):
+        if isinstance(value, dict):
+            for v in value.values():
+                walk(v)
+        elif isinstance(value, list):
+            for v in value:
+                walk(v)
+        elif isinstance(value, str):
+            strings.add(value)
+    walk(spec)
+    seen, pending = {}, [x for x in strings if any(x in sec for sec in sections.values())]
+    while pending:
+        name = pending.pop()
+        if name in seen:
+            continue
+        row = next((sec[name] for sec in sections.values() if name in sec), None)
+        seen[name] = row
+        refs = set()
+        walk_refs = [row]
+        while walk_refs:
+            v = walk_refs.pop()
+            if isinstance(v, dict):
+                walk_refs += list(v.values())
+            elif isinstance(v, list):
+                walk_refs += v
+            elif isinstance(v, str) and any(v in sec for sec in sections.values()):
+                refs.add(v)
+        pending += [r for r in refs if r not in seen]
+    return digest({"slice": seen, "schema": catalog.get("schema_version")})
+
+
 def case_version(base, m, c):
     registration = c["registration"]
     cfg = m["config"]
@@ -347,7 +388,10 @@ def case_version(base, m, c):
     relevant_config["execution"] = {k: cfg["execution"][k] for k in ("workers", "timeout_ms")}
     from .profiles import network_fingerprint
     relevant_config["proxy_fingerprint"] = network_fingerprint(cfg)
-    return digest({"files": code_files(base, registration), "source": c["source_hash"],
+    files = code_files(base, registration)
+    if "knowledge/page-map.yaml" in files and c.get("case_spec"):
+        files["knowledge/page-map.yaml"] = page_map_slice(base, c)
+    return digest({"files": files, "source": c["source_hash"],
                    "intent": file_hash(inside(base, c["intent"])),
                    "plan": file_hash(inside(base, c["reuse_plan"])),
                    "case_spec": file_hash(inside(base, c.get("case_spec", "__missing__"))),

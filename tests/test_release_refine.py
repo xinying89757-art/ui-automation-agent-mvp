@@ -67,3 +67,21 @@ class ChecklistResumeTests(unittest.TestCase):
         experience.apply_checklist(m, q)
         self.assertEqual(m['cases']['C1']['work_status'], 'pending')
         self.assertEqual(m['cases']['C2']['work_status'], 'waiting_human')
+
+
+class PageMapSliceTests(unittest.TestCase):
+    def test_unrelated_new_targets_do_not_change_case_version_slice(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            common.atomic_write(base / 'C1/case-spec.yaml', {'start_page': 'content-admin', 'steps': [{'target': 'faq.add'}]}, as_yaml=True)
+            pm = base / 'runner/knowledge/page-map.yaml'
+            def write(targets):
+                common.atomic_write(pm, {'schema_version': 'page-map.v1', 'pages': {'content-admin': {'entry': '内容管理'}},
+                                         'targets': targets}, as_yaml=True)
+            c = {'case_spec': 'C1/case-spec.yaml'}
+            write({'faq.add': {'selector': '.a', 'dialog': 'faq.dialog'}, 'faq.dialog': {'selector': '.d'}})
+            first = workflow.page_map_slice(base, c)
+            write({'faq.add': {'selector': '.a', 'dialog': 'faq.dialog'}, 'faq.dialog': {'selector': '.d'}, 'other.x': {'selector': '.x'}})
+            self.assertEqual(workflow.page_map_slice(base, c), first)
+            write({'faq.add': {'selector': '.a', 'dialog': 'faq.dialog'}, 'faq.dialog': {'selector': '.changed'}})
+            self.assertNotEqual(workflow.page_map_slice(base, c), first)

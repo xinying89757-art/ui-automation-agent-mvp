@@ -72,9 +72,15 @@ DOM evidence. Scope with `--frame '#backstage-innerpage'` or `--scope '#dialog'`
 - `execution.stability_passes` 1 means the first clean pass is the daily deliverable
   (`stable`). Nightly regression sets it to 2 and needs a second independent batch.
   Do not relabel a single pass as stable when the run is configured for 2.
-- A business expectation mismatch is a `business_failure`; preserve it. Locator/timing/
-  generation failures may use `repair` after a saved diagnosis and successful cleanup,
-  at most two repair rounds. Re-register changed scripts and restart the success count.
+- A business expectation mismatch is a `business_failure`; preserve it. Before classifying
+  a failure inside `businessAssertion` as a product defect, check whether the locator ever
+  resolved. Strict-mode violations, zero matches, and timeouts waiting for locator resolution
+  are automation failures even inside the wrapper. Route these through the locator/wait-only
+  repair path; the healer gate must confirm the assertion signature is unchanged, then rerun
+  once. Only a failure at the assertion value after that repaired run is a suspected defect.
+  Do not reinterpret an assertion value mismatch as a locator miss. Other locator/timing/
+  generation failures may use `repair` after saved diagnosis and successful cleanup, at most
+  two repair rounds. Re-register changed scripts and restart the success count.
 - Cleanup failure blocks only affected fixtures. Restore them through observed UI,
   save cleanup verification and call `resolve-fixture`, then answer the scoped question.
 - If interrupted, inspect `next`/`status`. `recover` consumes a completed batch report;
@@ -96,9 +102,15 @@ passed, relabel one PASS as stable, or mutate the long-term knowledge bases here
 ## Deferred checks and cleanup leases
 
 Case-spec defer_public resources do not require local public_frontend reachability.
-Run all local operations first. A cleanup_pending lease is explicitly unverified,
-never a clean pass. Snapshot before mutation under protected run-local state.
-remote-checks ingest restores overlapping snapshots in reverse order after final
-results. On deadline/cancellation invoke remote-checks restore; verify its evidence.
-Do not start another batch while leases remain. still-cached/unreachable stay
-pending remote rather than waiting for a human or becoming PASS. Keep all attempts.
+Run every case that does not need the deferred data hold first. Reserve an environment
+hold before starting remote-deferred preparation; persist it in private `.auth/` memory so
+other runs/clones cannot mutate that site's data, while read-only cases remain runnable.
+Prepare remote-deferred cases after independent work and emit request.json only after all
+such preparations are complete. Immediate resources need `cache_bust: true` and
+`earliest_check_at == saved_at`; preserve the executed result variant in the receipt.
+A cleanup_pending lease is explicitly unverified, never a clean pass. Snapshot before
+mutation under protected run-local state. remote-checks ingest restores overlapping
+snapshots in reverse order after final results. On deadline/cancellation invoke
+remote-checks restore; verify its evidence. A different run may execute read-only cases
+while a hold exists, but cannot mutate site data. still-cached/unreachable stay pending
+remote rather than waiting for a human or becoming PASS. Keep all attempts.

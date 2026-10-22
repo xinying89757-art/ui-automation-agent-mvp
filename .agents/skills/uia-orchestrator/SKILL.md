@@ -17,11 +17,16 @@ do not invoke Claude Code `Task()` or assume a shell script can invoke the model
 
 For go runs, this section supersedes the legacy human-question routing below.
 Use `python3 scripts/uia.py go <xlsx> --profile <p> --cases TC-0004,TC-0016`.
-The CLI resumes a matching run, checks the environment, binds existing scripts first,
-queues missing case-spec tasks and writes checklist.md with A/B/C blocks in Chinese.
-Finish missing case-spec tasks before presenting the checklist; its draft is not a question.
-Present the final checklist once; record `uia.py answer --run R "A ...，B 同意，C ..."`.
-Explicit answers persist in environment memory; zero unknown answers means zero questions.
+The CLI resumes the run matching the workbook and environment, regardless of the requested
+case subset; it reports the selected run and whether the subset changed. Existing generated
+specs from lint-passing case-specs take precedence over duplicate handwritten specs, and
+the report names the selected script and warns when a duplicate exists. It checks the
+environment, binds existing scripts first, queues missing case-spec tasks and writes
+checklist.md with A/B/C blocks in Chinese. Finish missing case-spec tasks before presenting
+the checklist; its draft is not a question. Present the final checklist once; record
+`uia.py answer --run R "A ...，B 同意，C ..."`. Explicit answers persist in environment
+memory; zero unknown answers means zero questions. When every checklist item came from
+environment memory, report `清单全部来自环境记忆（N 项），本次 0 问`.
 Do not ask during execution. Suspend newly gated cases and write review.md instead.
 Keep source expectations; assertion-change proposals default to not applied.
 Record every incoming user turn once using `session-turn --run R --id <stable-id>

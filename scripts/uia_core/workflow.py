@@ -67,6 +67,8 @@ def question(m, kind, subject, prompt, case_ids, key=None, attempted=None, sheet
                      "resume_states": {}, "sheet": sheet}
     if kind in {"demo", "record_request"}:
         q.update(interaction=interaction, page=page)
+    elif page:
+        q["page"] = page
     if m.get("interaction_mode") == "once" and subject != "run-preconditions":
         q["status"] = "deferred"
     q["attempted"] = list(dict.fromkeys(q["attempted"] + (attempted or [])))
@@ -474,11 +476,54 @@ def refresh(base, m):
             if version != c["version"]:
                 reset_case(c, "code_or_dependency_changed", "execution")
                 c.update(version=version, work_status="runnable")
+    release_resolved(m)
     for q in m["questions"].values():
         if q["status"] in {"open", "deferred"}:
             for cid in q["case_ids"]:
                 if cid in m["cases"] and m["cases"][cid]["work_status"] != "finished":
                     m["cases"][cid]["work_status"] = "waiting_human"
+
+
+def release_resolved(m):
+    """A deferred review item about a page is closed once shared knowledge confirms that page's entry."""
+    from .entries import resolve
+    released = []
+    for q in m.get("questions", {}).values():
+        if q["status"] != "deferred" or q.get("subject") == "run-preconditions":
+            continue
+        page = q.get("page")
+        hint = resolve(page) if page else None
+        if not (hint and hint.get("confirmed") and not hint.get("not_a_page")):
+            continue
+        q.update(status="closed", resolution="entry_confirmed_by_knowledge", closed_at=now())
+        for cid in q["case_ids"]:
+            c = m["cases"].get(cid)
+            if c and c["work_status"] == "waiting_human":
+                prior = q.get("resume_states", {}).get(cid)
+                c["work_status"] = prior if prior and prior != "waiting_human" else "pending"
+        released.append(q["id"])
+        event(m, "question_resolved_by_knowledge", question_id=q["id"], page=page)
+    return released
+
+
+def unresolved_targets(base, m, c):
+    from . import specs
+    path = specs.spec_path(base, c)
+    if not path.is_file():
+        return []
+    found = []
+    def walk(value):
+        if isinstance(value, dict):
+            for k, v in value.items():
+                if k in {"target", "start_page"} and isinstance(v, str) and v.startswith(("?", "？")):
+                    found.append(v)
+                else:
+                    walk(v)
+        elif isinstance(value, list):
+            for v in value:
+                walk(v)
+    walk(read_yaml(path))
+    return list(dict.fromkeys(found))
 
 
 def next_task(base, m):
@@ -508,6 +553,20 @@ def next_task(base, m):
     repairs = [c for c in available if c["stage"] == "repair"]
     if repairs:
         return {"action": "repair", "skill": "uia-runtime", "case_ids": [c["case_id"] for c in repairs[:budget]]}
+    if m.get("checklist_issued"):
+        refine = [(c, unresolved_targets(base, m, c)) for c in available]
+        refine = [(c, t) for c, t in refine if t]
+        if refine:
+            from .common import ROOT
+            catalog = read_yaml(ROOT / "assets/playwright-runner/knowledge/page-map.yaml")
+            known = sorted((catalog.get("targets") or {}).keys())
+            return {"action": "refine_specs", "skill": "uia-case-spec",
+                    "case_ids": [c["case_id"] for c, _ in refine[:budget]],
+                    "unresolved": {c["case_id"]: t for c, t in refine[:budget]},
+                    "known_targets": known,
+                    "instruction": "清单已定稿：把规格中的 ?目标 替换成已知 page-map 目标（generator 结果先用 hints promote 写入），"
+                                   "每条 Excel 期望拆成可观察的 checks；start_page 用入口提示确认路线所在区域（如 content-admin），不要沿用草稿占位；仍未知的目标先 snapshot --entry/generator --entry 探索。"
+                                   "改完运行 spec lint/gen，再按 next 执行；不要因此结束本轮或提问。"}
     selected = [c for c in available if c["stage"] == "spec" or (m.get("pipeline") == "case-spec.v1" and c["stage"] in {"intent", "matching"})][:budget]
     if selected:
         return {"action": "spec", "skill": "uia-case-spec", "case_ids": [c["case_id"] for c in selected],

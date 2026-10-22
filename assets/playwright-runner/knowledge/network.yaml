@@ -1,0 +1,20 @@
+schema_version: network-catalog.v1
+rules:
+  llms.save:
+    method: POST
+    path: /phoenix/customizeFile/llms/save
+    capabilities:
+    - delay
+    - count
+    - release
+    evidence: docs/phase4-verification.md
+  faq.create:
+    method: POST
+    path: /faq/edit
+    fields:
+      id: phoenixFaq.encodePkId
+      title: phoenixFaq.faqTitle
+      content: phoenixFaq.faqContent
+    capabilities:
+    - authenticated-form-create
+    evidence: docs/phase4-verification.md

@@ -1,9 +1,10 @@
 schema_version: case-spec.v1
 case_id: TC-0055
 intent: 保存处理中禁用重复提交、取消和关闭
-automatable: {status: needs-env, reason: 需词表指定的环境}
-required_env:
-- delayed_save
+automatable:
+  status: 'yes'
+  reason: 后台本机运行；公共文件交接远程检查，网络时序由拦截器提供
+required_env: []
 data_prep:
   llms.enabled: true
   llms.source: system
@@ -11,31 +12,64 @@ mutation_scope:
 - llms.txt
 start_page: editor
 steps:
-- {id: S1, verb: fill, target: txt.overview, value: phase2-save-in-progress}
-- {id: S2, verb: click, target: txt.save}
-- {id: S3, verb: click, target: '?save.repeat_attempt'}
-- {id: S4, verb: click, target: '?cancel.while_saving'}
-- {id: S5, verb: click, target: '?close.while_saving'}
-- {id: S6, verb: wait, target: txt.saved}
+- id: S1
+  verb: fill
+  target: txt.overview
+  value: phase2-save-in-progress
+- id: S2
+  verb: observe
+  target: txt.saved
+- id: S3
+  verb: network_delay
+  target: network.llms.save
+  value: '12000'
+- id: S4
+  verb: double_click
+  target: txt.save
+- id: S5
+  verb: attempt_click
+  target: txt.cancel
+- id: S6
+  verb: attempt_click
+  target: txt.close
+- id: S7
+  verb: network_release
+  target: network.llms.save
+- id: S8
+  verb: wait
+  target: txt.saved
 assertions:
 - id: A1
-  after: S2
+  after: S4
   excel: 1. 保存按钮立即变为不可用并显示“保存中…”。
   checks:
-  - {target: txt.save, op: disabled}
-  - {target: txt.save, op: text, value: 保存中…}
+  - target: txt.save
+    op: disabled
+  - target: txt.save
+    op: visible_text
+    value: 保存中…
 - id: A2
-  after: S5
+  after: S6
   excel: 2. 重复保存、取消和关闭均不能执行，弹窗保持显示。
   checks:
-  - {target: txt.dialog, op: visible}
-  - {target: '?save.request_count', op: count, value: 1}
-  - {target: '?save.controls_blocked', op: text, value: 'save,cancel,close'}
+  - target: txt.dialog
+    op: visible
+  - target: network.llms.save
+    op: request_count
+    value: 1
 - id: A3
-  after: S6
+  after: S8
   excel: 3. 保存成功后显示提示并关闭弹窗，全程只产生一次可见保存结果。
   checks:
-  - {target: txt.saved, op: text, value: llms.txt 配置已保存}
-  - {target: txt.dialog, op: hidden}
-  - {target: '?save.visible_results', op: count, value: 1}
+  - target: txt.saved
+    op: text
+    value: llms.txt 配置已保存
+  - target: txt.dialog
+    op: hidden
+  - target: txt.saved
+    op: occurrence_count
+    value: 1
+  - target: network.llms.save
+    op: request_count
+    value: 1
 questions: []

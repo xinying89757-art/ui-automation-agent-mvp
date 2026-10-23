@@ -120,8 +120,7 @@ def select(case, budget=None):
         if budget is not None and cost > budget:
             discarded.extend(row['id'] for _, row in ranked[position:])
             break
-        selected.append(compact); used = cost; item['hit_count'] = int(item.get('hit_count', 0)) + 1
-        item['last_hit'] = datetime.now(timezone.utc).date().isoformat()
+        selected.append(compact); used = cost
         if record.get('kind') == 'component': selected_patterns.update(record.get('patterns', []))
     # Related patterns are loaded after selecting page/component files, not during corpus scan.
     for pattern_id in sorted(selected_patterns):
@@ -138,9 +137,8 @@ def select(case, budget=None):
         if budget is not None and cost > budget:
             discarded.append(ident)
             continue
-        selected.append(compact); used = cost; item['hit_count'] = int(item.get('hit_count', 0)) + 1
-        item['last_hit'] = datetime.now(timezone.utc).date().isoformat()
-    atomic_write(knowledge.ROOT / 'index.yaml', {'schema_version': 'uia-knowledge-index.v2', 'entries': index}, as_yaml=True)
+        selected.append(compact); used = cost
+    # Read-only: usage stats (hit_count/last_hit) are aggregated once per run by knowledge.writeback.
     return {'selected': selected, 'discarded': list(dict.fromkeys(discarded)), 'read_ids': read_files,
             'max_tokens': budget, 'used_tokens': used, 'truncated': bool(discarded) and budget is not None,
             'query_tokens': len(qtokens)}

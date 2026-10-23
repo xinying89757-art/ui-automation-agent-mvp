@@ -439,6 +439,14 @@ def writeback(base, m):
             changes.append({'kind': 'target', 'name': name, 'case_ids': ids, 'verification_count': sum(case_passes.values())})
     # Aggregate evidence by stable target and independent execution batches.
     index = load_index() if (ROOT / 'index.yaml').is_file() else []
+    match_path = base / (m.get('knowledge_match') or {}).get('file', 'knowledge-match.json')
+    matched = read_json(match_path).get('matched', {}) if match_path.is_file() else {}
+    for item in index:
+        if m['run_id'] not in item.get('observed_runs', []):
+            hits = sum(1 for rows in matched.values() if item['id'] in rows)
+            if hits:
+                item['hit_count'] = int(item.get('hit_count', 0)) + hits
+                item['last_hit'] = __import__('datetime').date.today().isoformat()
     for item in index:
         target_name = item['id'].removeprefix('target.')
         target_cases = [case for case in cases if target_name in _spec_targets(base, case)]

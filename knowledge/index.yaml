@@ -13,7 +13,7 @@ entries:
   last_hit: '2026-10-23'
   summary: 编辑网站
   path: pages/page-editor.yaml
-  hit_count: 54
+  hit_count: 47
   pass_count: 0
   fail_count: 0
   observed_runs:

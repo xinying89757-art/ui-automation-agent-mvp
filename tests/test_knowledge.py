@@ -47,7 +47,19 @@ class KnowledgeTests(unittest.TestCase):
         self.assertLessEqual(selected['used_tokens'], 300)
         index = common.read_yaml(knowledge.ROOT/'index.yaml')
         self.assertTrue(all({'id','page','route','frame','tags','version','status','last_verified','summary','path'} <= set(row) for row in index['entries']))
-        self.assertEqual(next(row for row in index['entries'] if row['id']=='target.faq.answer')['hit_count'], 1)
+        self.assertEqual(next(row for row in index['entries'] if row['id']=='target.faq.answer')['hit_count'], 0)  # query is read-only
+
+    def test_hits_are_aggregated_once_per_run_by_writeback(self):
+        pages={'schema_version':'page-map.v1','pages':{'faq':{}},'targets':{'faq.answer':{'selector':'.a','label':'FAQ'}}}
+        common.atomic_write(knowledge.ROOT/'page-map.yaml', pages, as_yaml=True); knowledge.sync_layout(pages=pages)
+        base = Path(tempfile.mkdtemp()); self.addCleanup(lambda: __import__('shutil').rmtree(base, True))
+        common.atomic_write(base/'km.json', {'matched': {'C1': {'target.faq.answer': {}}, 'C2': {'target.faq.answer': {}}}})
+        m = {'run_id': 'R1', 'cases': {}, 'knowledge_match': {'file': 'km.json'}}
+        for _ in range(2):
+            knowledge.writeback(base, m)
+        row = next(r for r in common.read_yaml(knowledge.ROOT/'index.yaml')['entries'] if r['id']=='target.faq.answer')
+        self.assertEqual(row['hit_count'], 2)
+        self.assertTrue(row['last_hit'])
 
     def test_default_query_is_untruncated_and_hard_filters_page_version_and_status(self):
         pages={'schema_version':'page-map.v1','pages':{'faq':{},'editor':{}},'targets':{

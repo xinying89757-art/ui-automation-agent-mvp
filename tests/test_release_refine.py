@@ -139,3 +139,22 @@ class SuspendedTests(unittest.TestCase):
         m = {'cases': {'C1': {'attempts': [], 'stage': 'finished', 'work_status': 'finished', 'result': 'suspended'}}, 'history': []}
         self.assertEqual(workflow.reopen_unearned(m), [])
         self.assertIn('suspended', common.RESULTS)
+
+
+class TodoScriptSchedulingTests(ReleaseAndRefineTests):
+    def test_runnable_case_with_todo_script_is_refined_not_batched(self):
+        entries.confirm(self.m, '新版内容编辑器', ['click:content-admin', 'click:text=产品'])
+        workflow.release_resolved(self.m)
+        (self.base / 'runner').mkdir()
+        (self.base / 'runner/a.spec.ts').write_text("test('x', async () => {\n  // TODO explore: markdown.dialog\n});\n")
+        (self.base / 'runner/b.spec.ts').write_text("test('y', async () => {});\n")
+        for cid, f in (('C1', 'a'), ('C2', 'b')):
+            self.m['cases'][cid].update(work_status='runnable', registration={'script': 'runner/%s.spec.ts' % f})
+        self.m['preflight'] = {'status': 'passed'}
+        with patch.object(workflow, 'refresh'), patch('uia_core.preconditions.triage', return_value=[]):
+            task = workflow.next_task(self.base, self.m)
+            self.assertEqual((task['action'], task['case_ids']), ('run-batch', ['C2']))
+            self.m['cases']['C2']['work_status'] = 'finished'
+            task = workflow.next_task(self.base, self.m)
+        self.assertEqual(task['action'], 'refine_specs')
+        self.assertIn('TODO explore: markdown.dialog', task['unresolved']['C1'])

@@ -610,6 +610,18 @@ def unresolved_targets(base, m, c):
     return list(dict.fromkeys(found))
 
 
+def script_todos(base, c):
+    """Exploration TODO labels left in a case's generated script (run-batch's static gate rejects them)."""
+    script = (c.get("registration") or {}).get("script")
+    if not script:
+        return []
+    try:
+        body = inside(base, script).read_text()
+    except (OSError, UiaError):
+        return []
+    return list(dict.fromkeys(line.split("TODO explore:", 1)[1].strip() for line in body.splitlines() if "TODO explore:" in line))
+
+
 def next_task(base, m):
     if m.get("active_batch"):
         from .runtime import batch_running
@@ -629,7 +641,8 @@ def next_task(base, m):
     budget = m["config"]["execution"]["batch_size"]
     rank = lambda c: ({"P0": 0, "P1": 1, "P2": 2, "P3": 3}.get(c["priority"].upper(), 4), c["case_id"])
     available = sorted([c for c in cases if c["work_status"] not in {"waiting_human", "finished"}], key=rank)
-    ready = [c for c in available if c["work_status"] == "runnable"]
+    # Never schedule what run-batch's static gate will reject: scripts with exploration TODOs go to refine_specs.
+    ready = [c for c in available if c["work_status"] == "runnable" and not script_todos(base, c)]
     if ready:
         if not m.get("preflight") or m["preflight"]["status"] != "passed":
             return {"action": "preflight", "skill": "uia-runtime", "case_ids": [c["case_id"] for c in ready]}
@@ -640,7 +653,7 @@ def next_task(base, m):
     if repairs and not untried:
         return {"action": "repair", "skill": "uia-runtime", "case_ids": [c["case_id"] for c in repairs[:budget]]}
     if m.get("checklist_issued"):
-        refine = [(c, unresolved_targets(base, m, c)) for c in available]
+        refine = [(c, unresolved_targets(base, m, c) + ["TODO explore: " + t for t in script_todos(base, c)]) for c in available]
         refine = [(c, t) for c, t in refine if t]
         if refine:
             from .common import ROOT

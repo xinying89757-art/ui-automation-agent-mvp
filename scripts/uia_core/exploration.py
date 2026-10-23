@@ -25,10 +25,14 @@ def save_snapshot_evidence(base, relative, args, result, cfg=None):
     return str(path.relative_to(base))
 
 
-def log(m, method, purpose, result, note, base=None, case_id=None, target=None, evidence=None):
+def log(m, method, purpose, result, note, base=None, case_id=None, target=None, evidence=None, duration_ms=None):
     require(purpose and purpose.strip(), 'Exploration purpose must name a specific node')
     require(method in {'snapshot', 'generator', 'midscene'} and result in {'ok', 'failed'}, 'Invalid exploration method/result')
+    require(duration_ms is None or type(duration_ms) is int and duration_ms >= 0,
+            'Exploration duration must be a non-negative integer in milliseconds')
     row = {'at': now(), 'method': method, 'purpose': purpose, 'result': result, 'note': note}
+    if duration_ms is not None:
+        row['duration_ms'] = duration_ms
     if case_id is not None:
         require(base is not None and case_id in m.get('cases', {}), 'Exploration case is unknown')
         require(isinstance(target, str) and target.strip(), 'Case exploration reports require --target')
@@ -38,7 +42,7 @@ def log(m, method, purpose, result, note, base=None, case_id=None, target=None, 
         target_name = target.strip().lstrip('?？')
         require(target_name, 'Exploration target is empty')
         row.update(case_id=case_id, target=target_name, evidence=str(evidence_path.relative_to(base)))
-        attempt = {key: row[key] for key in ('at', 'method', 'purpose', 'result', 'target', 'evidence', 'note')}
+        attempt = {key: row[key] for key in ('at', 'method', 'purpose', 'result', 'target', 'evidence', 'note', 'duration_ms') if key in row}
         m['cases'][case_id].setdefault('explore_attempts', []).append(attempt)
     import json
     require(scrub_text(json.dumps(row, ensure_ascii=False), m['config']) == json.dumps(row, ensure_ascii=False), 'Exploration metadata contains sensitive values')
@@ -127,6 +131,7 @@ GENERATOR_PROMPT = """You are a Playwright Test Agents generator used ONLY for e
 Node: {purpose}
 Goal / plan: {plan}
 Starting entry (reach this route before exploring the interaction): {entry_hint}
+Case-spec targets to map (question-mark targets are run-local placeholders): {case_targets}
 Rules: call generator_setup_page with seedFile "tests/seed.spec.ts" first (the page is the authenticated backend area), then
 follow Starting entry's node/open_target and ordered steps FIRST. The seed already opens its node area;
 do not switch to another area. Entry clicks run outside frame_hint; use that frame only after reaching entry.
@@ -143,6 +148,7 @@ Final answer: ONE fenced ```json block {{"reached": true|false, "reached_entry":
 {{"verb": "click|hover|fill|press", "target": <TARGET>, "value": "<literal non-secret text typed, e.g. / for a slash menu>"}}],
 "frames": [iframe selectors on the way], "completion_signal": "<locator + visible text>",
 "targets": {{"<proposed.name>": <TARGET>}}, "notes": "<=3 short sentences"}}.
+Also return "step_targets": [{{"case_id": "CASE", "step_id": "S1", "placeholder": "?name or the exact existing spec target", "target": "stable.catalog.target", "locator": <TARGET>, "verified": true, "match_count": 1}}] for every listed spec target that was actually observed and matched exactly once. For a question-mark placeholder the catalog writer binds the target name and rewrites the spec; for a concrete missing target use that same target name. Do not return rows for guesses, missing controls, or non-unique locators; only verified rows with match_count exactly 1 are written.
 <TARGET> is a JSON object, never Playwright code: {{"frames": [outer iframe css, ..., innermost], "css": "<stable css>"}}
 or {{"frames": [...], "role": "button", "name": "<accessible name>"}} or {{"frames": [...], "text": "<exact visible text>"}}."""
 
@@ -209,7 +215,8 @@ DRAFT_RULE = ('Draft mode: you MAY click save/confirm/delete INSIDE an editor or
               'to observe validation, but never save the outer page/record, never publish, and leave via the page cancel/back,')
 
 
-def run_generator(base, m, purpose, plan, minutes=20, model=None, max_actions=40, runner=None, entry=None, draft=False):
+def run_generator(base, m, purpose, plan, minutes=20, model=None, max_actions=40, runner=None, entry=None, draft=False,
+                  case_ids=None, targets=None, frame=None):
     """Launch an isolated Codex sub-agent with the Test Agents MCP + seed; record a real generator rung."""
     import json, re, subprocess, time
     from .common import atomic_write
@@ -220,7 +227,36 @@ def run_generator(base, m, purpose, plan, minutes=20, model=None, max_actions=40
     require(not entry or hint, '页面入口未知：请走入口提示问题（清单 D 块），不要请求演示')
     require(not hint or not hint.get('not_a_page'), '该入口不是页面，跳过导航')
     hint = navigation_hint(hint) if hint else None
-    safe({'purpose': purpose, 'plan': plan, 'entry': entry, 'hint': hint}, m['config'])
+    if hint and frame:
+        hint = {**hint, 'frame': frame}
+    safe({'purpose': purpose, 'plan': plan, 'entry': entry, 'frame': frame, 'hint': hint}, m['config'])
+    requested_cases = []
+    requested_targets = set(targets or [])
+    if case_ids:
+        from .specs import spec_path
+        for cid in case_ids:
+            require(cid in m.get('cases', {}), 'Unknown generator case: ' + cid)
+            case = m['cases'][cid]
+            spec = read_yaml(spec_path(base, case)) or {}
+            rows = []
+            def collect(value, step_id, case_id=cid):
+                if isinstance(value, dict):
+                    target = value.get('target')
+                    if isinstance(target, str) and (not requested_targets or target in requested_targets):
+                        rows.append({'case_id': case_id, 'step_id': step_id or 'target', 'placeholder': target})
+                    for child in value.values():
+                        if isinstance(child, (dict, list)): collect(child, step_id, case_id)
+                elif isinstance(value, list):
+                    for child in value: collect(child, step_id, case_id)
+            for step in spec.get('steps', []):
+                collect(step, step.get('id'))
+            for assertion in spec.get('assertions', []):
+                for check in assertion.get('checks', []):
+                    collect(check, assertion.get('after') or assertion.get('id'))
+            requested_cases.append({'case_id': cid, 'targets': list(dict.fromkeys(row['placeholder'] for row in rows)),
+                                    'step_targets': rows})
+    case_targets = [row for case in requested_cases for row in case['step_targets']]
+    safe({'case_targets': case_targets}, m['config'])
     setup = agent_env(base, m)
     if hint and hint.get('node'):
         setup['env']['UIA_SEED_ENTRY'] = hint['node']
@@ -233,6 +269,7 @@ def run_generator(base, m, purpose, plan, minutes=20, model=None, max_actions=40
     prompt = GENERATOR_PROMPT.format(purpose=purpose, plan=plan, slug=slug, max_actions=max_actions,
                                      mutation_rule=DRAFT_RULE if draft else READ_ONLY_RULE,
                                      entry_hint=json.dumps(hint, ensure_ascii=False) if hint else 'No entry supplied; cannot request a demo.',
+                                     case_targets=json.dumps(case_targets, ensure_ascii=False),
                                      knowledge_context=json.dumps(knowledge_context, ensure_ascii=False, sort_keys=True))
     model = model or 'gpt-6-luna'
     from .common import DEFAULTS
@@ -268,13 +305,15 @@ def run_generator(base, m, purpose, plan, minutes=20, model=None, max_actions=40
     clean = lambda value: scrub_text(json.dumps(value, ensure_ascii=False), m['config'])
     out_dir = base / 'exploration'
     out_dir.mkdir(parents=True, exist_ok=True)
+    duration_ms = int((time.monotonic() - t0) * 1000)
     report = {'purpose': purpose, 'plan': plan, 'model': model, 'exit_code': code, 'reached': reached,
               'failure_class': failure_class,
               'entry': entry, 'reached_entry': reached_entry, 'failed_interaction': failed_interaction,
+              'duration_ms': duration_ms, 'case_targets': requested_cases,
               'route': json.loads(clean(route)) if route else None, 'final_message': scrub_text(final, m['config'])[-4000:]}
     atomic_write(out_dir / ('generator-' + slug + '.json'), report)
     row = {'at': now(), 'started_at': started, 'method': 'generator', 'source': 'generator-cli', 'purpose': purpose,
-           'result': 'ok' if reached else 'failed', 'duration_ms': int((time.monotonic() - t0) * 1000),
+           'result': 'ok' if reached else 'failed', 'duration_ms': duration_ms,
            'model': model, 'exit_code': code,
            'failure_class': failure_class,
            'entry': entry, 'entry_reached': reached_entry, 'reached_entry': reached_entry,
@@ -285,6 +324,26 @@ def run_generator(base, m, purpose, plan, minutes=20, model=None, max_actions=40
     from .knowledge import exploration_knowledge
     row.update(exploration_knowledge(purpose, entry))
     m.setdefault('exploration', []).append(row)
+    # Tie one generator session to every requested case/placeholder. A step target
+    # counts as found only when the report contains a verified unique locator; otherwise
+    # the bounded per-target scheduler records an evidenced failure.
+    if reached_entry and failure_class is None:
+        step_rows = (route or {}).get('step_targets', []) if isinstance(route, dict) else []
+        verified = {(item.get('case_id'), item.get('placeholder')) for item in step_rows
+                    if isinstance(item, dict) and item.get('verified') is True and
+                    type(item.get('match_count', item.get('count'))) is int and
+                    item.get('match_count', item.get('count')) == 1 and item.get('locator') and
+                    item.get('target')}
+        evidence = str((out_dir / ('generator-' + slug + '.json')).relative_to(base))
+        for case_info in requested_cases:
+            case = m['cases'][case_info['case_id']]
+            for placeholder in case_info['targets']:
+                attempt = {'at': now(), 'method': 'generator', 'purpose': purpose,
+                           'result': 'ok' if (case_info['case_id'], placeholder) in verified else 'failed',
+                           'target': placeholder.lstrip('?？'), 'evidence': evidence,
+                           'note': 'verified step target' if (case_info['case_id'], placeholder) in verified else 'no verified binding for requested placeholder',
+                           'duration_ms': duration_ms}
+                case.setdefault('explore_attempts', []).append(attempt)
     advice = None
     if failure_class == 'timeout':
         advice = ('generator 超时不是页面不可达的证据：同一入口用默认预算再运行一次（不传 --minutes），'

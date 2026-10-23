@@ -95,8 +95,18 @@ def exploration_counts(m):
             missing_count += bool(state['exploration_for_missing_controls'])
         else:
             known_count += bool(item.get('re_explored'))
+    durations = [attempt['duration_ms'] for case in m.get('cases', {}).values()
+                 for attempt in case.get('explore_attempts', [])
+                 if type(attempt.get('duration_ms')) is int and attempt['duration_ms'] >= 0]
+    if not durations:
+        durations = [item['duration_ms'] for item in m.get('exploration', [])
+                     if type(item.get('duration_ms')) is int and item['duration_ms'] >= 0]
+    ordered = sorted(durations)
+    percentile = lambda p: ordered[max(0, min(len(ordered) - 1, int((len(ordered) - 1) * p + .5)))] if ordered else None
     return {'re_explored_known_pages': known_count,
-            'exploration_for_missing_controls': missing_count}
+            'exploration_for_missing_controls': missing_count,
+            'exploration_duration_ms': {'count': len(ordered), 'total': sum(ordered),
+                                        'p50': percentile(.50), 'p95': percentile(.95)}}
 
 
 def calculate(base, m, final_report_at=None):
@@ -149,6 +159,7 @@ def calculate(base, m, final_report_at=None):
         "new_scripts_generated": len(new_scripts), "new_script_paths": new_scripts,
         "re_explored_known_pages": explored_known,
         "exploration_for_missing_controls": missing_control_explorations,
+        "exploration_duration_ms": exploration_metric['exploration_duration_ms'],
         "knowledge_injected_tokens": {"count": len(injected), "p50": percentile(injected, .50), "p95": percentile(injected, .95)},
         "scope_violations": int(m.get("scope_violations", 0)),
         "leak_hits": len(m.get("leak_hits", [])),

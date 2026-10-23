@@ -450,6 +450,57 @@ def promote(base, m, report, prefix=None, page=None, overwrite=False, for_placeh
     added, skipped = [], []
     source = 'generator:' + path.stem.replace('generator-', '')
 
+    # Generator step mappings are accepted only when they point back to a real spec
+    # step/placeholder and carry unique-match evidence. They then flow through the same
+    # page-map writer as ordinary promoted targets.
+    auto_bindings = []
+    auto_targets = {}
+    requested_by_case = {row.get('case_id'): set(row.get('targets') or [])
+                         for row in data.get('case_targets', []) if isinstance(row, dict)}
+    step_targets = route.get('step_targets') or data.get('step_targets') or []
+    require(isinstance(step_targets, list), 'Generator step_targets must be a list')
+    from .specs import spec_path
+    for item in step_targets:
+        if not isinstance(item, dict) or item.get('verified') is not True:
+            continue
+        evidence_count = item.get('match_count', item.get('count')) if isinstance(item, dict) else None
+        if type(evidence_count) is not int or evidence_count != 1:
+            continue
+        cid, step_id, placeholder, target_name = (item.get('case_id'), item.get('step_id'),
+                                                   item.get('placeholder'), item.get('target'))
+        require(cid in m.get('cases', {}) and isinstance(step_id, str) and step_id and
+                isinstance(placeholder, str) and placeholder and
+                re.fullmatch(r'[a-z0-9][a-z0-9.-]*', target_name or ''),
+                'Invalid generator case/step/placeholder/catalog target mapping')
+        require(placeholder.startswith(('?', '？')) or target_name == placeholder,
+                'Concrete missing spec targets must keep their catalog name')
+        if requested_by_case:
+            require(placeholder in requested_by_case.get(cid, set()),
+                    'Generator mapped a placeholder that was not requested for case ' + str(cid))
+        spec = read_yaml(spec_path(base, m['cases'][cid])) or {}
+        on_step = any(row.get('id') == step_id and row.get('target') == placeholder
+                      for row in spec.get('steps', []) if isinstance(row, dict))
+        on_assertion = any((assertion.get('after') or assertion.get('id')) == step_id and
+                           any(check.get('target') == placeholder for check in assertion.get('checks', [])
+                               if isinstance(check, dict))
+                           for assertion in spec.get('assertions', []) if isinstance(assertion, dict))
+        require(on_step or on_assertion,
+                'Generator mapping does not match a case-spec step and placeholder: ' + str(cid) + '/' + step_id)
+        locator_value = item.get('locator')
+        require(isinstance(locator_value, (dict, str)) and locator_value,
+                'Verified generator mapping is missing its observed locator')
+        if isinstance(locator_value, dict):
+            locator_count = locator_value.get('match_count', locator_value.get('count'))
+            require(locator_count is None or type(locator_count) is int and locator_count == 1,
+                    'UIA_LOCATOR_AMBIGUOUS: generator locator evidence is not unique')
+        locator = locator_target(locator_value)
+        locator['match_count'] = 1
+        prior = auto_bindings and next((row for row in auto_bindings if row['placeholder'] == placeholder), None)
+        require(not prior or prior['target'] == target_name,
+                'Generator maps one placeholder to different catalog targets: ' + placeholder)
+        auto_bindings.append({'case_id': cid, 'step_id': step_id, 'placeholder': placeholder, 'target': target_name})
+        auto_targets[target_name] = locator
+
     def put(name, row, evidence_count=None):
         if evidence_count is not None and 'match_count' not in row:
             row['match_count'] = evidence_count
@@ -457,17 +508,29 @@ def promote(base, m, report, prefix=None, page=None, overwrite=False, for_placeh
         require(count is None or count == 1,
                 f'UIA_LOCATOR_AMBIGUOUS: {name} evidence matched {count} elements; use a scoped or exact locator')
         if name in targets and not overwrite:
+            if name in auto_targets:
+                keys = ('selector', 'role', 'name', 'frame', 'nested_frames', 'scope')
+                existing_locator = {key: targets[name].get(key) for key in keys if key in targets[name]}
+                observed_locator = {key: row.get(key) for key in keys if key in row}
+                require(existing_locator == observed_locator,
+                        'Generator verified a different locator for existing catalog target: ' + name)
+                targets[name] = dict(targets[name], match_count=1, source=source)
+                added.append(name)
+                return
             skipped.append(name)
             return
         twin = same_locator(targets, row, name)
         targets[name] = dict(row, source=source, confirmed=False, **({'alias_of': twin} if twin else {}))
         added.append(name)
+    route_targets = dict(route.get('targets') or {})
+    route_targets.update(auto_targets)
     target_counts = route.get('target_match_counts') or route.get('locator_counts') or {}
-    for name, locator in (route.get('targets') or {}).items():
+    for name, locator in route_targets.items():
         count = locator.get('match_count', locator.get('count')) if isinstance(locator, dict) else None
         if type(count) is not int and isinstance(target_counts, dict):
             count = target_counts.get(name)
-        put(prefix + '.' + slug(name), locator_target(locator), count if type(count) is int else None)
+        catalog_name = name if name in auto_targets else prefix + '.' + slug(name)
+        put(catalog_name, locator_target(locator), count if type(count) is int else None)
     steps = []
     counts = route.get('step_match_counts') or route.get('match_counts') or {}
     for index, step in enumerate(route.get('route') or [], 1):
@@ -502,6 +565,9 @@ def promote(base, m, report, prefix=None, page=None, overwrite=False, for_placeh
     safe(catalog, m['config'])
     save_catalog('page-map.yaml', catalog)
     placeholder_mapping = {}
+    for binding in auto_bindings:
+        if binding['placeholder'].startswith(('?', '？')):
+            placeholder_mapping.update(bind_placeholders(base, m, [binding['placeholder']], binding['target']))
     placeholders = _for_values(for_placeholders)
     if placeholders:
         candidates = list(dict.fromkeys(added + skipped))

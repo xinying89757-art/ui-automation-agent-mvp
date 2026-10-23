@@ -141,9 +141,12 @@ def parser():
         if name == "generator":
             cmd.add_argument("--purpose", required=True)
             cmd.add_argument("--plan", required=True)
+            cmd.add_argument("--cases", nargs="+", help="case IDs whose placeholder targets must be mapped in the report")
+            cmd.add_argument("--targets", nargs="*", help="spec placeholders to explore in this bounded task")
             cmd.add_argument("--minutes", type=int, default=20)
             cmd.add_argument("--model")
             cmd.add_argument("--entry")
+            cmd.add_argument("--frame")
             cmd.add_argument("--draft", action="store_true", help="allow in-editor/component saves and empty submits (never outer save/publish)")
         if name == "exploration-log":
             cmd.add_argument("--method", choices=["snapshot", "generator", "midscene"], required=True)
@@ -153,6 +156,7 @@ def parser():
             cmd.add_argument("--case", dest="explore_case")
             cmd.add_argument("--target")
             cmd.add_argument("--evidence")
+            cmd.add_argument("--duration-ms", type=int)
         if name == "import":
             cmd.add_argument("--excel", required=True)
             cmd.add_argument("--mapping")
@@ -392,11 +396,14 @@ def dispatch(args, path, m):
         from .knowledge import match_run
         match_run(base, m)
         from .exploration import run_generator
-        return run_generator(base, m, args.purpose, args.plan, args.minutes, args.model, entry=args.entry, draft=args.draft)
+        return run_generator(base, m, args.purpose, args.plan, args.minutes, args.model,
+                             entry=args.entry, draft=args.draft, case_ids=args.cases, targets=args.targets,
+                             frame=args.frame)
     if cmd == "exploration-log":
         from .exploration import log
         return log(m, args.method, args.purpose, args.result, args.note, base=base,
-                   case_id=args.explore_case, target=args.target, evidence=args.evidence)
+                   case_id=args.explore_case, target=args.target, evidence=args.evidence,
+                   duration_ms=args.duration_ms)
     if cmd == "preconditions":
         from .preconditions import sync_preconditions, classify_precondition
         if args.action == "classify":

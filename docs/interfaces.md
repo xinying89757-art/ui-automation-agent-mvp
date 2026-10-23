@@ -21,13 +21,13 @@ python3 scripts/uia.py kb writeback --run GO-id
 
 ### `explore` action
 
-`next` 返回 `explore` 时不提问。它按入口/frame 聚合 `case_ids` 和 `targets_by_case`；在同一入口会话中处理每个 case 的全部目标。使用 `snapshot --run R --node editor --entry PAGE --purpose TARGET --save-as evidence/CASE-TARGET-1.json`，或 `generator --run R --purpose TARGET --entry PAGE --plan PLAN`（编辑器内保存时允许加 `--draft`）。快照证据只保存脱敏后的入口、frame、失败步骤等结果元数据，不保存 DOM。生成器报告文件本身可用作 `--evidence`。每次尝试后必须记录结果及现存证据文件：
+`next` 返回 `explore` 时不提问。它先选择占位目标最少、优先级最高的 case，每次最多 8 个目标；同入口/frame 的其他 case 仅在共享同一目标时加入 `case_ids` 和 `targets_by_case`。推荐执行 action 返回的 `generator_command`：它包含 `--cases` 和 `--targets`，generator 会把 step ID/占位目标清单写入 prompt，并输出逐目标的 `step_targets` 映射。快照可用 `snapshot --run R --node editor --entry PAGE --purpose TARGET --evidence evidence/CASE-TARGET-1.json` 保存脱敏后的入口、frame、失败步骤等结果元数据，不保存 DOM。
 
 ```bash
-python3 scripts/uia.py exploration-log --run R --case CASE --target TARGET --method snapshot --purpose TARGET --result failed --evidence evidence/CASE-TARGET-1.json --note '到达入口后控件仍不可见'
+python3 scripts/uia.py exploration-log --run R --case CASE --target TARGET --method snapshot --purpose TARGET --result failed --evidence evidence/CASE-TARGET-1.json --duration-ms 1234 --note '到达入口后控件仍不可见'
 ```
 
-成功同样用 `--result ok` 记录，再通过 `hints target --name catalog.target --locator 'JSON' --evidence evidence/FILE --for '?placeholder'` 或 `hints promote --report exploration/generator-SLUG.json --for '?placeholder'` 写入实际观察到的控件、绑定该运行的规格占位符并重写 case-spec；多占位符用逗号分隔。只写入但未绑定的占位符仍算未解决，并消耗一次失败上限。每个 case/target 最多两次失败；此后 `next` 返回 `classify`，按返回的 `reason` 与 `evidence` 执行 `uia.py classify --run R --case CASE --result suspended --reason REASON --evidence PATH`。报告必须引用本次实际生成的证据路径。不要自行增加重试或向用户提问。
+成功的 snapshot 同样用 `--result ok` 记录。Generator session 自动记录各 case/target 的结果与耗时；运行 `hints promote --run R --report exploration/generator-SLUG.json` 后，promote 仅接受 `verified: true` 且 `match_count: 1` 的 step locator，通过唯一 catalog 写入路径保存控件、绑定 run 内占位符并重写 case-spec；通常不需要手动 `--for`。手动 `hints target`/`hints promote --for '?placeholder'` 仍可用于精确绑定。一次探索没有绑定目标时，每个任务占位符计一次失败；每个 case/target 最多两次失败，此后 `next` 返回 `classify`，按返回的 `reason` 与 `evidence` 执行 `uia.py classify --run R --case CASE --result suspended --reason REASON --evidence PATH`，再继续其他 case。报告中的 exploration_duration_ms 记录次数、总时长和 p50/p95。不要自行增加重试或向用户提问。
 
 每完成探索、绑定、lint/gen、批次或恢复动作后都重新调用 `next`，继续处理 runnable 用例和其他 AI action，直至所有用例均已结论并生成最终报告；不能以中间摘要结束。
 

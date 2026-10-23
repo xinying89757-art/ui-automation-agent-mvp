@@ -122,6 +122,10 @@ class CaseSpecTests(unittest.TestCase):
         self.assertIn('MENU_KEYBOARD', specs.interaction_patterns_for_target({}, 'click', 'article.slash-command-menu'))
         self.assertIn('MENU_KEYBOARD', specs.interaction_patterns_for_target({'selector':'[role="listbox"]'}, 'click'))
         self.assertNotIn('MENU_KEYBOARD', specs.interaction_patterns_for_target({'role':'option'}, 'fill'))
+        ordered=specs.interaction_patterns_for_target(
+            {'role':'option','patterns':['MENU_KEYBOARD','OCCLUDED_SCROLL_OR_COLLAPSE','RERENDER_RELOCATE']},'click')
+        self.assertEqual(ordered[-1],'MENU_KEYBOARD')
+        self.assertLess(ordered.index('OCCLUDED_SCROLL_OR_COLLAPSE'),ordered.index('MENU_KEYBOARD'))
 
     def test_extensible_env_and_data_vocabulary(self):
         self.spec['required_env'] = ['new_permission']

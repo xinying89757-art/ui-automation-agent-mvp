@@ -651,7 +651,7 @@ def target_exploration_state(case, target, known_targets=None):
     failed = [row for row in attempts if row.get('result') == 'failed' and isinstance(row.get('evidence'), str) and row.get('evidence')]
     # A successful browser exploration that did not bind its spec placeholder did not
     # resolve the requested target. Count it against the same bounded retry budget.
-    if placeholder and not bound:
+    if not bound and (placeholder or name not in (known_targets or set())):
         failed.extend({**row, 'result': 'failed', 'note': 'exploration target was not bound to a catalog target'}
                       for row in attempts if row.get('result') == 'ok' and row.get('evidence'))
     return {'succeeded': succeeded, 'failed': failed, 'attempts': attempts}
@@ -753,15 +753,50 @@ def next_task(base, m):
                     spec = spec_cache.get(c['case_id'], {})
                     entry = spec.get('start_page')
                     frame = spec.get('frame') or (page_data.get('pages') or {}).get(entry, {}).get('frame')
-                    groups.setdefault((entry, frame), []).append((c, targets))
-                (entry, frame), members = sorted(groups.items(), key=lambda item: (-len(item[1]), str(item[0])))[0]
+                    placeholders = unresolved_targets(base, m, c, spec_cache)
+                    priority = {"P0": 0, "P1": 1, "P2": 2, "P3": 3}.get(c["priority"].upper(), 4)
+                    groups.setdefault((entry, frame), []).append((c, targets, placeholders, priority))
+                # Start with the case closest to generation; never make the agent carry
+                # the whole workbook's unknown-control list through one exploration task.
+                (entry, frame), candidates = min(
+                    groups.items(),
+                    key=lambda item: min((len(placeholders), priority, c['case_id'])
+                                         for c, targets, placeholders, priority in item[1]))
+                primary, primary_targets, _, _ = min(
+                    candidates, key=lambda row: (len(row[2]), row[3], row[0]['case_id']))
+                selected_targets = list(dict.fromkeys(primary_targets))[:8]
+                selected_set = set(selected_targets)
+                members = [(primary, selected_targets)]
+                for case, targets, _placeholders, _priority in sorted(
+                        candidates, key=lambda row: (len(row[2]), row[3], row[0]['case_id'])):
+                    if case is primary:
+                        continue
+                    shared = [target for target in targets if target in selected_set]
+                    if shared:
+                        members.append((case, shared))
                 case_ids = [c['case_id'] for c, _ in members]
                 targets_by_case = {c['case_id']: targets for c, targets in members}
+                purpose = 'case-' + primary['case_id'] + '-controls'
+                import shlex
+                run_arg = shlex.quote(m.get('run_id') or '')
+                generator_command = ('python3 scripts/uia.py generator --run ' + run_arg + ' --cases ' + ' '.join(case_ids) +
+                    ' --targets ' + ' '.join(shlex.quote(target) for target in selected_targets) +
+                    ' --purpose ' + shlex.quote(purpose) + ' --entry ' + shlex.quote(entry or 'editor') +
+                    ((' --frame ' + shlex.quote(frame)) if isinstance(frame, str) and frame else '') +
+                    ' --plan ' + shlex.quote('Explore only the requested case-spec targets. Return route.step_targets with case_id, step_id, placeholder, target, locator, verified=true and match_count=1 only for directly observed unique locators; concrete spec targets keep their exact catalog name.') +
+                    ' --draft')
+                promote_command = ('python3 scripts/uia.py hints promote --run ' + run_arg + ' --report ' +
+                                   shlex.quote('exploration/generator-' + purpose + '.json'))
                 return {"action": "explore", "skill": "uia-runtime", "case_ids": case_ids,
                         "entry": entry, "frame": frame,
                         "targets_by_case": targets_by_case,
                         "targets": list(dict.fromkeys(t for _, ts in members for t in ts)),
-                        "instruction": "对 targets_by_case 中每个 case 的目标执行一次共享的有界 snapshot --run RUN --entry ENTRY --step ... 或 generator --run RUN --entry ENTRY --purpose TARGET --plan PLAN --draft，按 case/目标记录实际到达或失败证据。成功后用 hints target --for '?占位符' 或 hints promote --for '?占位符' 写入并绑定已观察到的 page-map 目标，再运行 spec lint/gen；绝不猜目标。每个 case/目标都用 uia.py exploration-log --run RUN --method snapshot|generator --purpose TARGET --result ok|failed --note NOTE --case CID --target '?placeholder' --evidence evidence/FILE 报告。每个 case/目标最多失败两次；第二次失败后 next 返回带证据的缺控件分类。"}
+                        "generator_command": generator_command,
+                        "promote_command": promote_command,
+                        "report": 'exploration/generator-' + purpose + '.json',
+                        "instruction": "优先完成最接近可生成的首例；每项最多 8 个不同目标。targets_by_case 只列本批共享目标，其余目标留待后续。执行以下命令：\n" +
+                        generator_command + "\n" + promote_command +
+                        "\ngenerator 会从每例 case-spec 注入 step_id/spec-target 清单并记录本次各目标的耗时及结果。promote 只会写入 verified=true 且 match_count=1 的 step_targets，通过单一 page-map 写入路径绑定占位符并重写规格。若没有任何 placeholder 绑定，本次按每个未解决目标失败一次计算。不得猜 locator。之后运行 spec lint/gen 并立即 next；可运行用例先 run-batch。snapshot 场景须对每例目标用 exploration-log 报告 --duration-ms。两次无绑定/失败后 next 会按 缺控件 分类并继续其他用例。"}
             known = sorted((page_data.get("targets") or {}).keys())
             return {"action": "refine_specs", "skill": "uia-case-spec",
                     "case_ids": [c["case_id"] for c, _ in refine[:budget]],

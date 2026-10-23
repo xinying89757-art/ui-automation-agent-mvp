@@ -244,7 +244,8 @@ def interaction_patterns_for_target(target_row, action, target_name=''):
         bool(re.search(r'menu|listbox|suggest|command|slash|dropdown', str(target_name), re.I)) or
         bool(re.search(r'menu|listbox|suggest|command|slash|dropdown', selector, re.I)))
     if action == 'click' and menu_target:
-        patterns = list(dict.fromkeys([*patterns, 'MENU_KEYBOARD']))
+        # Menu keyboard support is a final fallback after scrolling/collapsing covers.
+        patterns = list(dict.fromkeys([p for p in patterns if p != 'MENU_KEYBOARD'] + ['MENU_KEYBOARD']))
     return patterns
 
 

@@ -121,13 +121,21 @@ def store(m, hints, source='handoff', confirmed=False):
     for hint in hints:
         hint = dict(hint, not_a_page=bool(re.search(r'不是(?:后台)?页面|非页面', hint['path_text'])))
         existing = resolve(hint['label'])
+        if hint.get('steps') and not hint.get('not_a_page'):
+            equivalent = [(name, row) for name, row in data['entries'].items()
+                          if row.get('confirmed') and not row.get('not_a_page') and
+                          row.get('steps') == hint.get('steps') and row.get('frame') == hint.get('frame')]
+            if equivalent:
+                name, row = max(equivalent, key=lambda item: (len(re.split(r'[.-]', item[0])), item[0]))
+                existing = literal_route(dict(row, key=name))
         name = existing['key'] if existing and existing['source'] != 'page-map' else key(hint['label'])
         old = data['entries'].get(name, {})
         aliases = list(dict.fromkeys([*old.get('aliases', []), *hint.get('aliases', []),
                                      *([hint['label']] if old and old['label'] != hint['label'] else [])]))
         # A repeated handoff must not discard an already confirmed route.
+        same_route = old.get('confirmed') and old.get('steps') == hint.get('steps') and old.get('frame') == hint.get('frame')
         route = ({k: old[k] for k in ('steps', 'frame') if k in old}
-                 if old.get('confirmed') and old.get('path_text') == hint['path_text'] and not confirmed else {})
+                 if old.get('confirmed') and (old.get('path_text') == hint['path_text'] or same_route) and not confirmed else {})
         inherited = ({k: v for k, v in old.items() if k not in {'steps', 'frame'}}
                      if old.get('confirmed') and not confirmed and not route else old)
         data['entries'][name] = {**inherited, **hint, **route, 'label': old.get('label', hint['label']), 'aliases': aliases,

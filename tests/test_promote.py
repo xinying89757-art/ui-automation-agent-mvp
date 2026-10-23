@@ -69,6 +69,19 @@ class PromoteTests(unittest.TestCase):
         result = entries.promote(self.base, self.m, 'exploration/generator-t.json')
         self.assertEqual(result['route_steps'][-1], 'type:faq-editor.entry.route.2=/')
 
+    def test_equivalent_confirmed_route_is_reused_with_alias_and_frame(self):
+        steps=['click:text=内容管理','click:text=文章','click:text=编辑']
+        entries.confirm(self.m,'新版内容编辑器',steps,'iframe[name="article"]')
+        entries.add(self.m,'Markdown 弹窗=内容管理 → 文章 → 编辑')
+        entries.confirm(self.m,'Markdown 弹窗',steps,'iframe[name="article"]')
+        catalog=common.read_yaml(self.tmp/'assets/playwright-runner/knowledge/entries.yaml')['entries']
+        confirmed=[(name,row) for name,row in catalog.items() if row.get('confirmed')]
+        self.assertEqual(len(confirmed),1)
+        name,row=confirmed[0]
+        self.assertIn('Markdown 弹窗',row['aliases'])
+        self.assertEqual(row['steps'],steps)
+        self.assertEqual(row['frame'],'iframe[name="article"]')
+
     def test_unreached_report_is_refused(self):
         bad = dict(REPORT, route={'reached': False, 'reached_entry': False})
         (self.base / 'exploration/generator-x.json').write_text(json.dumps(bad), encoding='utf-8')

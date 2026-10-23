@@ -35,6 +35,54 @@ def catalogs():
             pages)
 
 
+def canonical_entry_route(name, entry_routes):
+    """Resolve entry aliases and prefer the most descriptive confirmed equivalent route."""
+    if not isinstance(name, str):
+        return None
+    normalized = lambda value: re.sub(r'[^\w\u4e00-\u9fff]+', '', str(value)).casefold()
+    direct = [(key, row) for key, row in entry_routes.items()
+              if name == key or normalized(name) in {normalized(row.get('label', '')),
+                  *(normalized(alias) for alias in row.get('aliases', []))}]
+    if not direct:
+        return None
+    selected_candidates = [(key, row) for key, row in direct if row.get('confirmed') and row.get('steps')]
+    _, selected = max(selected_candidates or direct,
+                      key=lambda item: (len(re.split(r'[.-]', item[0])), item[0]))
+    same = [(key, row) for key, row in entry_routes.items() if row.get('confirmed') and
+            row.get('steps') == selected.get('steps') and row.get('frame') == selected.get('frame')]
+    if not same:
+        same = direct
+    return max(same, key=lambda item: (len(re.split(r'[.-]', item[0])), item[0]))[0]
+
+
+def entry_route_step_ids(spec, entry_routes, pages):
+    """Find the leading spec clicks already covered by the selected entry route replay."""
+    route_id = canonical_entry_route(spec.get('entry_route'), entry_routes)
+    route = entry_routes.get(route_id, {}) if route_id else {}
+    route_steps = route.get('steps') or []
+    route_index, matched = 0, set()
+    for step in spec.get('steps', []):
+        if route_index >= len(route_steps) or step.get('verb') != 'click':
+            break
+        target = step.get('target')
+        row = pages.get('targets', {}).get(target, {})
+        names = [target]
+        if row.get('name'):
+            names.append(row['name'])
+        selector = row.get('selector', '')
+        text_match = re.search(r":text-is\(([\"'])(.*?)\1\)", selector)
+        if text_match:
+            names.append(text_match.group(2))
+        route_action = route_steps[route_index]
+        if any(route_action == 'click:text=' + name or route_action == 'click:role=link[name=' + name + ']'
+               for name in names):
+            matched.add(step['id'])
+            route_index += 1
+        else:
+            break
+    return matched
+
+
 def spec_path(base, case):
     return inside(base, case.get('case_spec') or f"cases/{case['case_id']}/case-spec.yaml")
 
@@ -81,7 +129,8 @@ def schema_errors(spec, source, env, data, pages):
     entry_doc = read_yaml(ROOT / 'knowledge/entries.yaml') or {}
     entry_routes = entry_doc.get('entries', {})
     if spec.get('entry_route'):
-        fail(spec['entry_route'] in entry_routes and bool(entry_routes.get(spec['entry_route'], {}).get('confirmed')),
+        route_id = canonical_entry_route(spec['entry_route'], entry_routes)
+        fail(bool(route_id and entry_routes.get(route_id, {}).get('confirmed')),
              'entry_route must reference a confirmed knowledge entry route')
     def target(value):
         if isinstance(value, str) and re.fullmatch(r'\?[\w.\-\u4e00-\u9fff]+', value):
@@ -97,7 +146,8 @@ def schema_errors(spec, source, env, data, pages):
         fail(isinstance(sid, str) and bool(re.fullmatch(r'S[1-9]\d*', sid)) and sid not in step_ids, 'unique S-number required')
         step_ids.add(str(sid))
         fail(step.get('verb') in VERBS, 'step verb is not supported')
-        if not (step.get('verb') == 'open' and step.get('target') in entry_routes and entry_routes[step.get('target')].get('confirmed')):
+        if not (step.get('verb') == 'open' and canonical_entry_route(step.get('target'), entry_routes) and
+                entry_routes[canonical_entry_route(step.get('target'), entry_routes)].get('confirmed')):
             target(step.get('target'))
         entry = pages['targets'].get(step.get('target'), {})
         if entry.get('mutation') and step.get('verb') in {'click', 'double_click', 'attempt_click', 'fill', 'select', 'check', 'uncheck', 'press', 'upload'}:
@@ -298,6 +348,25 @@ def locator_errors(body, pages):
     return sorted(set(errors))
 
 
+def entry_route_locator_errors(body, spec, pages):
+    """Reject per-step locator clicks where the confirmed entry replay owns navigation."""
+    entry_routes = (read_yaml(ROOT / 'knowledge/entries.yaml') or {}).get('entries', {})
+    route_id = canonical_entry_route(spec.get('entry_route'), entry_routes)
+    if not route_id:
+        return []
+    route_steps = entry_route_step_ids(spec, entry_routes, pages)
+    errors = []
+    if route_steps and not re.search(r'openTarget\([^\n]*' + re.escape(json.dumps(route_id)) + r'\)', body):
+        errors.append('entry route navigation must use openTarget: ' + route_id)
+    segments = re.split(r'//\s*@step\s+(S\d+)\s*\n', body)
+    by_id = {segments[i]: segments[i + 1] for i in range(1, len(segments) - 1, 2)}
+    for step_id in route_steps:
+        segment = by_id.get(step_id, '')
+        if re.search(r'\b(?:getByText|getByRole|getByLabel|locator|frameLocator)\s*\([^\n]*\)\s*(?:\.\w+\([^\n]*\)\s*)*\.click\s*\(', segment):
+            errors.append('entry route step must use navigation replay, not a raw locator click: ' + step_id)
+    return errors
+
+
 def coverage(body, file):
     result = {'steps': {}, 'assertions': {}}
     for line, text in enumerate(body.splitlines(), 1):
@@ -349,6 +418,7 @@ def lint(base, m, case_ids=None, record=True, check_scripts=True):
         if script.is_file() and check_scripts:
             body = script.read_text()
             errors.extend(locator_errors(body, pages))
+            errors.extend(entry_route_locator_errors(body, spec, pages))
             try:
                 refs = coverage(body, str(script.resolve().relative_to((base / 'runner').resolve())))
                 for field in ('steps', 'assertions'):
@@ -429,9 +499,15 @@ def generate(base, m, cid):
              "import { performWithPatterns } from '../../support/interaction-patterns.mjs';",
              "import { deferPublic, trackSave, verifyPersisted, readFieldValue, assertSaveBusinessOk } from '../../support/remote-checks.mjs';", '',
              'test(' + json.dumps('[' + cid + '] ' + spec['intent'], ensure_ascii=False) + ', async ({ page, caseContext }) => {', '  const networks: Record<string, any> = {};', '  const observations: Record<string, any> = {};', '  try {']
-    if spec.get('entry_route') and not any(step.get('verb') == 'open' and step.get('target') == spec['entry_route']
-                                            for step in spec['steps']):
-        lines.append('  page = await openTarget(page, ' + json.dumps(spec['entry_route']) + ');')
+    entry_routes = (read_yaml(ROOT / 'knowledge/entries.yaml') or {}).get('entries', {})
+    route_id = canonical_entry_route(spec.get('entry_route'), entry_routes)
+    start = pages.get('pages', {}).get(spec['start_page'], {})
+    initial_target = route_id or (spec['start_page'] if any(key in start for key in ('entry', 'steps', 'route', 'url', 'path', 'open')) else None)
+    if initial_target and not any(step.get('verb') == 'open' and
+                                  (canonical_entry_route(step.get('target'), entry_routes) or step.get('target')) == initial_target
+                                  for step in spec['steps']):
+        lines.append('  page = await openTarget(page, ' + json.dumps(initial_target) + ');')
+    replayed_route_steps = entry_route_step_ids(spec, entry_routes, pages)
     tracked_rules = set()
     for name in dict.fromkeys(s['target'] for s in spec['steps'] if s['verb'] == 'defer_public'):
         resource = pages['targets'].get(name, {}).get('resource', {})
@@ -457,7 +533,9 @@ def generate(base, m, cid):
         lines.append('  await test.step(' + json.dumps('uia-step:' + sid) + ', async () => {')
         lines.append('  // @step ' + sid)
         loc = locator_expression(name, pages)
-        if verb == 'observe':
+        if sid in replayed_route_steps:
+            lines.append('  // Navigation replayed by openTarget(' + json.dumps(route_id) + ').')
+        elif verb == 'observe':
             lines.append('  observations[' + json.dumps(name) + '] = await observeOccurrences(page, ' + json.dumps(pages['targets'][name]['observe_text'], ensure_ascii=False) + ');')
         elif verb == 'defer_public':
             lines.append('  await assertSaveBusinessOk(caseContext);')
@@ -472,7 +550,8 @@ def generate(base, m, cid):
         elif (not loc and verb != 'open') or name.startswith('?'):
             todo(sid + ' ' + name)
         elif verb == 'open':
-            lines.append('  page = await openTarget(page, ' + json.dumps(name) + ');')
+            target = canonical_entry_route(name, entry_routes) or name
+            lines.append('  page = await openTarget(page, ' + json.dumps(target) + ');')
         elif verb in {'click', 'hover', 'check', 'uncheck', 'close'}:
             action = 'click' if verb == 'close' else verb
             target_patterns = interaction_patterns_for_target(pages['targets'].get(name, {}), action, name)
@@ -548,7 +627,8 @@ def generate(base, m, cid):
             lines.append('  await verifyPersisted(page, caseContext, ' + json.dumps(rb, ensure_ascii=False) + ', ' + json.dumps(pages['targets'][rb['save_target']]['network']) + ', async () => await readFieldValue(' + field_loc + '));')
     lines += ['  await assertSaveBusinessOk(caseContext);', '  } finally {', '    for (const network of Object.values(networks)) await network.dispose();', '    for (const observation of Object.values(observations)) await observation.dispose();', '  }', '});', '']
     body = '\n'.join(lines)
-    require(not locator_errors(body, pages), 'Generated locator lint failed', locator_errors(body, pages))
+    errors = locator_errors(body, pages) + entry_route_locator_errors(body, spec, pages)
+    require(not errors, 'Generated locator lint failed', errors)
     relative = 'tests/generated/' + cid + '.spec.ts'
     script = base / 'runner' / relative
     script.parent.mkdir(parents=True, exist_ok=True)
@@ -583,7 +663,8 @@ def register_script(base, m, cid, script_path):
     require(script.suffix == '.ts' and script.is_file(), 'Final spec must be a TypeScript file under runner/tests')
     relative = str(script.relative_to((base / 'runner').resolve()))
     body = script.read_text()
-    require(not locator_errors(body, pages), 'Final spec locator lint failed', locator_errors(body, pages))
+    locator_problems = locator_errors(body, pages) + entry_route_locator_errors(body, spec, pages)
+    require(not locator_problems, 'Final spec locator lint failed', locator_problems)
     require('TODO explore:' not in body and 'UIA_EXPLORATION_REQUIRED' not in body, 'Resolve exploration TODO before registration')
     refs = coverage(body, relative)
     for field in ('steps', 'assertions'):

@@ -24,6 +24,16 @@ def knowledge_path(name):
     return common.ROOT / 'assets/playwright-runner/knowledge' / name
 
 
+def save_catalog(name, data):
+    """Single write path: the runner (legacy) catalog, the shared knowledge/ catalog that spec gen and
+    retrieval read, and the split index are updated together so no reader sees a stale copy."""
+    atomic_write(knowledge_path(name), data, as_yaml=True)
+    from . import knowledge
+    if knowledge._root().is_dir():
+        atomic_write(knowledge._root() / name, data, as_yaml=True)
+        knowledge.sync_layout(**({'pages': data} if name == 'page-map.yaml' else {'entries': data}))
+
+
 def load():
     path = knowledge_path('entries.yaml')
     return read_yaml(path) if path.is_file() else {'schema_version': 'entry-hints.v1', 'entries': {}}
@@ -107,7 +117,7 @@ def store(m, hints, source='handoff', confirmed=False):
         changes = m.setdefault('entry_hint_changes', {})
         changes.setdefault(name, {'before': old or None})['after'] = data['entries'][name]
     safe(data, m['config'])
-    atomic_write(knowledge_path('entries.yaml'), data, as_yaml=True)
+    save_catalog('entries.yaml', data)
     return {'saved_entries': len(hints), 'knowledge': str(knowledge_path('entries.yaml'))}
 
 
@@ -400,7 +410,7 @@ def promote(base, m, report, prefix=None, page=None, overwrite=False):
         put(name, locator_target(target))
         steps.append(verb + ':' + name + value)
     safe(catalog, m['config'])
-    atomic_write(map_path, catalog, as_yaml=True)
+    save_catalog('page-map.yaml', catalog)
     result = {'page_map': str(map_path), 'targets_added': added, 'targets_skipped': skipped, 'route_steps': steps}
     page = page or data.get('entry')
     if page and route.get('reached_entry') and steps:
@@ -438,6 +448,6 @@ def add_target(base, m, name, locator, evidence, overwrite=False, resource=None,
     twin = same_locator(targets, row, name)
     targets[name] = dict(row, source='observed:' + str(evidence), confirmed=False, **({'alias_of': twin} if twin else {}))
     safe(catalog, m['config'])
-    atomic_write(map_path, catalog, as_yaml=True)
+    save_catalog('page-map.yaml', catalog)
     m.setdefault('knowledge_promotions', []).append({'at': now(), 'target': name, 'evidence': str(evidence)})
     return {'target': name, 'row': targets[name], 'page_map': str(map_path)}

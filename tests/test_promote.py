@@ -115,6 +115,19 @@ class AddTargetTests(PromoteTests):
             entries.add_target(self.base, self.m, 'faq-editor.other', '{"css": ".x"}', 'exploration/missing.json')
 
 
+class SingleCatalogTests(PromoteTests):
+    def test_new_target_is_visible_to_spec_gen_catalog_and_index(self):
+        from uia_core import knowledge
+        (self.tmp / 'knowledge').mkdir()
+        old = knowledge.ROOT; knowledge.ROOT = None
+        self.addCleanup(lambda: setattr(knowledge, 'ROOT', old))
+        entries.add_target(self.base, self.m, 'md.dialog', '{"css": ".md"}', 'exploration/generator-faq-editor.entry.json')
+        # specs.catalogs() reads ROOT/knowledge/page-map.yaml first: the shared copy must carry the new target.
+        self.assertIn('md.dialog', common.read_yaml(self.tmp / 'knowledge/page-map.yaml')['targets'])
+        ids = [r['id'] for r in common.read_yaml(self.tmp / 'knowledge/index.yaml')['entries']]
+        self.assertIn('target.md.dialog', ids)
+
+
 class LiteralRouteTests(unittest.TestCase):
     def test_input_placeholder_truncates_entry_route(self):
         h = entries.literal_route({'steps': ['goto:/a', 'click:x', 'fill:y=${INPUT}', 'click:text=FAQ']})

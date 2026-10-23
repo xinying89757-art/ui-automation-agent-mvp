@@ -1,0 +1,27 @@
+schema_version: data-prep.v1
+data:
+  llms.enabled:
+    type: boolean
+    handler: llms-form
+    scope: llms.txt
+  llms.source:
+    type: string
+    handler: llms-form
+    scope: llms.txt
+  llms.overview:
+    type: string
+    handler: llms-form
+    scope: llms.txt
+  llms.custom:
+    type: string
+    handler: llms-form
+    scope: llms.txt
+  llms.extras:
+    type: array
+    handler: llms-form
+    scope: llms.txt
+  faq.count:
+    type: integer
+    handler: faq-count
+    scope: faq
+    note: 保留原始记录；增加到N并核验，删除本次新增记录后比较完整快照；N小于原始条数时拒绝破坏性降量

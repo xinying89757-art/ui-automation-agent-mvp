@@ -1,0 +1,13 @@
+id: target.faq-editor.toolbar.find.replace
+kind: component
+role: button
+name: 查找替换
+frame: iframe[name="prod"]
+nested_frames:
+- '#tiptap-iframe'
+source: observed:exploration/generator-faq-editor.validation-reedit-final.json
+confirmed: false
+provenance:
+  source_run: GO-a0f244227ab4
+  verified_by: unverified
+created_at: '2026-10-23'

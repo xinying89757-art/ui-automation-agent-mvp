@@ -1,0 +1,9 @@
+id: target.faq-editor.validation-reedit-toolbar-draft.route.5
+kind: component
+selector: 保存
+source: generator:faq-editor.validation-reedit-toolbar-draft
+confirmed: false
+provenance:
+  source_run: GO-a0f244227ab4
+  verified_by: unverified
+created_at: '2026-10-23'

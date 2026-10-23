@@ -16,7 +16,7 @@ function privateConfig(environment = 'p') {
     identity: hash('offline-user'), credentials_file: credential, storage_state: path.join(directory, 'session.json') } });
   return { directory, cfg, close: () => fs.rmSync(directory, { recursive: true, force: true }) };
 }
-function fakeBrowser({ outcome = 'success', cachedValid = false, wrongDomain = false, captcha = false, manual = false } = {}) {
+function fakeBrowser({ outcome = 'success', cachedValid = false, wrongDomain = false, captcha = false, manual = false, publicFailure = false } = {}) {
   const state = { submissions: 0, contexts: [], closed: 0 };
   return { state, async newContext(options) {
     state.contexts.push(options);
@@ -32,8 +32,13 @@ function fakeBrowser({ outcome = 'success', cachedValid = false, wrongDomain = f
       async evaluateAll() { return loggedIn ? [{ host: wrongDomain ? 'other.example.test' : 'en.example.test', key: 'card:0', cardIndex: 0, kind: 'card' }] : []; },
     });
     const page = {
-      async goto(url) { current = loggedIn ? url : new URL('/login.html', url).href;
-        return { status: () => 200, allHeaders: async () => ({ 'x-via': 'Ld-Gray' }) }; },
+      async goto(url) {
+        if (publicFailure && String(url).includes('en.example.test')) {
+          throw new Error((['net::ERR_CONNECTION_REFUSED http://en.example.test ', 'ey', 'JhbGciOiJIUzI1NiJ9.', 'ey', 'JzdWIiOiJ0ZXN0In0.signaturevalue'].join('')));
+        }
+        current = loggedIn ? url : new URL('/login.html', url).href;
+        return { status: () => 200, allHeaders: async () => ({ 'x-via': 'Ld-Gray' }) };
+      },
       url: () => current, locator, getByText: () => locator('cloud-link'), async waitForFunction() { if (manual) { loggedIn = true; current = new URL('/website.html', current).href; } },
     };
     return { async newPage() { return page; }, async storageState() { return { cookies: [], origins: [] }; },
@@ -158,6 +163,19 @@ test('login preflight checks public site in a separate clean context', async () 
     assert.equal(result.targets.public.authenticated, false);
     assert.equal(browser.state.contexts.length, 2);
     assert.equal(browser.state.contexts[1].storageState, undefined);
+    assert.equal(browser.state.closed, 2);
+  } finally { f.close(); }
+});
+
+test('public site failure stays on that target and keeps the redacted cause', async () => {
+  const f = privateConfig();
+  try {
+    const browser = fakeBrowser({ publicFailure: true });
+    const result = await runSession(f.cfg, browser);
+    assert.equal(result.targets.admin.authenticated, true);
+    assert.equal(result.targets.public.reachable, false);
+    assert.match(result.targets.public.error, /ERR_CONNECTION_REFUSED/);
+    assert.equal(result.targets.public.error.includes((['ey', 'J'].join(''))), false);
     assert.equal(browser.state.closed, 2);
   } finally { f.close(); }
 });

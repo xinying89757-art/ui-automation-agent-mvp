@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "UIA remote watch request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "run_id", "watch_id", "case_id", "assertion_id", "expected", "url", "method", "conditions", "armed_at", "save_not_before", "watch_until", "interval_ms", "timeout_ms", "max_latency_seconds", "max_clock_offset_ms"],
+  "properties": {
+    "schema_version": {"const": "uia-remote-watch.v1"}, "run_id": {"type": "string"}, "watch_id": {"type": "string"},
+    "case_id": {"type": "string"}, "assertion_id": {"type": "string"}, "expected": {"type": "string"},
+    "url": {"type": "string", "format": "uri", "pattern": "^https?://"}, "method": {"const": "GET"},
+    "conditions": {"type": "array", "minItems": 1, "items": {"type": "object"}},
+    "armed_at": {"type": "string", "format": "date-time"}, "save_not_before": {"type": "string", "format": "date-time"},
+    "watch_until": {"type": "string", "format": "date-time"}, "interval_ms": {"type": "integer", "minimum": 100},
+    "timeout_ms": {"type": "integer", "minimum": 1}, "max_latency_seconds": {"type": "number", "exclusiveMinimum": 0},
+    "max_clock_offset_ms": {"type": "integer", "minimum": 0}
+  }
+}

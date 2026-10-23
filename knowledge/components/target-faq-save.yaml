@@ -1,0 +1,9 @@
+id: target.faq.save
+kind: component
+frame: '#faq'
+selector: .topBts_menu_save
+alias_of: target.faq.save
+provenance:
+- source_run: GO-a0f244227ab4
+  verified_by: unverified
+created_at: '2026-10-23'

@@ -1,0 +1,31 @@
+schema_version: case-spec.v1
+case_id: TC-0016
+intent: 悬停问号显示自动生成规则说明
+automatable: {status: 'yes', reason: 可通过编辑器操作验证}
+required_env: []
+data_prep:
+  llms.enabled: true
+  llms.source: system
+mutation_scope:
+- llms.txt
+start_page: editor
+steps:
+- {id: S1, verb: hover, target: txt.rule.help}
+- {id: S2, verb: assert, target: txt.rules}
+assertions:
+- id: A1
+  after: S1
+  excel: 1. 页面浮出说明面板。
+  checks:
+  - {target: txt.rules, op: visible}
+- id: A2
+  after: S2
+  excel: 2. 面板显示“自动生成规则”“文件按以下模块顺序生成，各模块取值规则如下：”，并列出网站标题、网站概述、扩展内容字段、Contact Us、Social Media、Website Language Versions、Website
+    Navigation、Product Category和FAQ九项说明。
+  checks:
+  - {target: txt.rule.title, op: text, value: 自动生成规则}
+  - {target: txt.rule.intro, op: text, value: 文件按以下模块顺序生成，各模块取值规则如下：}
+  - {target: txt.rule.modules, op: text, value: [网站标题, 网站概述, 扩展内容字段, Contact Us, Social Media, Website Language Versions,
+      Website Navigation, Product Category, FAQ]}
+  - {target: txt.rule.modules, op: count, value: 9}
+questions: []

@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import collections
 import datetime as dt
+import hashlib
 import re
+import unicodedata
 from pathlib import Path
 
 from openpyxl import load_workbook
@@ -11,12 +13,12 @@ from openpyxl.utils import column_index_from_string
 from .common import digest, require, safe_id
 
 ALIASES = {
-    "id": ["用例编号", "用例ID", "测试用例编号", "caseid", "编号"],
-    "title": ["用例名称", "用例标题", "测试用例", "测试点", "标题", "title", "name"],
+    "id": ["用例编号", "编号", "ID", "用例ID", "测试用例编号", "caseid", "Case ID"],
+    "title": ["用例描述", "用例名称", "用例标题", "测试用例", "测试点", "标题", "title", "name"],
     "module": ["所属模块", "功能模块", "模块", "module"],
-    "priority": ["优先级", "用例等级", "等级", "priority"],
+    "priority": ["用例级别", "优先级", "级别", "用例等级", "等级", "priority"],
     "preconditions": ["前置条件", "前提条件", "预置条件", "preconditions"],
-    "steps": ["操作步骤", "测试步骤", "执行步骤", "步骤", "steps"],
+    "steps": ["测试步骤", "操作步骤", "执行步骤", "步骤", "steps"],
     "expected": ["预期结果", "期望结果", "预期", "expected", "expectedresult"],
     "data": ["测试数据", "输入数据", "data"],
     "cleanup": ["清理步骤", "后置条件", "数据清理", "cleanup"],
@@ -34,6 +36,10 @@ def text(value):
 
 def header_token(value):
     return re.sub(r"[\s_\-:：()（）]+", "", text(value)).casefold()
+
+
+def normalized(value):
+    return " ".join(unicodedata.normalize("NFKC", text(value)).split()).casefold()
 
 
 def find_header(ws, override=None):
@@ -100,10 +106,13 @@ def extract(path, mappings=None):
                         for row in range(area.min_row, area.max_row + 1):
                             merged[(row, col)] = ws.cell(area.min_row, area.min_col).value
             current = None
+            skipped_rows = []
             for row in range(header + 1, ws.max_row + 1):
                 values = {k: text(merged.get((row, col), ws.cell(row, col).value))
                           for k, col in columns.items()}
                 if not any(v.strip() for v in values.values()):
+                    if any(ws.cell(row, col).value is not None for col in range(1, ws.max_column + 1)):
+                        skipped_rows.append({"row": row, "reason": "no_case_content"})
                     current = None
                     continue
                 # Repeated headers in printed workbooks are not source cases.
@@ -112,12 +121,18 @@ def extract(path, mappings=None):
                     current = None
                     continue
                 cid, title = values.get("id", "").strip(), values.get("title", "").strip()
+                if not any(values.get(key, "").strip() for key in ("id", "title", "steps", "expected")):
+                    skipped_rows.append({"row": row, "reason": "no_case_content"})
+                    current = None
+                    continue
+                module = values.get("module", "").strip()
                 continuation = current is not None and (
-                    (not title and (not cid or cid == current["original_id"])) or
-                    (cid and cid == current["original_id"] and title == current["title"]))
+                    (not module or module == current["module"]) and
+                    ((not title and (not cid or cid == current["original_id"])) or
+                    (cid and cid == current["original_id"] and title == current["title"])))
                 if not continuation:
                     current = {"original_id": cid, "title": title, "sheet": ws.title,
-                               "module": values.get("module", ""), "priority": values.get("priority", "") or "P2",
+                               "module": module, "priority": values.get("priority", "") or "P2",
                                "preconditions": values.get("preconditions", ""), "rows": [], "records": []}
                     cases.append(current)
                 current["rows"].append(row)
@@ -126,22 +141,50 @@ def extract(path, mappings=None):
                 for field in ("steps", "expected", "data", "cleanup"):
                     if field in values:
                         current.setdefault(field, []).append(values[field])
+            sheets[-1]["skipped_rows"] = skipped_rows
             # Blank business fields stay explicit; the preparation skill resolves intent.
         duplicates = collections.Counter(c["original_id"] for c in cases if c["original_id"])
+        auto_bases = collections.Counter((normalized(c.get("module")), normalized(c.get("title")))
+                                         for c in cases if not c["original_id"])
+        auto_occurrences = collections.Counter()
         occurrences = collections.Counter()
         for c in cases:
-            identity = {"sheet": c["sheet"], "original_id": c["original_id"]}
+            identity = {"original_id": c["original_id"]}
             if not c["original_id"]:
-                identity.update(title=c["title"], steps=c.get("steps"), expected=c.get("expected"))
+                identity.update(module=normalized(c.get("module")), title=normalized(c.get("title")),
+                                steps=[normalized(x) for x in c.get("steps", [])],
+                                expected=[normalized(x) for x in c.get("expected", [])])
             key = digest(identity)
             occurrences[key] += 1
             c["identity_key"] = key + ":" + str(occurrences[key])
-            c["suggested_id"] = ((safe_id(c["original_id"]) + ("--" + key[:8] if duplicates[c["original_id"]] > 1 else ""))
-                                 if c["original_id"] else "AUTO-" + key[:12])
-            if occurrences[key] > 1:
+            if c["original_id"]:
+                original_safe = safe_id(c["original_id"])
+                if not original_safe.isascii():
+                    tail = re.sub(r"[^A-Za-z0-9]+", "", c["original_id"])
+                    original_safe = ("C-" + tail[-24:]) if tail else "AUTO-" + hashlib.sha256(c["original_id"].encode()).hexdigest()[:10]
+                c["suggested_id"] = original_safe + ("--" + key[:8] if duplicates[c["original_id"]] > 1 else "")
+            else:
+                pair = (normalized(c.get("module")), normalized(c.get("title")))
+                base_hash = hashlib.sha256("\0".join(pair).encode()).hexdigest()[:10]
+                c["suggested_id"] = "AUTO-" + base_hash
+                if auto_bases[pair] > 1:
+                    collision = digest({"steps": [normalized(x) for x in c.get("steps", [])],
+                                        "expected": [normalized(x) for x in c.get("expected", [])]})[:6]
+                    c["suggested_id"] += "-" + collision
+                    auto_occurrences[(pair, collision)] += 1
+                    if auto_occurrences[(pair, collision)] > 1:
+                        c["suggested_id"] += "-" + str(auto_occurrences[(pair, collision)])
+            if occurrences[key] > 1 and c["original_id"]:
                 c["suggested_id"] += "-" + str(occurrences[key])
             business = {k: c.get(k) for k in ("title", "module", "priority", "preconditions", "steps", "expected", "data", "cleanup")}
             c["content_hash"] = digest(business)
+        safe_counts = collections.Counter(c["suggested_id"] for c in cases)
+        fallback_occurrences = collections.Counter()
+        for c in cases:
+            if safe_counts[c["suggested_id"]] > 1 and c["original_id"]:
+                fallback = "AUTO-" + hashlib.sha256((normalized(c.get("module")) + "\0" + normalized(c.get("title")) + "\0" + c["content_hash"]).encode()).hexdigest()[:10]
+                fallback_occurrences[fallback] += 1
+                c["suggested_id"] = fallback + ("-" + str(fallback_occurrences[fallback]) if fallback_occurrences[fallback] > 1 else "")
         return {"cases": cases, "sheets": sheets, "gaps": gaps}
     finally:
         wb.close()

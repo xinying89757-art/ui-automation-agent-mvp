@@ -1,0 +1,10 @@
+id: target.public.llms
+kind: component
+resource:
+  path: /llms.txt
+  saved_by: network.llms.save
+alias_of: target.public.llms
+provenance:
+- source_run: GO-a0f244227ab4
+  verified_by: unverified
+created_at: '2026-10-23'

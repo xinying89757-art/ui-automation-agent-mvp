@@ -1,0 +1,13 @@
+id: target.faq-editor.entry.faq.save
+kind: component
+selector: button:text-is("保存")
+frame: iframe[name="prod"]
+nested_frames:
+- '#tiptap-iframe'
+- iframe
+source: generator:faq-editor.entry-promote
+confirmed: false
+provenance:
+  source_run: GO-a0f244227ab4
+  verified_by: unverified
+created_at: '2026-10-23'

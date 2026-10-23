@@ -1,0 +1,316 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "case-spec.v1",
+  "title": "UI automation case-spec v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "case_id",
+    "intent",
+    "automatable",
+    "required_env",
+    "data_prep",
+    "mutation_scope",
+    "start_page",
+    "steps",
+    "assertions",
+    "questions"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "case-spec.v1"
+    },
+    "case_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "intent": {
+      "type": "string",
+      "minLength": 1
+    },
+    "automatable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "reason"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "yes",
+            "needs-env",
+            "manual"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "required_env": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "data_prep": {
+      "type": "object",
+      "description": "Keys/types/scopes resolved from the extensible data-prep.yaml catalog."
+    },
+    "mutation_scope": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "start_page": {
+      "type": "string",
+      "minLength": 1
+    },
+    "entry_route": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Optional confirmed route id from knowledge/entries.yaml, replayed through openTarget."
+    },
+    "steps": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/step"
+      }
+    },
+    "assertions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/assertion"
+      }
+    },
+    "questions": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "read_back": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/read_back"}
+    }
+  },
+  "$defs": {
+    "read_back": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "after", "target", "value", "reopen", "save_target"],
+      "properties": {
+        "id": {"type":"string", "pattern":"^R[1-9][0-9]*$"},
+        "after": {"type":"string", "pattern":"^S[1-9][0-9]*$"},
+        "target": {"type":"string", "minLength":1}, "value": {"type":"string"},
+        "reopen": {"type":"array", "minItems":1, "items":{"type":"string"}},
+        "save_target": {"type":"string", "minLength":1}
+      }
+    },
+    "remoteCondition": {
+      "type": "object", "additionalProperties": false, "required": ["op", "value"],
+      "properties": {
+        "op": {"enum": ["contains", "not_contains", "equals", "ordered_pairs", "max_length", "truncated_at", "faq_page"]},
+        "value": {"oneOf": [{"type": "string"}, {"type": "integer", "minimum": 0}, {"type": "array"}, {"type": "object"}]},
+        "section": {"type": "string"},
+        "text": {"type": "string"}
+      },
+      "allOf": [
+        {"if": {"properties": {"op": {"const": "truncated_at"}}}, "then": {"required": ["text"], "properties": {"value": {"type": "integer", "minimum": 0}}}},
+        {"if": {"properties": {"op": {"const": "max_length"}}}, "then": {"properties": {"value": {"type": "integer", "minimum": 0}}}},
+        {"if": {"properties": {"op": {"const": "faq_page"}}}, "then": {"properties": {"value": {"type": "object", "required": ["count", "objects"], "properties": {"count": {"type": "integer", "minimum": 0}, "objects": {"type": "array", "items": {"type": "object", "required": ["pairs"], "properties": {"pairs": {"type": "array", "items": {"type": "array", "prefixItems": [{"type": "string"}, {"type": "string"}], "minItems": 2, "maxItems": 2}}}}}}}}}}
+      ]
+    },
+    "step": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "verb",
+        "target"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^S[1-9][0-9]*$"
+        },
+        "verb": {
+          "enum": [
+            "open",
+            "click",
+            "fill",
+            "hover",
+            "select",
+            "check",
+            "uncheck",
+            "press",
+            "upload",
+            "wait",
+            "close",
+            "assert",
+            "network_delay",
+            "network_release",
+            "double_click",
+            "attempt_click",
+            "defer_public",
+            "observe"
+          ]
+        },
+        "target": {
+          "type": "string",
+          "minLength": 1
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "verb": {
+                "enum": [
+                  "fill",
+                  "select",
+                  "press",
+                  "upload"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "value"
+            ]
+          }
+        }
+      ]
+    },
+    "assertion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "after",
+        "excel",
+        "checks"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^A[1-9][0-9]*$"
+        },
+        "after": {
+          "type": "string",
+          "pattern": "^S[1-9][0-9]*$"
+        },
+        "excel": {
+          "type": "string",
+          "minLength": 1
+        },
+        "checks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/check"
+          },
+          "minItems": 1
+        }
+      }
+    },
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target",
+        "op"
+      ],
+      "properties": {
+        "target": {
+          "type": "string",
+          "minLength": 1
+        },
+        "op": {
+          "enum": [
+            "visible",
+            "hidden",
+            "text",
+            "contains",
+            "value",
+            "attribute",
+            "count",
+            "enabled",
+            "disabled",
+            "left_of",
+            "request_count",
+            "remote_file",
+            "blocked",
+            "visible_text",
+            "occurrence_count"
+          ]
+        },
+        "value": {
+          "type": [
+            "string",
+            "integer",
+            "array",
+            "object"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "attribute": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "op": {
+                "enum": [
+                  "text",
+                  "contains",
+                  "value",
+                  "attribute",
+                  "count",
+                  "left_of"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "value"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "op": {
+                "const": "attribute"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "attribute"
+            ]
+          }
+        },
+        {
+          "if": {"properties": {"op": {"const": "remote_file"}}},
+          "then": {"properties": {"value": {"$ref": "#/$defs/remoteCondition"}}}
+        }
+      ]
+    }
+  }
+}

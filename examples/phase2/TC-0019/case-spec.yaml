@@ -1,0 +1,40 @@
+schema_version: case-spec.v1
+case_id: TC-0019
+intent: 往返切换内容来源保留两侧已填内容且不覆盖自定义文本
+automatable: {status: 'yes', reason: 可通过编辑器操作验证}
+required_env: []
+data_prep:
+  llms.enabled: true
+  llms.overview: phase2-original-overview
+  llms.custom: phase2-original-custom
+  llms.extras:
+  - name: phase2-field
+    value: phase2-value
+  llms.source: system
+mutation_scope:
+- llms.txt
+start_page: editor
+steps:
+- {id: S1, verb: click, target: txt.custom}
+- {id: S2, verb: fill, target: txt.content, value: phase2-edited-custom}
+- {id: S3, verb: click, target: txt.system}
+- {id: S4, verb: click, target: txt.custom}
+assertions:
+- id: A1
+  after: S1
+  excel: 1. 文本域显示已有自定义内容，不被自动生成内容覆盖。
+  checks:
+  - {target: txt.content, op: value, value: phase2-original-custom}
+- id: A2
+  after: S3
+  excel: 2. 系统生成区域仍显示原网站概述和扩展字段。
+  checks:
+  - {target: txt.overview, op: value, value: phase2-original-overview}
+  - {target: txt.extra.name, op: value, value: phase2-field}
+  - {target: txt.extra.value, op: value, value: phase2-value}
+- id: A3
+  after: S4
+  excel: 3. 文本域显示刚修改的自定义内容。
+  checks:
+  - {target: txt.content, op: value, value: phase2-edited-custom}
+questions: []

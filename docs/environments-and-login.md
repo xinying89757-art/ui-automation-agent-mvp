@@ -59,7 +59,8 @@ python3 scripts/uia.py login --run REQ-001
 该命令将真实浏览器证据写入 run，并接入已有 preflight 门控；`--check-only` 仅检查环境，
 不能将运行标为预检通过。`--force` 强制新上下文重新认证。遇到验证码可显式执行 `login --run REQ-001 --manual`：
 浏览器将打开并最多等待 10 分钟，由用户以当前配置账号完成登录，再验证环境和目标站点、保存会话。仅刷新同账号的登录态保留历史结果；
-切换环境、账号、域名或代理规则后，相关结果失效并重新累计两次独立成功。
+切换环境、账号、域名或代理规则后，相关结果失效，并按 `stability_passes` 重新累计。
+公开站点不可达时，后台预检仍可通过；只有依赖公开页的用例等待。错误文本会脱敏后保留。
 
 登录先访问环境初始入口，再检测登录表单。需要时填写 `#loginName`、`#password` 并提交
 `#loginSubmit`，进入领动云平台并确认目标网站。账号配置及会话绑定使用环境、账号身份、
@@ -70,7 +71,7 @@ python3 scripts/uia.py login --run REQ-001
 
 ## 业务脚本复用
 
-生成脚本从 `support/test.ts` 导入 `test` 和 `expect`：
+case-spec 生成及 AI 编写的脚本从 `support/fixtures.ts` 导入 test/expect；page 自动进入编辑器。旧脚本仍支持 `support/test.ts`：
 
 ```ts
 // 默认 page/context 是前台未登录访客，后台通过显式 fixture 获取。
@@ -94,3 +95,5 @@ test('[CASE_001] example', async ({ adminPage, page, caseContext }) => {
 脚本目录相对于模块定位，不依赖进程启动目录。`scripts.zip` 同样包含这些资源。
 在其他机器安装 Node 依赖及浏览器，重新提供本地凭据，即可使用。
 原机器的密码、登录态和私有配置不会打包；需要复用时由用户自行安全转移或重新配置。
+
+Xinying 已授权配置测试站及账号自由修改、保存、发布。`editor_any_data_restore` 保留兼容，不表示保存/发布禁令；恢复用于可重复性，实际可行时执行。

@@ -11,8 +11,8 @@
     "check:environment": "node scripts/check-environment.mjs"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.1",
     "@types/node": "^22.0.0",
-    "@playwright/test": "^1.50.0",
     "typescript": "^5.7.0"
   }
 }

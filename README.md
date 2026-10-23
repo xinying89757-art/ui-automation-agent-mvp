@@ -1,16 +1,33 @@
 # Excel UI Automation for Codex
 
-在 Codex 中提供 Excel 测试用例和环境信息，由项目技能组织意图准备、资产匹配、
+在 Codex 中提供 Excel 测试用例和环境信息，由项目技能组织case-spec 编写、确定性生成、
 页面探索、分批执行、有限修复和稳定性验证，交付可以独立运行的 Playwright 工程。
 
-**当前状态：三环境与公共登录已实现并做离线验证，真实环境未验收。**
-本轮运行了配置/认证离线测试、项目静态校验和 TypeScript 检查；未安装浏览器，未连接真实环境或执行业务用例。
+**当前状态：正式版后台已用 llms.txt 用例真实跑通。** 后台和编辑器预检必须通过；
+公开前台不可达只阻断会读取公开页的用例。站点域名要带 `http://` 或 `https://`，
+裸域名会探测可达协议，探测失败时才沿用环境入口的协议。
 
 公开仓库包含工作流实现、通用模板、三环境默认入口与代理配置、完整灰度 PAC 和检查脚本。本地产品资料 `ui-knowledge/`、
 `automation-assets/` 与 `cases/TC_PD_001/` 含环境地址和产品专属信息，仅保留在原机器上，
-没有上传。使用时请导入自己的用例并建立对应的 UI Knowledge 和 Automation Assets。
+没有上传。使用时导入自己的用例并维护页面地图与数据目录；历史 UI Knowledge/Automation Assets 可选复用。
 
 ## 在 Codex 中使用
+
+一行提测模板（也见 [独立模板](docs/test-request-template.md)）：
+
+> 提测：`/path/to/cases.xlsx`，profile `my-prod`，只跑 `TC-0004,TC-0016`；使用 uia-orchestrator 执行 go，答清单后自动继续，中途问题进审核单。
+
+```bash
+.venv/bin/python scripts/uia.py go /path/to/cases.xlsx --profile my-prod --cases TC-0004,TC-0016
+.venv/bin/python scripts/uia.py answer --run GO-xxx "A 都有，B 同意，C 无歧义"
+# 同一命令恢复；环境记忆覆盖全部问题时直接运行，不再提问。
+.venv/bin/python scripts/uia.py go /path/to/cases.xlsx --profile my-prod --cases TC-0004,TC-0016
+```
+
+`go` 不调用模型。陌生工作簿先返回 case-spec 任务，Codex 完成后再发唯一清单。
+清单分 A 环境、B 修改范围、C 业务歧义；缺少条件只挂起关联用例。
+显式答案按环境、站点、账号身份和网络的哈希保存在私有环境记忆中，不代替真实预检。
+运行中新增需求写 `review.md`，不打断；断言提案默认不应用。
 
 在本目录打开 Codex，用自然语言描述：
 
@@ -26,19 +43,18 @@
 
 ## 环境准备
 
-Python 3.9+、Node.js 22+。首次使用：
+Python 3.9+、Node.js 22+。一次装好虚拟环境、PyYAML/openpyxl 和锁定的 Playwright：
 
 ```bash
-python3 -m venv .venv
+bash scripts/bootstrap.sh
 source .venv/bin/activate
-python3 -m pip install -r requirements.txt
-npm --prefix assets/playwright-runner ci
 python3 scripts/uia.py env list
-python3 scripts/uia.py setup --profile my-gray --environment gray --site en.example.com --account my-account
+python3 scripts/uia.py setup --profile my-prod --environment production --site http://en.example.test --account my-account
 ```
 
+`@playwright/test` 锁定为 1.64.1，与本机已有浏览器一致，避免再下一份 Chromium。
 密码通过终端隐藏输入，或使用显式指定的本地私有凭据文件。账号、密码与登录态保存在 `.auth/`，
-不提交 GitHub、不写入报告或脚本包。目标网站域名由用户提供，后台初始入口由环境选择决定：
+不提交 GitHub、不写入报告或脚本包。
 
 | 环境 | 初始入口 | 网络 |
 |---|---|---|
@@ -46,29 +62,48 @@ python3 scripts/uia.py setup --profile my-gray --environment gray --site en.exam
 | 灰度（gray） | `http://www.leadong.com/website.html` | 项目内完整 PAC，验证灰度响应头 |
 | 正式版（production） | `https://www.leadong.com/website.html` | 强制直连 |
 
-详细配置、独立登录和环境检查见 [环境与公共登录](docs/environments-and-login.md)。
-修改业务数据仍需配置 `mutation.allowed` 与具体操作范围；默认关闭。
-
-技能初始化运行并生成 runner 后，在对应工程中安装锁定依赖和浏览器：
+后台入口由环境决定，始终是 HTTPS 或环境预设的协议。目标站点是另一回事：
+只给裸域名时先探测，HTTP 通而 HTTPS 不通就用 HTTP。已经写了 `http://` 或 `https://` 的地址保持原样。
 
 ```bash
-cd runs/REQ-001/runner
-npm ci
-npx playwright install chromium
+python3 scripts/uia.py profile set --profile my-prod --site http://en.example.test --mutation-allowed --scope llms.txt --stability-passes 1
 ```
 
-Windows 使用对应的虚拟环境激活命令及 Python 启动命令。Playwright 可能需要操作系统浏览器依赖。
+`mutation.allowed: false` 且 `scope` 为空表示只读。`scope` 是允许改动的功能名列表，
+用例声明的 `mutation_scope` 必须是它的子集。`llms.txt` 表示可以在已配置的这个站点上
+创建、修改、删除该功能的数据，并且必须校验清理。`--read-only` 关闭写操作。
+`--stability-passes 1` 是每日交付（一次成功即可）；`2` 是夜间回归（同版本连续两批成功）。
+
+详细配置见 [环境与公共登录](docs/environments-and-login.md)。
+
+Codex 首次执行（需要网络安装浏览器缓存，并把提示词从标准输入关掉）：
+
+```bash
+timeout 2h codex exec -m gpt-6-luna -c model_reasoning_effort=high -s workspace-write \
+  -c sandbox_workspace_write.network_access=true --add-dir ~/.cache --add-dir ~/.npm \
+  "使用 uia-orchestrator，把用例跑完。先跑所有能跑的，再问我真正的阻断。" < /dev/null
+```
 
 ## 流程与人工交互
 
-Excel → 来源保留与业务分组 → 每条 Intent → 资产匹配 → 真实浏览器预检与探索 →
-就绪用例分批运行 → 同版本第二次独立运行 → 反馈候选与结果交付。
+Excel → 保留原文 → 先绑定/执行现有脚本 → case-spec → lint → 模板生成 →
+仅探索未知目标 → 分批运行 → 按 stability_passes 交付。见 [case-spec 契约](docs/case-spec.md)。
 
-- 默认每批最多 10 条，不限制总条数；先运行就绪用例，再探索能解锁更多用例的流程。
-- 默认单 worker；公共流程探索 10 分钟、每个缺口两种策略、自动化失败最多两轮修复。
-- 登录、环境/数据缺失、业务歧义和探索耗尽进入集中问题队列；独立用例继续推进。
-- 首次成功标记 `candidate`；相同版本两次独立成功并验证清理后标记 `stable`。
-- 报告分别展示执行覆盖率、已执行用例通过率、全部用例稳定率，以及人工等待和探索耗时。
+- 导入时根据用例原文生成一份前置条件清单，只问人一次。缺权限账号、4.0 编辑器、
+  全新站点、多语言/简体/小语种、根目录已有 llms.txt、未迁移站点未满足时继续等待，
+  不记成 not_suitable。FAQ 条数、分类、导航、首页 Meta、网站简称、快速联系、社媒
+  由夹具自己快照、设置并恢复。
+- 默认每批最多 10 条。同一批复用一个编辑器会话，用例之间只收起弹窗。
+- Excel 要求公开文件更新时须实际读取公开文件；前台不可达则等待环境，不能改成编辑器值断言。
+- 每日 `stability_passes: 1`，一次清理成功就是交付。夜间回归改为 `2`。
+- 通过的批次把定位记入 run-local 知识；长期写回需审核。元素名只保留短文本，不用面板整段 innerText。
+- 登录、环境/数据缺失和业务歧义进入问题队列。先把能跑的用例跑完，再集中提问。
+
+等待一批执行时用心跳文件，不要靠 PID：
+
+```bash
+python3 scripts/uia.py wait --run REQ-001
+```
 
 大批量用例通过按流程分组、分批处理和运行清单恢复实现。所有用例都保留状态，
 环境阻断或不适合 UI 自动化的用例不会被删出报告分母。
@@ -83,11 +118,38 @@ python3 scripts/uia.py scaffold --run REQ-001
 # 为 runner 安装依赖和浏览器后执行；登录成功后记录真实环境预检证据。
 python3 scripts/uia.py login --run REQ-001
 python3 scripts/uia.py import --run REQ-001 --excel /path/to/cases.xlsx
+# The import response asks you to bind existing specs before creating new ones.
+python3 scripts/uia.py bind-specs --run REQ-001
+python3 scripts/uia.py spec lint --run REQ-001
+python3 scripts/uia.py spec gen --run REQ-001 --cases TC-0004
+python3 scripts/uia.py preconditions --run REQ-001
 python3 scripts/uia.py next --run REQ-001
+python3 scripts/uia.py run-batch --run REQ-001 --cases TC-0001
+python3 scripts/uia.py wait --run REQ-001
 python3 scripts/uia.py status --run REQ-001
 ```
 
+Use `python3 scripts/uia.py snapshot --run REQ-001 --node editor` for one-shot,
+redacted page exploration. Each run links directly to `assets/playwright-runner`; its
+bindings remain in run-local state. The report writes `metrics.json` at the run root and
+shows it in the HTML/JSON report. Set broad editor mutation permission before `init` with
+`profile set --mutation-allowed --scope '*' --editor-data-restorable`; every changed
+record must have a verified restoration hook.
+
 后续阶段的完整接口见 [接口说明](docs/interfaces.md)，阶段执行约定见 [工作流](docs/workflow.md)。
+
+## 可检索知识库
+
+`uia go` 会在生成 spec、提问或探索前按用例页面/入口检索 `knowledge/index.yaml`，再只读取相关页面、组件、流程和模式文件；知识内容不会整库注入。默认不限制注入 token 数，`kb query --max-tokens N` 仅在显式指定时截断。每轮报告记录注入 token 的 p50/p95。旧 `entries.yaml` / `page-map.yaml` 仍可读，迁移和维护命令如下：
+
+```bash
+python3 scripts/uia.py kb query --case TC-0004 [--run GO-xxx] [--max-tokens 3000]
+python3 scripts/uia.py knowledge merge --from /path/to/assets/playwright-runner/knowledge --run-id GO-xxx
+python3 scripts/uia.py kb validate
+python3 scripts/uia.py kb prune   # >90 天标 stale；>180 天且无命中只列删除候选
+```
+
+报告收尾会自动把执行验证且至少被两个用例或两次执行复用的入口/定位器/修复模式写回，并展示新增或更新项；不会修改断言或业务语义。相同版本两次独立失败会隔离为 `needs_review`，默认检索排除。详见 [知识库与远程检查](docs/knowledge-base.md) 和 [远程检查协议](docs/remote-checks.md)。
 
 运行状态位于 `runs/<run-id>/run.json`；源用例归一记录、Intent、复用计划、脚本和运行证据
 位于该运行目录。运行数据、认证状态、本地账号配置和依赖目录默认不进入 Git；三环境默认配置和灰度 PAC 随项目交付。
@@ -113,5 +175,23 @@ python3 scripts/uia.py validate
 python3 scripts/uia.py validate --run REQ-001
 ```
 
+## 可选生成器
+
+本仓库的日常路径是人读 Excel、直接写确定性 Playwright。下面两种生成器没有接进这次 llms.txt 实跑，
+因为现有编辑器控件已经能定位，接进来不会让未覆盖用例在这一轮变成可执行规格。
+
+- Playwright Test Agents（`npx playwright init-agents --loop=codex`，需要 Playwright 1.56+）：
+  适合全新模块还没有 spec 时，用 planner/generator 起草用例。healer 只能改定位和等待；
+  本仓库的 `support/heal.mjs` 会把改断言的提案标成疑似产品缺陷并且不写回 spec。
+  接入方式：在 runner 里单独生成草稿，人工确认预期后放进 `tests/*.spec.ts`，再走 `bind-specs`。
+- Midscene：只作为画布或视觉区域的后备。这个编辑器的预览是同源 iframe，不是 canvas，
+  不需要视觉模型。遇到真正的 canvas 时，再把 Midscene 的步骤限制在那一块，断言仍用 Playwright。
+
 重点覆盖不同 Excel 布局、跨工作表重名 ID、负向空值、公共流程复用、问题答复与恢复、
 中断恢复、数据清理失败隔离，以及代码修改后成功计数重置。
+
+新用例默认走 case-spec；旧 intent/reuse-plan、asset-matcher/profile-builder/asset-miner 文件保留兼容。Xinying 已授权配置测试站自由修改、保存、发布；实际可行时恢复数据。
+
+用例规格技能位于 [uia-case-spec](.agents/skills/uia-case-spec/SKILL.md)。
+
+公开文件需要远程读取时，参见 [远程文件交接协议](docs/remote-checks.md)。本机先完成保存和准备，生成 `runs/<id>/remote-checks/request.json` 与不含认证的 `check.mjs`；远端 Node 18+ 执行后，将 `results.json` 交回 `uia.py remote-checks ingest`。数据在交接期间保留，回执后自动恢复并核验；到期使用 `remote-checks restore`。

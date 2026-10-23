@@ -1,5 +1,7 @@
 # Codex 阶段工作流
 
+Excel 导入接受常见中英文表头别名并跳过无用例内容的行；缺少用例 ID 时使用模块和标题生成稳定 AUTO ID。非 ASCII 原始 ID 在报告中保留，路径和 Playwright grep 使用 ASCII case ID。
+
 ## 入口和职责
 
 `uia-orchestrator` 是总入口。所有技能都由当前 Codex 会话按约定读取和执行，Python
@@ -7,16 +9,17 @@
 一次把整份 Excel、所有 Intent 和知识库正文塞入上下文。
 
 总控读取 `next` 返回的 action。每完成一阶段、一个批次或收到人工答复后重新调用
-`next`。用户仅查询进度时使用 `status`，不自动开始执行。
+`next`，并持续循环处理所有 AI action 和 runnable case，直至所有用例均已结论并生成最终报告；
+不得以中间进度摘要结束当前自动化任务。用户仅查询进度时使用 `status`，不自动开始执行。
 
 | 阶段 | 输入与动作 | 完成门 | 下一步 |
 |---|---|---|---|
-| Excel 准备 | CLI 导入原始行；Codex 按业务分组并调用意图技能 | Intent 可追溯、引用有效、ready_for_asset_matching=true | matching |
-| 匹配 | 检索索引、查看详情和真实来源；确认每个 capability 决策 | 每项 selection_confirmed，能力覆盖完整，直接复用有当前证据 | discovery |
-| 预检 | 浏览器访问目标，验证认证、目标可见性和必需输入 | preflight 证据与当前配置、认证文件一致 | 探索或执行 |
-| 探索与生成 | 复用公共流程、解决必要未知、编写最终 spec 和 fixture | register 校验覆盖、运行证据、未知项、局部依赖 | execution |
-| 运行 | run-batch 保存收据/代码快照，启动 Playwright 并读取专用 reporter | 第一次成功为 candidate；相同版本第二次独立成功为 stable | feedback |
-| 反馈交付 | PASS 后评审候选，生成逐条结果与可独立运行的脚本工程 | 所有源用例已分类，反馈及交付物齐全 | completed |
+| Excel 导入 | CLI 保留原文，bind-specs 索引并优先执行现有脚本 | 来源与绑定可追溯 | spec |
+| case-spec | uia-case-spec 编写；spec lint 校验 Excel 原文、词表、目标和去重 | 独立目标；未知聚合 | gen |
+| 预检/生成 | 环境、会话、数据预检；spec gen 按模板生成单用例文件 | 统一 fixture；标记自动推出覆盖 | execution |
+| 探索 | `next` 对缺失知识目标返回 `explore`；按入口做限定快照/生成器探索 | 成功知识回写；失败须有有界尝试证据 | spec gen / execution |
+| 运行 | run-batch/wait 保留尝试；环境→会话→数据→定位/时序→业务分诊 | 每日 1 次，夜间 2 批同版本成功 | feedback |
+| 反馈交付 | 生成审核候选与结果 | 长期写回经用户审核 | completed |
 
 运行总状态为 active、waiting_human、delivery_pending 或 completed。每条用例的
 阶段和工作状态分别保存；`result` 与 `stability` 分开，避免把代码已生成或一次成功
@@ -24,15 +27,19 @@
 
 ## 调度和速度
 
-默认批次上限 10 条，不限制总用例数。准备/匹配分批消费原始用例；已就绪的脚本
+默认批次上限 10 条，不限制总用例数。case-spec 分批消费原始用例；已就绪的脚本
 立即执行。之后按公共业务流程选择能解锁最多用例的工作，P0/P1 在同等条件下优先。
 已有兼容脚本优先重跑，公共流程只在需要时探索一次。
 
-UI Profile 与历史资产提取在源材料可用时更新，不是每个需求都从头重建的阶段。
+旧 intent/reuse-plan/asset-matcher/profile-builder/asset-miner 链退出默认流程；文件和历史运行继续兼容。
 同一运行内通过验证的参数化能力可直接供其他用例使用。长期资产回写只生成可审阅
 候选，默认不直接写入两个规范知识库。
 
 ## 人工问题
+
+提测可选 `go --hints FILE_OR_TEXT` 或 `hints add --run R "页面=路径"`；未知入口合并一次清单 D（可用 `preconditions classify --page` 注册），后发现只进异步审核。
+D 答复（页面=路径或 D1/D2）写入环境记忆及 `assets/playwright-runner/knowledge/entries.yaml`，跨需求复用；草稿答复在清单定稿时自动应用。
+探索从 `snapshot --entry PAGE` / `generator --entry PAGE` 开始；`next` 会把同入口/frame 的多例缺失目标合并为一项探索任务，按返回的 `targets_by_case` 为每例逐项采证。快照命令示例：`uia.py snapshot --run R --node editor --entry PAGE --purpose TARGET --save-as evidence/TARGET.json`；生成器示例：`uia.py generator --run R --purpose TARGET --entry PAGE --plan PLAN --draft`。每个 case/目标完成后必须调用 `uia.py exploration-log --run R --method snapshot|generator --purpose TARGET --result ok|failed --note NOTE --case CID --target '?placeholder' --evidence evidence/FILE.json`，成功与失败都记录；失败证据须是实际存在的文件。成功发现占位目标后，通过 `hints target --run R --name catalog.target --locator 'JSON' --evidence evidence/FILE.json --for '?placeholder'`，或 `hints promote --run R --report exploration/generator-SLUG.json --for '?placeholder'` 将已观察控件写入目录并绑定规格占位符；多个占位符用逗号分隔。随后运行 `spec lint` 和 `spec gen`。禁止猜测控件或在探索报告未成功时绑定。粗略路径转为 --goto/--step 后用 `hints confirm` 保存；仅已知入口到达且 generator 在指定 --interaction 失败后才可请求演示。
 
 问题保存类型、影响用例、尝试记录和恢复位置。登录和凭证只接收状态/环境变量引用，
 不在对话或清单中保存密码值。同一缺口合并询问，已经确认的业务答案再次使用；
@@ -49,8 +56,9 @@ owner marker 准备独有数据，验证起点后才执行业务操作；无论�
 验证恢复。只读用例同样验证前置状态及基线。
 
 稳定版本指纹包含 spec、静态本地导入、显式动态依赖、fixture、运行器配置、
-相关数据规则、Intent 与复用计划。编辑后重新计数，原始尝试及代码快照继续保留。
-不能通过 Playwright retry、复用上一次页面状态或导入历史 PASS 凑够两次成功。
+相关数据规则和 case-spec（历史运行仍包含 Intent 与复用计划）。编辑后重新计数，原始尝试及代码快照继续保留。
+每日交付把 `stability_passes` 设为 1。夜间回归设为 2，不能用重试、同一批里的页面复用
+或历史 PASS 凑够第二次。一批内部可以复用编辑器会话，那只减少打开编辑器的时间。
 
 业务断言通过 `businessAssertion` 标识，失败保留为 business_failure。准备、定位、
 等待或生成错误为 automation_failure，保存诊断后最多两轮修复。修复不修改业务期望。
@@ -75,3 +83,15 @@ fixtures 可继续。清理恢复需要实际证据，通过 `resolve-fixture` �
 原有 Intent/reuse-plan 版本、UI Knowledge 与 Asset Registry 文件继续使用。旧技能
 目录保留迁移说明。`cases/TC_PD_001` 是本地历史样本，包含产品环境信息，不纳入公开仓库。
 项目技能与全局技能之间没有运行时路径依赖。
+
+Xinying 已授权测试站及账号自由修改、保存、发布；实际可行时恢复数据以便复跑。
+
+公开文件采用远程交接时，先运行不需要 hold 的用例，再准备 deferred 用例并最后生成请求。hold 写在环境私有记忆 `.auth/remote-holds/`；同环境的其他 run/clone 会阻止数据修改，但可运行只读用例。清理快照保留在本机，远程最终回执后按准备反序恢复。只有远程断言和本机恢复核验都通过才计通过/稳定。缓存结果保持等待；不可达不会冒充业务失败。到期通过 go 或 `remote-checks restore` 恢复，详细协议见 [remote-checks.md](remote-checks.md)。
+
+### 知识库检索与回写
+
+`go` 在问题清单、探索和 spec generation 之前运行索引检索：每例按页面/frame/版本/状态硬过滤，并把 case 与 spec 的目标、feature 和关键词送入 BM25 排序，再按每例 token 预算加载相关小文件。generator 与 spec-gen 只收到该用例命中项及其模式。`runs/<id>/knowledge-match.json` 保存所选条目、被预算截断条目和注入 token 数。报告记录 token p50/p95；对已知页面再次探索会增加 `re_explored_known_pages` 并作为 `process_issue` 显示。
+
+report/close-out 自动执行知识回写。已执行成功的操作步骤可在最终断言失败时回写已到达入口、已定位/交互控件和已走路线；断言与业务语义不作为知识证据。完整的入口与定位器成功记录仍按重复验证更新稳定性计数。两次独立失败会将同版本知识设为 `needs_review`，默认不注入。`kb prune` 超过 90 天未验证标为 stale；180 天无命中仅列删除候选，不删文件。历史扁平 `entries.yaml`/`page-map.yaml` 由 `knowledge merge` 迁移到按页面/组件/流程/模式拆分的 YAML 文件。
+
+缺失 page-map 控件是探索任务，不是生成门禁结论。每个 case/target 最多两次失败探索；`next` 在第二次有证据失败后返回 `缺控件：…` 分类任务。写入 catalog 但未绑定 `?placeholder` 不算该规格目标已发现，且不能重置失败上限。每次成功后运行 lint/gen，并继续调用 `next`；只有所有用例均结论并已生成最终报告后才结束。

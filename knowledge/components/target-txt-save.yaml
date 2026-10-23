@@ -1,0 +1,12 @@
+id: target.txt.save
+kind: component
+name: 保存
+mutation: llms.txt
+dialog: txt.dialog
+scope: '#backstage-dialog-customizeFile'
+selector: a[class*='customize_file_llms']
+alias_of: target.txt.save
+provenance:
+- source_run: GO-a0f244227ab4
+  verified_by: unverified
+created_at: '2026-10-23'

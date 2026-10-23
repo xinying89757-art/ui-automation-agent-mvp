@@ -81,7 +81,7 @@ export function launchOptions(cfg, headless = true) {
   };
 }
 export function contextOptions(cfg) {
-  return { locale: 'zh-CN', ignoreHTTPSErrors: Boolean(cfg.network.ignore_https_errors),
+  return { locale: 'zh-CN', viewport: { width: 1440, height: 900 }, ignoreHTTPSErrors: Boolean(cfg.network.ignore_https_errors),
     ...(cfg.network.mode === 'proxy' ? { proxy: { server: cfg.network.server } } : {}) };
 }
 export async function checkEnvironment(page, cfg) {

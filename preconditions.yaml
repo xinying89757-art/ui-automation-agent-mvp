@@ -1,0 +1,29 @@
+schema_version: preconditions.v1
+preconditions:
+  no_settings_permission:
+    label: 无网站设置权限的账号
+    match: [不具备当前站点的网站设置, 无网站设置权限, 没有网站设置]
+  editor_4_0:
+    label: 4.0 编辑器
+    match: [4.0编辑器, 4.0 编辑器]
+  fresh_unconfigured_site:
+    label: 从未配置过的新站点
+    match: [尚未修改过, 新站点首次, 从未配置]
+  simplified_chinese_site:
+    label: 简体中文站点
+    match: [简体中文站点]
+  multi_language_site:
+    label: 多语言或小语种站点
+    match: [小语种, 简站, 专站]
+  existing_root_llms:
+    label: 根目录已有 llms.txt
+    match: [根目录已有, 根目录有客户上传, 根目录已存在]
+  unmigrated_site:
+    label: 未迁移的存量站点
+    match: [上线前, 存量迁移]
+  delayed_save:
+    label: 保存操作可保持处理中数秒的环境
+    match: [保存操作保持处理中]
+  public_frontend:
+    label: 可读取公开站点文件
+    match: []

@@ -1,0 +1,2990 @@
+schema_version: uia-knowledge-index.v2
+entries:
+- id: page.editor
+  page: editor
+  route: 编辑网站
+  frame: ''
+  tags:
+  - editor
+  - 编辑网站
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: 编辑网站
+  path: pages/page-editor.yaml
+  hit_count: 47
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: page.content-admin
+  page: content-admin
+  route: 内容管理
+  frame: ''
+  tags:
+  - content-admin
+  - 内容管理
+  version: unknown
+  status: stable
+  last_verified: null
+  last_hit: null
+  summary: 内容管理
+  path: pages/page-content-admin.yaml
+  hit_count: 0
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: page.public
+  page: public
+  route: ''
+  frame: ''
+  tags:
+  - public
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: null
+  summary: page.public
+  path: pages/page-public.yaml
+  hit_count: 0
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.settings
+  page: content-admin
+  route: ''
+  frame: ''
+  tags:
+  - settings
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.settings
+  path: components/target-settings.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.txt.entry
+  page: content-admin
+  route: ''
+  frame: ''
+  tags:
+  - txt.entry
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.txt.entry
+  path: components/target-txt-entry.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.txt.dialog
+  page: content-admin
+  route: ''
+  frame: ''
+  tags:
+  - txt.dialog
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.txt.dialog
+  path: components/target-txt-dialog.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.txt.title
+  page: content-admin
+  route: ''
+  frame: ''
+  tags:
+  - txt.title
+  - 管理txt文件
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: 管理txt文件
+  path: components/target-txt-title.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.txt.tab.llms
+  page: content-admin
+  route: ''
+  frame: ''
+  tags:
+  - txt.tab.llms
+  - llms.txt
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: llms.txt
+  path: components/target-txt-tab-llms.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.txt.cancel
+  page: content-admin
+  route: ''
+  frame: ''
+  tags:
+  - txt.cancel
+  - 取消
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: 取消
+  path: components/target-txt-cancel.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.txt.save
+  page: content-admin
+  route: ''
+  frame: ''
+  tags:
+  - txt.save
+  - 保存
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: 保存
+  path: components/target-txt-save.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.txt.system
+  page: content-admin
+  route: ''
+  frame: ''
+  tags:
+  - txt.system
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.txt.system
+  path: components/target-txt-system.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.txt.custom
+  page: content-admin
+  route: ''
+  frame: ''
+  tags:
+  - txt.custom
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.txt.custom
+  path: components/target-txt-custom.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.txt.overview
+  page: content-admin
+  route: ''
+  frame: ''
+  tags:
+  - txt.overview
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.txt.overview
+  path: components/target-txt-overview.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.txt.content
+  page: content-admin
+  route: ''
+  frame: ''
+  tags:
+  - txt.content
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.txt.content
+  path: components/target-txt-content.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.txt.extras
+  page: content-admin
+  route: ''
+  frame: ''
+  tags:
+  - txt.extras
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.txt.extras
+  path: components/target-txt-extras.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.txt.saved
+  page: content-admin
+  route: ''
+  frame: ''
+  tags:
+  - txt.saved
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.txt.saved
+  path: components/target-txt-saved.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.txt.rule.help
+  page: content-admin
+  route: ''
+  frame: ''
+  tags:
+  - txt.rule.help
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.txt.rule.help
+  path: components/target-txt-rule-help.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.txt.rules
+  page: content-admin
+  route: ''
+  frame: ''
+  tags:
+  - txt.rules
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.txt.rules
+  path: components/target-txt-rules.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.txt.rule.title
+  page: content-admin
+  route: ''
+  frame: ''
+  tags:
+  - txt.rule.title
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.txt.rule.title
+  path: components/target-txt-rule-title.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.txt.rule.intro
+  page: content-admin
+  route: ''
+  frame: ''
+  tags:
+  - txt.rule.intro
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.txt.rule.intro
+  path: components/target-txt-rule-intro.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.txt.rule.modules
+  page: content-admin
+  route: ''
+  frame: ''
+  tags:
+  - txt.rule.modules
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.txt.rule.modules
+  path: components/target-txt-rule-modules.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.txt.custom.error
+  page: content-admin
+  route: ''
+  frame: ''
+  tags:
+  - txt.custom.error
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.txt.custom.error
+  path: components/target-txt-custom-error.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.txt.extra.name
+  page: content-admin
+  route: ''
+  frame: ''
+  tags:
+  - txt.extra.name
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.txt.extra.name
+  path: components/target-txt-extra-name.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.txt.extra.value
+  page: content-admin
+  route: ''
+  frame: ''
+  tags:
+  - txt.extra.value
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.txt.extra.value
+  path: components/target-txt-extra-value.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.txt.close
+  page: content-admin
+  route: ''
+  frame: ''
+  tags:
+  - txt.close
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.txt.close
+  path: components/target-txt-close.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.network.llms.save
+  page: content-admin
+  route: ''
+  frame: ''
+  tags:
+  - network.llms.save
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.network.llms.save
+  path: components/target-network-llms-save.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.public.llms
+  page: public
+  route: ''
+  frame: ''
+  tags:
+  - public.llms
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: null
+  summary: target.public.llms
+  path: components/target-public-llms.yaml
+  hit_count: 0
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.public.llms.immediate
+  page: public
+  route: ''
+  frame: ''
+  tags:
+  - public.llms.immediate
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: null
+  summary: target.public.llms.immediate
+  path: components/target-public-llms-immediate.yaml
+  hit_count: 0
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq.entry
+  page: content-admin
+  route: ''
+  frame: ''
+  tags:
+  - faq.entry
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq.entry
+  path: components/target-faq-entry.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq.list
+  page: content-admin
+  route: ''
+  frame: '#faq'
+  tags:
+  - faq.list
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq.list
+  path: components/target-faq-list.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq.add
+  page: content-admin
+  route: ''
+  frame: '#faq'
+  tags:
+  - faq.add
+  - 添加FAQ
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: 添加FAQ
+  path: components/target-faq-add.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq.title
+  page: content-admin
+  route: ''
+  frame: '#faq'
+  tags:
+  - faq.title
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq.title
+  path: components/target-faq-title.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq.save
+  page: content-admin
+  route: ''
+  frame: '#faq'
+  tags:
+  - faq.save
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq.save
+  path: components/target-faq-save.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq.rows
+  page: content-admin
+  route: ''
+  frame: '#faq'
+  tags:
+  - faq.rows
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq.rows
+  path: components/target-faq-rows.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq.answer
+  page: content-admin
+  route: ''
+  frame: '#faq'
+  tags:
+  - faq.answer
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq.answer
+  path: components/target-faq-answer.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq.edit
+  page: content-admin
+  route: ''
+  frame: '#faq'
+  tags:
+  - faq.edit
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq.edit
+  path: components/target-faq-edit.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq.delete
+  page: content-admin
+  route: ''
+  frame: '#faq'
+  tags:
+  - faq.delete
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq.delete
+  path: components/target-faq-delete.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.entry.faq.component.entry
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.entry.faq.component.entry
+  version: unknown
+  status: stable
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.entry.faq.component.entry
+  path: components/target-faq-editor-entry-faq-component-entry.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.entry.faq.title
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.entry.faq.title
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.entry.faq.title
+  path: components/target-faq-editor-entry-faq-title.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.entry.faq.content
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.entry.faq.content
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.entry.faq.content
+  path: components/target-faq-editor-entry-faq-content.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.entry.faq.add
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.entry.faq.add
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.entry.faq.add
+  path: components/target-faq-editor-entry-faq-add.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.entry.faq.save
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.entry.faq.save
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.entry.faq.save
+  path: components/target-faq-editor-entry-faq-save.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.entry.faq.cancel
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.entry.faq.cancel
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.entry.faq.cancel
+  path: components/target-faq-editor-entry-faq-cancel.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.entry.route.3
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.entry.route.3
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.entry.route.3
+  path: components/target-faq-editor-entry-route-3.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.entry.route.4
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.entry.route.4
+  version: unknown
+  status: stable
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.entry.route.4
+  path: components/target-faq-editor-entry-route-4.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.group-controls.faqtitlefields
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.group-controls.faqtitlefields
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.group-controls.faqtitlefields
+  path: components/target-faq-editor-group-controls-faqtitlefields.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.group-controls.faqanswerfields
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.group-controls.faqanswerfields
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.group-controls.faqanswerfields
+  path: components/target-faq-editor-group-controls-faqanswerfields.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.group-controls.groupmoveup
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.group-controls.groupmoveup
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.group-controls.groupmoveup
+  path: components/target-faq-editor-group-controls-groupmoveup.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.group-controls.groupmovedown
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.group-controls.groupmovedown
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.group-controls.groupmovedown
+  path: components/target-faq-editor-group-controls-groupmovedown.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.group-controls.groupdelete
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.group-controls.groupdelete
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.group-controls.groupdelete
+  path: components/target-faq-editor-group-controls-groupdelete.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.group-controls.addfaqgroup
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.group-controls.addfaqgroup
+  version: unknown
+  status: stable
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.group-controls.addfaqgroup
+  path: components/target-faq-editor-group-controls-addfaqgroup.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.group-controls.faqpanelcancel
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.group-controls.faqpanelcancel
+  version: unknown
+  status: stable
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.group-controls.faqpanelcancel
+  path: components/target-faq-editor-group-controls-faqpanelcancel.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.group-controls.producteditorcancel
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.group-controls.producteditorcancel
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.group-controls.producteditorcancel
+  path: components/target-faq-editor-group-controls-producteditorcancel.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.group-controls.productmenu
+  page: content-admin
+  route: ''
+  frame: ''
+  tags:
+  - faq-editor.group-controls.productmenu
+  version: unknown
+  status: stable
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.group-controls.productmenu
+  path: components/target-faq-editor-group-controls-productmenu.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.group-controls.faqtitlefieldsall
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.group-controls.faqtitlefieldsall
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.group-controls.faqtitlefieldsall
+  path: components/target-faq-editor-group-controls-faqtitlefieldsall.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.group-controls.faqanswerfieldsall
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.group-controls.faqanswerfieldsall
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.group-controls.faqanswerfieldsall
+  path: components/target-faq-editor-group-controls-faqanswerfieldsall.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.group-controls.faqtitlefield1
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.group-controls.faqtitlefield1
+  version: unknown
+  status: stable
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.group-controls.faqtitlefield1
+  path: components/target-faq-editor-group-controls-faqtitlefield1.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.group-controls.faqtitlefield2
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.group-controls.faqtitlefield2
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.group-controls.faqtitlefield2
+  path: components/target-faq-editor-group-controls-faqtitlefield2.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.group-controls.faqtitlefield3
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.group-controls.faqtitlefield3
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.group-controls.faqtitlefield3
+  path: components/target-faq-editor-group-controls-faqtitlefield3.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.group-controls.faqanswerfield1
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.group-controls.faqanswerfield1
+  version: unknown
+  status: stable
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.group-controls.faqanswerfield1
+  path: components/target-faq-editor-group-controls-faqanswerfield1.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.group-controls.faqanswerfield2
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.group-controls.faqanswerfield2
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.group-controls.faqanswerfield2
+  path: components/target-faq-editor-group-controls-faqanswerfield2.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.group-controls.faqanswerfield3
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.group-controls.faqanswerfield3
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.group-controls.faqanswerfield3
+  path: components/target-faq-editor-group-controls-faqanswerfield3.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.group-controls.groupmoveup0
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.group-controls.groupmoveup0
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.group-controls.groupmoveup0
+  path: components/target-faq-editor-group-controls-groupmoveup0.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.group-controls.groupmoveup1
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.group-controls.groupmoveup1
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.group-controls.groupmoveup1
+  path: components/target-faq-editor-group-controls-groupmoveup1.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.group-controls.groupmoveup2
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.group-controls.groupmoveup2
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.group-controls.groupmoveup2
+  path: components/target-faq-editor-group-controls-groupmoveup2.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.group-controls.groupmovedown0
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.group-controls.groupmovedown0
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.group-controls.groupmovedown0
+  path: components/target-faq-editor-group-controls-groupmovedown0.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.group-controls.groupmovedown1
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.group-controls.groupmovedown1
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.group-controls.groupmovedown1
+  path: components/target-faq-editor-group-controls-groupmovedown1.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.group-controls.groupmovedown2
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.group-controls.groupmovedown2
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.group-controls.groupmovedown2
+  path: components/target-faq-editor-group-controls-groupmovedown2.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.group-controls.groupdeleteb
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.group-controls.groupdeleteb
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.group-controls.groupdeleteb
+  path: components/target-faq-editor-group-controls-groupdeleteb.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.group-controls.faqpaneltitle
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.group-controls.faqpaneltitle
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.group-controls.faqpaneltitle
+  path: components/target-faq-editor-group-controls-faqpaneltitle.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.group-controls.faqpaneldescription
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.group-controls.faqpaneldescription
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.group-controls.faqpaneldescription
+  path: components/target-faq-editor-group-controls-faqpaneldescription.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.product-edit.productedit
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.product-edit.productedit
+  version: unknown
+  status: stable
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.product-edit.productedit
+  path: components/target-faq-editor-product-edit-productedit.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.group-controls.groupdeletea
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.group-controls.groupdeletea
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.group-controls.groupdeletea
+  path: components/target-faq-editor-group-controls-groupdeletea.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.group-controls.faqwebcomponents
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.group-controls.faqwebcomponents
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.group-controls.faqwebcomponents
+  path: components/target-faq-editor-group-controls-faqwebcomponents.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.group-controls.questionlabel1
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.group-controls.questionlabel1
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.group-controls.questionlabel1
+  path: components/target-faq-editor-group-controls-questionlabel1.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.group-controls.questionlabel2
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.group-controls.questionlabel2
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.group-controls.questionlabel2
+  path: components/target-faq-editor-group-controls-questionlabel2.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.group-controls.questionlabel3
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.group-controls.questionlabel3
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.group-controls.questionlabel3
+  path: components/target-faq-editor-group-controls-questionlabel3.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.group-controls.canvasquestion1
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.group-controls.canvasquestion1
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.group-controls.canvasquestion1
+  path: components/target-faq-editor-group-controls-canvasquestion1.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.group-controls.canvasquestion2
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.group-controls.canvasquestion2
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.group-controls.canvasquestion2
+  path: components/target-faq-editor-group-controls-canvasquestion2.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.group-controls.canvasquestion3
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.group-controls.canvasquestion3
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.group-controls.canvasquestion3
+  path: components/target-faq-editor-group-controls-canvasquestion3.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.required-validation.faq-title
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.required-validation.faq-title
+  - 请输入FAQ标题
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: 请输入FAQ标题
+  path: components/target-faq-editor-required-validation-faq-title.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.required-validation.faq-content
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.required-validation.faq-content
+  - 请输入FAQ内容
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: 请输入FAQ内容
+  path: components/target-faq-editor-required-validation-faq-content.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.required-validation.form-save
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.required-validation.form-save
+  - 保存
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: 保存
+  path: components/target-faq-editor-required-validation-form-save.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.required-validation.form-cancel
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.required-validation.form-cancel
+  - 取消
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: 取消
+  path: components/target-faq-editor-required-validation-form-cancel.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.required-validation.editor-cancel
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.required-validation.editor-cancel
+  - 取消
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: 取消
+  path: components/target-faq-editor-required-validation-editor-cancel.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.required-validation.route.5
+  page: content-admin
+  route: ''
+  frame: ''
+  tags:
+  - faq-editor.required-validation.route.5
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.required-validation.route.5
+  path: components/target-faq-editor-required-validation-route-5.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.reedit-toolbar-final.faq.insert.option
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.reedit-toolbar-final.faq.insert.option
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.reedit-toolbar-final.faq.insert.option
+  path: components/target-faq-editor-reedit-toolbar-final-faq-insert-option.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.reedit-toolbar-final.faq.title
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.reedit-toolbar-final.faq.title
+  - 请输入FAQ标题
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: 请输入FAQ标题
+  path: components/target-faq-editor-reedit-toolbar-final-faq-title.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.reedit-toolbar-final.faq.content
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.reedit-toolbar-final.faq.content
+  - 请输入FAQ内容
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: 请输入FAQ内容
+  path: components/target-faq-editor-reedit-toolbar-final-faq-content.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.reedit-toolbar-final.faq.add.row
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.reedit-toolbar-final.faq.add.row
+  - 添加FAQ
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: 添加FAQ
+  path: components/target-faq-editor-reedit-toolbar-final-faq-add-row.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.reedit-toolbar-final.faq.cancel
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.reedit-toolbar-final.faq.cancel
+  - 取消
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: 取消
+  path: components/target-faq-editor-reedit-toolbar-final-faq-cancel.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.reedit-toolbar-final.editor.import.toolbar
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.reedit-toolbar-final.editor.import.toolbar
+  - 导入
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: 导入
+  path: components/target-faq-editor-reedit-toolbar-final-editor-import-toolbar.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.reedit-toolbar-final.editor.find.replace.toolbar
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.reedit-toolbar-final.editor.find.replace.toolbar
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.reedit-toolbar-final.editor.find.replace.toolbar
+  path: components/target-faq-editor-reedit-toolbar-final-editor-find-replace-toolbar.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.reedit-toolbar-final.route.4
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.reedit-toolbar-final.route.4
+  - 编辑器
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: 编辑器
+  path: components/target-faq-editor-reedit-toolbar-final-route-4.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.reedit-toolbar-final.route.5
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.reedit-toolbar-final.route.5
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.reedit-toolbar-final.route.5
+  path: components/target-faq-editor-reedit-toolbar-final-route-5.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.reedit-toolbar-final.route.6
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.reedit-toolbar-final.route.6
+  - 请输入FAQ标题
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: 请输入FAQ标题
+  path: components/target-faq-editor-reedit-toolbar-final-route-6.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.reedit-toolbar-final.route.7
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.reedit-toolbar-final.route.7
+  - 请输入FAQ内容
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: 请输入FAQ内容
+  path: components/target-faq-editor-reedit-toolbar-final-route-7.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.reedit-toolbar-final.route.9
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.reedit-toolbar-final.route.9
+  - 请输入FAQ标题
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: 请输入FAQ标题
+  path: components/target-faq-editor-reedit-toolbar-final-route-9.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.reedit-toolbar-final.route.10
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.reedit-toolbar-final.route.10
+  - 请输入FAQ内容
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: 请输入FAQ内容
+  path: components/target-faq-editor-reedit-toolbar-final-route-10.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.reedit-toolbar-final.route.12
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.reedit-toolbar-final.route.12
+  - 请输入FAQ标题
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: 请输入FAQ标题
+  path: components/target-faq-editor-reedit-toolbar-final-route-12.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.reedit-toolbar-final.route.13
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.reedit-toolbar-final.route.13
+  - 请输入FAQ内容
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: 请输入FAQ内容
+  path: components/target-faq-editor-reedit-toolbar-final-route-13.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.toolbar.import
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.toolbar.import
+  - 导入
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: 导入
+  path: components/target-faq-editor-toolbar-import.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.new-editor-types.proposed.product.description.component.menu
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.new-editor-types.proposed.product.description.component.menu
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.new-editor-types.proposed.product.description.component.menu
+  path: components/target-faq-editor-new-editor-types-proposed-product-description-component-menu.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.new-editor-types.proposed.faq.component.entry
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.new-editor-types.proposed.faq.component.entry
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.new-editor-types.proposed.faq.component.entry
+  path: components/target-faq-editor-new-editor-types-proposed-faq-component-entry.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.new-editor-types.proposed.faq.title.field
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.new-editor-types.proposed.faq.title.field
+  - 请输入FAQ标题
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: 请输入FAQ标题
+  path: components/target-faq-editor-new-editor-types-proposed-faq-title-field.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.new-editor-types.proposed.faq.answer.field
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.new-editor-types.proposed.faq.answer.field
+  - 请输入FAQ内容
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: 请输入FAQ内容
+  path: components/target-faq-editor-new-editor-types-proposed-faq-answer-field.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.new-editor-types.proposed.article.component.menu
+  page: content-admin
+  route: ''
+  frame: iframe[name="article"]
+  tags:
+  - faq-editor.new-editor-types.proposed.article.component.menu
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.new-editor-types.proposed.article.component.menu
+  path: components/target-faq-editor-new-editor-types-proposed-article-component-menu.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.new-editor-types.proposed.product.category.description
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.new-editor-types.proposed.product.category.description
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.new-editor-types.proposed.product.category.description
+  path: components/target-faq-editor-new-editor-types-proposed-product-category-description.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.new-editor-types.proposed.video.empty.list
+  page: content-admin
+  route: ''
+  frame: iframe[name="video"]
+  tags:
+  - faq-editor.new-editor-types.proposed.video.empty.list
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.new-editor-types.proposed.video.empty.list
+  path: components/target-faq-editor-new-editor-types-proposed-video-empty-list.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.new-editor-types.route.5
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.new-editor-types.route.5
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.new-editor-types.route.5
+  path: components/target-faq-editor-new-editor-types-route-5.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.new-editor-types.route.6
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.new-editor-types.route.6
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.new-editor-types.route.6
+  path: components/target-faq-editor-new-editor-types-route-6.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.new-editor-types.route.7
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.new-editor-types.route.7
+  - 取消
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: 取消
+  path: components/target-faq-editor-new-editor-types-route-7.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.new-editor-types.route.11
+  page: content-admin
+  route: ''
+  frame: iframe[name="article"]
+  tags:
+  - faq-editor.new-editor-types.route.11
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.new-editor-types.route.11
+  path: components/target-faq-editor-new-editor-types-route-11.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.new-editor-types.route.12
+  page: content-admin
+  route: ''
+  frame: iframe[name="article"]
+  tags:
+  - faq-editor.new-editor-types.route.12
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.new-editor-types.route.12
+  path: components/target-faq-editor-new-editor-types-route-12.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.toolbar.find.replace
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.toolbar.find.replace
+  - 查找替换
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: 查找替换
+  path: components/target-faq-editor-toolbar-find-replace.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.validation-reedit-toolbar-draft.faq.insert.option
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.validation-reedit-toolbar-draft.faq.insert.option
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.validation-reedit-toolbar-draft.faq.insert.option
+  path: components/target-faq-editor-validation-reedit-toolbar-draft-faq-insert-option.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.validation-reedit-toolbar-draft.faq.question
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.validation-reedit-toolbar-draft.faq.question
+  - 请输入FAQ标题
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: 请输入FAQ标题
+  path: components/target-faq-editor-validation-reedit-toolbar-draft-faq-question.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.validation-reedit-toolbar-draft.faq.answer
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.validation-reedit-toolbar-draft.faq.answer
+  - 请输入FAQ内容
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: 请输入FAQ内容
+  path: components/target-faq-editor-validation-reedit-toolbar-draft-faq-answer.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.validation-reedit-toolbar-draft.faq.add.item
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.validation-reedit-toolbar-draft.faq.add.item
+  - 添加FAQ
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: 添加FAQ
+  path: components/target-faq-editor-validation-reedit-toolbar-draft-faq-add-item.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.validation-reedit-toolbar-draft.faq.component.save
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.validation-reedit-toolbar-draft.faq.component.save
+  - 保存
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: 保存
+  path: components/target-faq-editor-validation-reedit-toolbar-draft-faq-component-save.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.validation-reedit-toolbar-draft.faq.component.cancel
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.validation-reedit-toolbar-draft.faq.component.cancel
+  - 取消
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: 取消
+  path: components/target-faq-editor-validation-reedit-toolbar-draft-faq-component-cancel.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.validation-reedit-toolbar-draft.faq.edit.canvas.component
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.validation-reedit-toolbar-draft.faq.edit.canvas.component
+  - 编辑
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: 编辑
+  path: components/target-faq-editor-validation-reedit-toolbar-draft-faq-edit-canvas-component.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.validation-reedit-toolbar-draft.faq.style.category
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.validation-reedit-toolbar-draft.faq.style.category
+  - FAQ标题 ▾
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: FAQ标题 ▾
+  path: components/target-faq-editor-validation-reedit-toolbar-draft-faq-style-category.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.validation-reedit-toolbar-draft.faq.style.title.option
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.validation-reedit-toolbar-draft.faq.style.title.option
+  - FAQ标题
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: FAQ标题
+  path: components/target-faq-editor-validation-reedit-toolbar-draft-faq-style-title-option.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.validation-reedit-toolbar-draft.faq.style.content.option
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.validation-reedit-toolbar-draft.faq.style.content.option
+  - FAQ内容
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: FAQ内容
+  path: components/target-faq-editor-validation-reedit-toolbar-draft-faq-style-content-option.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.validation-reedit-toolbar-draft.faq.html.tag
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.validation-reedit-toolbar-draft.faq.html.tag
+  - HTML标签
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: HTML标签
+  path: components/target-faq-editor-validation-reedit-toolbar-draft-faq-html-tag.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.validation-reedit-toolbar-draft.faq.bold
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.validation-reedit-toolbar-draft.faq.bold
+  - 加粗
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: 加粗
+  path: components/target-faq-editor-validation-reedit-toolbar-draft-faq-bold.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.validation-reedit-toolbar-draft.faq.italic
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.validation-reedit-toolbar-draft.faq.italic
+  - 斜体
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: 斜体
+  path: components/target-faq-editor-validation-reedit-toolbar-draft-faq-italic.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.validation-reedit-toolbar-draft.faq.underline
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.validation-reedit-toolbar-draft.faq.underline
+  - 下划线
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: 下划线
+  path: components/target-faq-editor-validation-reedit-toolbar-draft-faq-underline.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.validation-reedit-toolbar-draft.faq.font.size
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.validation-reedit-toolbar-draft.faq.font.size
+  - 字号 21px
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: 字号 21px
+  path: components/target-faq-editor-validation-reedit-toolbar-draft-faq-font-size.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.validation-reedit-toolbar-draft.faq.line.spacing
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.validation-reedit-toolbar-draft.faq.line.spacing
+  - 行间距
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: 行间距
+  path: components/target-faq-editor-validation-reedit-toolbar-draft-faq-line-spacing.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.validation-reedit-toolbar-draft.editor.import
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.validation-reedit-toolbar-draft.editor.import
+  - 导入
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: 导入
+  path: components/target-faq-editor-validation-reedit-toolbar-draft-editor-import.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.validation-reedit-toolbar-draft.editor.find.replace
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.validation-reedit-toolbar-draft.editor.find.replace
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.validation-reedit-toolbar-draft.editor.find.replace
+  path: components/target-faq-editor-validation-reedit-toolbar-draft-editor-find-replace.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.validation-reedit-toolbar-draft.product.outer.cancel
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.validation-reedit-toolbar-draft.product.outer.cancel
+  - 取消
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: 取消
+  path: components/target-faq-editor-validation-reedit-toolbar-draft-product-outer-cancel.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.validation-reedit-toolbar-draft.route.4
+  page: content-admin
+  route: ''
+  frame: ''
+  tags:
+  - faq-editor.validation-reedit-toolbar-draft.route.4
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.validation-reedit-toolbar-draft.route.4
+  path: components/target-faq-editor-validation-reedit-toolbar-draft-route-4.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.validation-reedit-toolbar-draft.route.5
+  page: content-admin
+  route: ''
+  frame: ''
+  tags:
+  - faq-editor.validation-reedit-toolbar-draft.route.5
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.validation-reedit-toolbar-draft.route.5
+  path: components/target-faq-editor-validation-reedit-toolbar-draft-route-5.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.validation-reedit-toolbar-draft.route.6
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.validation-reedit-toolbar-draft.route.6
+  - 请输入FAQ标题
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: 请输入FAQ标题
+  path: components/target-faq-editor-validation-reedit-toolbar-draft-route-6.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.validation-reedit-toolbar-draft.route.7
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.validation-reedit-toolbar-draft.route.7
+  - 请输入FAQ内容
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: 请输入FAQ内容
+  path: components/target-faq-editor-validation-reedit-toolbar-draft-route-7.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.validation.message
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.validation.message
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.validation.message
+  path: components/target-faq-editor-validation-message.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.public-product-path.product.path
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.public-product-path.product.path
+  - 请输入URL
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: 请输入URL
+  path: components/target-faq-editor-public-product-path-product-path.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.public-product-path.frontend.view
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.public-product-path.frontend.view
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.public-product-path.frontend.view
+  path: components/target-faq-editor-public-product-path-frontend-view.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.product-one.public
+  page: content-admin
+  route: ''
+  frame: ''
+  tags:
+  - faq-editor.product-one.public
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.product-one.public
+  path: components/target-faq-editor-product-one-public.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.outer-save-restore-controls.product.name
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.outer-save-restore-controls.product.name
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.outer-save-restore-controls.product.name
+  path: components/target-faq-editor-outer-save-restore-controls-product-name.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.outer-save-restore-controls.outer.save
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.outer-save-restore-controls.outer.save
+  - 保存
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: 保存
+  path: components/target-faq-editor-outer-save-restore-controls-outer-save.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.outer-save-restore-controls.outer.cancel
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.outer-save-restore-controls.outer.cancel
+  - 取消
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: 取消
+  path: components/target-faq-editor-outer-save-restore-controls-outer-cancel.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.outer-save-restore-controls.product.status.listed
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.outer-save-restore-controls.product.status.listed
+  - 上架
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: 上架
+  path: components/target-faq-editor-outer-save-restore-controls-product-status-listed.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.outer-save-restore-controls.product.status.unlisted
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.outer-save-restore-controls.product.status.unlisted
+  - 下架
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: 下架
+  path: components/target-faq-editor-outer-save-restore-controls-product-status-unlisted.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.outer-save-restore-controls.product.recycle-bin
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.outer-save-restore-controls.product.recycle-bin
+  - 产品回收站
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: 产品回收站
+  path: components/target-faq-editor-outer-save-restore-controls-product-recycle-bin.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.outer-save-restore-controls.product.description
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.outer-save-restore-controls.product.description
+  - 产品描述
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: 产品描述
+  path: components/target-faq-editor-outer-save-restore-controls-product-description.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.product-description.tab
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.product-description.tab
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: target.faq-editor.product-description.tab
+  path: components/target-faq-editor-product-description-tab.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.validation.case858.form-cancel
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.validation.case858.form-cancel
+  - 取消
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: 取消
+  path: components/target-faq-editor-validation-case858-form-cancel.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.validation.case7c.form-cancel
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.validation.case7c.form-cancel
+  - 取消
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: 取消
+  path: components/target-faq-editor-validation-case7c-form-cancel.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.validation.case500.form-cancel
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.validation.case500.form-cancel
+  - 取消
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: 取消
+  path: components/target-faq-editor-validation-case500-form-cancel.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.validation.case946.form-cancel
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.validation.case946.form-cancel
+  - 取消
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: 取消
+  path: components/target-faq-editor-validation-case946-form-cancel.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.validation.case858.outer-cancel
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.validation.case858.outer-cancel
+  - 取消
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: 取消
+  path: components/target-faq-editor-validation-case858-outer-cancel.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: target.faq-editor.product-description.heading
+  page: content-admin
+  route: ''
+  frame: iframe[name="prod"]
+  tags:
+  - faq-editor.product-description.heading
+  - 产品描述
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: 产品描述
+  path: components/target-faq-editor-product-description-heading.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: entry.编辑面板
+  page: 编辑面板
+  route: '内容管理→产品（或文章）→编辑，内嵌编辑器框架 #tiptap-iframe 插入 FAQ 组件后出现编辑面板'
+  frame: iframe[name="prod"] >> internal:control=enter-frame >> iframe
+  tags:
+  - 编辑面板
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: null
+  summary: 编辑面板
+  path: flows/entry.yaml
+  hit_count: 0
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: entry.article-editor-markdown-import
+  page: article-editor-markdown-import
+  route: 内容管理 → 文章 → 编辑 → 导入 → Markdown
+  frame: 'iframe[name="article"] >> internal:control=enter-frame >> #tiptap-iframe
+    >> internal:control=enter-frame >> iframe.tiptap-iframe'
+  tags:
+  - article-editor-markdown-import
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: null
+  summary: article-editor-markdown-import
+  path: flows/entry-article-editor-markdown-import.yaml
+  hit_count: 0
+  pass_count: 0
+  fail_count: 0
+  observed_runs: []
+  failure_runs: []
+- id: pattern.FRAME_JOIN
+  page: '*'
+  route: ''
+  frame: ''
+  tags:
+  - FRAME_JOIN
+  - Enter nested iframes in order, then locate the target in the innermost frame.
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: Enter nested iframes in order, then locate the target in the innermost
+    frame.
+  path: patterns/pattern-frame_join.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: pattern.RERENDER_RELOCATE
+  page: '*'
+  route: ''
+  frame: ''
+  tags:
+  - RERENDER_RELOCATE
+  - Wait for a stable visible target, resolve it again after redraw, and retry a bounded
+    number of times.
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: Wait for a stable visible target, resolve it again after redraw, and retry
+    a bounded number of times.
+  path: patterns/pattern-rerender_relocate.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: pattern.OCCLUDED_SCROLL_OR_COLLAPSE
+  page: '*'
+  route: ''
+  frame: ''
+  tags:
+  - OCCLUDED_SCROLL_OR_COLLAPSE
+  - Scroll the target into view; if an overlay intercepts the click, collapse its
+    expanded covering panel and retry.
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: '2026-10-23'
+  summary: Scroll the target into view; if an overlay intercepts the click, collapse
+    its expanded covering panel and retry.
+  path: patterns/pattern-occluded_scroll_or_collapse.yaml
+  hit_count: 13
+  pass_count: 0
+  fail_count: 0
+  observed_runs:
+  - EXPORT
+  failure_runs: []
+- id: pattern.MENU_KEYBOARD
+  page: '*'
+  route: ''
+  frame: ''
+  tags:
+  - MENU_KEYBOARD
+  - For visible menu or listbox options that do not accept pointer clicks, focus the
+    option, type its visible label to filter when supported, then press Enter; use
+    ArrowDown then Enter as a bounded fallback.
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: null
+  summary: For visible menu or listbox options that do not accept pointer clicks,
+    focus the option, type its visible label to filter when supported, th
+  path: patterns/pattern-menu_keyboard.yaml
+  hit_count: 0
+  pass_count: 0
+  fail_count: 0
+  observed_runs: []
+  failure_runs: []

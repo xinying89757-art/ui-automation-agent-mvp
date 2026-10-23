@@ -1,0 +1,9 @@
+id: target.faq.rows
+kind: component
+frame: '#faq'
+selector: '#content tr:has(input.news_chk)'
+alias_of: target.faq.rows
+provenance:
+- source_run: GO-a0f244227ab4
+  verified_by: unverified
+created_at: '2026-10-23'

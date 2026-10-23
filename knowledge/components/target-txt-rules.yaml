@@ -1,0 +1,10 @@
+id: target.txt.rules
+kind: component
+dialog: txt.dialog
+scope: '#backstage-dialog-customizeFile'
+selector: '#llms-rule-tooltip'
+alias_of: target.txt.rules
+provenance:
+- source_run: GO-a0f244227ab4
+  verified_by: unverified
+created_at: '2026-10-23'

@@ -19,7 +19,7 @@ data_rules: {}
 execution:
   batch_size: 10
   workers: 1
-  stability_passes: 2
+  stability_passes: 1 # 默认每日交付；夜间回归显式设为 2
   repair_rounds: 2
   exploration_minutes_per_flow: 10
   strategies_per_gap: 2

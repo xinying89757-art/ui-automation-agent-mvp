@@ -9,3 +9,6 @@ runs/
 playwright-report/
 test-results/
 .DS_Store
+
+# Original source workbooks stay local.
+cases.xlsx

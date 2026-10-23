@@ -10,7 +10,7 @@ from urllib.parse import urlsplit
 
 from .checks import case_errors
 from .common import (RESULTS, atomic_write, digest, elapsed, event, file_hash, inside,
-                     now, read_json, redact, require, reset_case)
+                     now, read_json, read_yaml, redact, require, reset_case)
 from .workflow import case_version, code_files, question, refresh
 from .profiles import network_fingerprint
 
@@ -43,12 +43,88 @@ def process_alive(pid):
         return False
 
 
+def heartbeat_path(base):
+    return Path(base) / "heartbeat.json"
+
+
+def read_heartbeat(base):
+    path = heartbeat_path(base)
+    if not path.is_file():
+        return None
+    try:
+        return read_json(path)
+    except (OSError, ValueError):
+        return None
+
+
+def write_heartbeat(base, batch, running):
+    completed = []
+    report = inside(base, batch["directory"]) / "case-results.json"
+    if report.is_file():
+        try:
+            payload = read_json(report)
+            completed = [{"case_id": row.get("case_id"), "result": row.get("result")}
+                         for row in payload.get("cases", []) if isinstance(row, dict)]
+        except (OSError, ValueError):
+            completed = []
+    body = {"batch_id": batch["id"], "updated_at": now(), "running": running,
+            "case_ids": list(batch.get("case_ids") or []), "completed": completed}
+    atomic_write(heartbeat_path(base), body)
+    atomic_write(inside(base, batch["directory"]) / "heartbeat.json", body)
+    return body
+
+
+def grep_tag_pattern(case_id):
+    """Escape Playwright's title tag while retaining its accepted hyphen syntax."""
+    return re.escape('[' + case_id + ']').replace('\\-', '-')
+
+
+def batch_running(base, batch):
+    """Heartbeat is the source of truth. A missing PID does not mean the batch died."""
+    if not batch:
+        return False
+    beat = read_heartbeat(base)
+    if beat and beat.get("batch_id") == batch.get("id"):
+        try:
+            age = elapsed(beat.get("updated_at"))
+        except (TypeError, ValueError):
+            age = None
+        if age is not None and beat.get("running") is True and age < 180:
+            return True
+        if age is not None and beat.get("running") is False and age < 30:
+            return True
+    if elapsed(batch.get("started_at") or now()) < 20 and process_alive(batch.get("owner_pid")):
+        return True
+    return False
+
+
 def ensure_stopped(base, batch):
     require(batch, "No active batch")
-    require(not process_alive(batch.get("owner_pid")), "The batch owner is still running; monitor instead of recovering")
+    require(not batch_running(base, batch), "The batch heartbeat is fresh; use wait instead of recovering")
     receipt = inside(base, batch["directory"]) / "process.json"
     if receipt.is_file():
         require(not process_alive(read_json(receipt).get("pid")), "The Playwright process is still running")
+
+
+def case_needs_public(base, case):
+    registration = case.get("registration") or {}
+    if case.get("case_spec"):
+        from .common import read_yaml
+        spec = read_yaml(inside(base, case['case_spec']))
+        if any(s.get('verb') == 'defer_public' for s in spec.get('steps', [])):
+            return False
+        if 'public_frontend' in spec.get('required_env', []):
+            return True
+    if registration.get("needs_public"):
+        return True
+    script = registration.get("script")
+    if not script:
+        return False
+    try:
+        body = inside(base, script).read_text(encoding="utf-8")
+    except OSError:
+        return False
+    return "waitForPublic(" in body
 
 
 def preflight(base, m, evidence):
@@ -70,13 +146,19 @@ def preflight(base, m, evidence):
             errors.append("Gray response marker is missing")
     if not targets:
         errors.append("Target URLs missing")
+    public_error = None
     for name, url in targets.items():
         observed = proof.get("targets", {}).get(name, {})
         if urlsplit(url).hostname.endswith(".invalid"):
             errors.append("Replace the example target: " + name)
+        if name == "public":
+            reachable = observed.get("url") == url and observed.get("reachable") is True and observed.get("target_visible") is True
+            if not reachable:
+                public_error = redact(str(observed.get("error") or "public frontend unreachable"), cfg)[:300]
+            continue
         if observed.get("url") != url or observed.get("reachable") is not True or observed.get("target_visible") is not True:
             errors.append("Target not verified in the current browser: " + name)
-        if name != "public" and observed.get("authenticated") is not True:
+        if observed.get("authenticated") is not True:
             errors.append("Authenticated target access not verified: " + name)
     for name in cfg.get("auth", {}).get("secret_env", []):
         if not os.environ.get(name):
@@ -85,10 +167,19 @@ def preflight(base, m, evidence):
     if auth and not Path(auth).is_file():
         errors.append("Storage state reference missing")
     status = "blocked" if errors else "passed"
+    public_ok = bool(targets.get("public")) and not public_error
     m["preflight"] = {"status": status, "checked_at": now(), "config_hash": m["config_hash"],
                       "auth_sha256": file_hash(auth) if auth else None,
                       "proxy_sha256": network_fingerprint(cfg),
-                      "evidence": evidence, "sha256": file_hash(proof_path), "errors": errors}
+                      "evidence": evidence, "sha256": file_hash(proof_path), "errors": errors,
+                      "capabilities": {"public_frontend": public_ok, "public_error": public_error}}
+    if status == "passed" and not public_ok and targets.get("public"):
+        affected = [cid for cid, c in m["cases"].items()
+                    if c["work_status"] != "finished" and case_needs_public(base, c)]
+        if affected:
+            question(m, "environment", "public-frontend",
+                     "Public front end is unreachable. Only cases that read the public site are waiting. " + (public_error or ""),
+                     affected, attempted=[public_error or "public frontend unreachable"], reopen=True)
     if errors:
         affected = [cid for cid, c in m["cases"].items() if c["work_status"] != "finished" and c["stage"] in {"discovery", "execution", "repair"}]
         question(m, "environment", "preflight", "Restore the listed environment prerequisites, then repeat browser preflight.",
@@ -113,17 +204,34 @@ def begin_batch(base, m, case_ids):
     require(cli.is_file(), "Install runner dependencies with npm ci before execution")
     require(all(cid in m["cases"] for cid in case_ids), "Unknown selected case ID")
     selected = [m["cases"][cid] for cid in case_ids]
+    from .remote_checks import hold_path
+    hold_file = hold_path(m)
+    if hold_file.is_file():
+        hold = read_json(hold_file)
+        if hold.get('run_id') != m['run_id']:
+            require(not any((c.get('registration') or {}).get('fixture', {}).get('mutates') for c in selected),
+                    'Another run holds environment data for remote verification; only read-only cases may run')
+    caps = (m.get("preflight") or {}).get("capabilities") or {}
     for c in selected:
+        require(Path(c["registration"]["script"]).name != "seed.spec.ts", "Exploration seed cannot run as a case")
         require(c["work_status"] == "runnable", "Case is not runnable", c["case_id"])
         require(not set(c["fixture_ids"] or ["case:" + c["case_id"]]) & set(m["contaminated_fixtures"]), "Fixture requires verified recovery", c["case_id"])
+        if caps.get("public_frontend") is False and case_needs_public(base, c):
+            require(False, "This case reads the public site, which is unreachable",
+                    {"case_id": c["case_id"], "error": caps.get("public_error")})
         errors, _ = case_errors(base, c, m["config"], execution=True)
         require(not errors, "Execution gate failed", {"case_id": c["case_id"], "errors": errors})
     # Runtime bindings are a projection of the manifest, not a second mutable truth.
-    bindings = {cid: {"case_id": cid, "hooks": c["registration"]["fixture"]["hooks"],
-                      "mutates": c["registration"]["fixture"]["mutates"], "isolated": c["isolated"],
-                      "fixture_ids": c["fixture_ids"], "flow_ids": c["flow_ids"]}
-                for cid, c in m["cases"].items() if c.get("registration")}
-    atomic_write(base / "runner/cases.json", bindings)
+    from .bindings import case_bindings
+    bindings = case_bindings(base, m)
+    cases_file = base / "state/cases.json"
+    atomic_write(cases_file, bindings)
+    knowledge_source = base / "runner/knowledge/llms-txt.json"
+    knowledge_overlay = base / "state/knowledge/llms-txt.json"
+    if knowledge_source.is_file() and not knowledge_overlay.is_file():
+        knowledge_overlay.parent.mkdir(parents=True, exist_ok=True)
+        import shutil
+        shutil.copyfile(knowledge_source, knowledge_overlay)
     if m["config"]["execution"]["workers"] > 1:
         require(all(c["isolated"] and c["registration"].get("isolation_evidence") and
                     inside(base, c["registration"]["isolation_evidence"]).is_file() for c in selected),
@@ -156,10 +264,14 @@ def begin_batch(base, m, case_ids):
         shutil.copyfile(pac_source, directory / "active.pac")
         snapshot_config["network"]["pac_file"] = str((directory / "active.pac").resolve())
     atomic_write(directory / "config.json", snapshot_config)
-    escaped = "|".join(re.escape("[" + cid + "]") for cid in case_ids)
-    selected_scripts = sorted({str(inside(base, c["registration"]["script"]).relative_to(base / "runner")).replace("\\", "/") for c in selected})
-    command = ["node", str(cli), "test"] + [re.escape(name) + "$" for name in selected_scripts] + ["--grep", "^(?:" + escaped + ")\\s"]
+    # Playwright compiles file and title filters with the unicode flag, which rejects escaped hyphens.
+    pattern = lambda value: re.escape(value).replace("\\-", "-")
+    escaped = "|".join(grep_tag_pattern(cid) for cid in case_ids)
+    selected_scripts = sorted({str(inside(base, c["registration"]["script"]).relative_to((base / "runner").resolve())).replace("\\", "/") for c in selected})
+    # Title grep cannot be anchored: Playwright joins the file suite title in front of the case title.
+    command = ["node", str(cli), "test"] + [pattern(name) + "$" for name in selected_scripts] + ["--grep", "(?:" + escaped + ")\\s"]
     batch = {"id": batch_id, "case_ids": case_ids, "versions": versions,
+             "scripts": {c['case_id']: c['registration']['script'] for c in selected},
              "owner_pid": os.getpid(),
              "started_at": now(), "directory": str(directory.relative_to(base)),
              "report": str((directory / "case-results.json").relative_to(base)), "command": command}
@@ -169,40 +281,61 @@ def begin_batch(base, m, case_ids):
 
 
 def execute_process(base, batch, cfg):
+    import threading
     directory = inside(base, batch["directory"])
+    cases_file = Path(base) / "state/cases.json"
+    knowledge_overlay = Path(base) / "state/knowledge/llms-txt.json"
     env = dict(os.environ, UIA_BATCH_ID=batch["id"], UIA_CONFIG=str(directory / "config.json"),
+               UIA_CASES_FILE=str(cases_file), UIA_STATE_DIR=str(base / "state/fixture-snapshots"),
+               UIA_KNOWLEDGE_FILE=str(knowledge_overlay),
                UIA_RESULTS_DIR=str(directory), UIA_CONTAMINATION_DIR=str(base / "state/contaminated"))
-    with (directory / "process.log").open("w", encoding="utf-8") as log:
-        os.chmod(directory / "process.log", 0o600)
-        proc = subprocess.Popen(batch["command"], cwd=str(base / "runner"), env=env,
-                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                text=True, start_new_session=os.name != "nt")
-        atomic_write(directory / "process.json", {"pid": proc.pid, "batch_id": batch["id"], "started_at": now()})
-        try:
-            for line in proc.stdout:
-                log.write(redact(line, cfg))
-                log.flush()
-            return proc.wait()
-        except BaseException:
-            if os.name == "nt":
-                proc.terminate()
-            else:
-                os.killpg(proc.pid, signal.SIGTERM)
+    stop = threading.Event()
+
+    def pump():
+        write_heartbeat(base, batch, True)
+        while not stop.wait(5):
+            write_heartbeat(base, batch, True)
+
+    writer = threading.Thread(target=pump, name="uia-heartbeat", daemon=True)
+    writer.start()
+    try:
+        with (directory / "process.log").open("w", encoding="utf-8") as log:
+            os.chmod(directory / "process.log", 0o600)
+            proc = subprocess.Popen(batch["command"], cwd=str(base / "runner"), env=env,
+                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                    text=True, start_new_session=os.name != "nt")
+            atomic_write(directory / "process.json", {"pid": proc.pid, "batch_id": batch["id"], "started_at": now()})
             try:
-                proc.wait(timeout=10)
-            except subprocess.TimeoutExpired:
+                for line in proc.stdout:
+                    log.write(redact(line, cfg))
+                    log.flush()
+                return proc.wait()
+            except BaseException:
                 if os.name == "nt":
-                    proc.kill()
+                    proc.terminate()
                 else:
-                    os.killpg(proc.pid, signal.SIGKILL)
-                proc.wait()
-            raise
+                    os.killpg(proc.pid, signal.SIGTERM)
+                try:
+                    proc.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    if os.name == "nt":
+                        proc.kill()
+                    else:
+                        os.killpg(proc.pid, signal.SIGKILL)
+                    proc.wait()
+                raise
+    finally:
+        stop.set()
+        writer.join(timeout=1)
+        write_heartbeat(base, batch, False)
 
 
 def consume_batch(base, m, exit_code=None):
     batch = m.get("active_batch")
     require(batch, "No active execution batch")
     report_path = inside(base, batch["report"])
+    from .secrets import drop_unsafe_artifacts
+    drop_unsafe_artifacts(report_path.parent)
     require(report_path.is_file(), "Reporter output missing; recover with --abandon and saved evidence")
     report = read_json(report_path)
     require(report.get("schema_version") == "uia-batch-results.v1" and report.get("batch_id") == batch["id"],
@@ -220,34 +353,65 @@ def consume_batch(base, m, exit_code=None):
         result = row.get("result")
         require(result in RESULTS, "Unknown reporter result")
         clean = lifecycle.get("cleanup_verified") is True
+        cleanup_pending = lifecycle.get("cleanup_pending") is True and (base / batch["directory"] / ("remote-" + cid + ".json")).is_file()
         prepared = lifecycle.get("setup_verified") is True
         current_version = case_version(base, m, c)
         version = batch["versions"][cid]
         if current_version != version:
             result = "interrupted"
             row.setdefault("errors", []).append("Source/dependency changed during execution")
-        if result == "passed" and (not prepared or not clean or lifecycle.get("batch_id") != batch["id"] or row.get("retry") != 0):
+        if result == "passed" and (not prepared or not (clean or cleanup_pending) or lifecycle.get("batch_id") != batch["id"] or row.get("retry") != 0):
             result = "automation_failure"
         attempt = {"batch_id": batch["id"], "at": now(), "version": version, "result": result,
+                   "script": batch.get("scripts", {}).get(cid),
                    "evidence": batch["report"], "evidence_sha256": file_hash(report_path),
                    "executed": cid in by_id and row.get("playwright_status") not in {"skipped", None},
-                   "setup_verified": prepared, "cleanup_verified": clean,
+                   "setup_verified": prepared, "cleanup_verified": clean, "cleanup_pending": cleanup_pending,
                    "setup_started": row.get("setup_started", False),
                    "duration_ms": row.get("duration_ms", 0), "errors": row.get("errors", []),
-                   "attachments": row.get("attachments", [])}
+                   "attachments": row.get("attachments", []),
+                   "assertions": row.get("assertions", []), "failure_stage": row.get("failure_stage")}
+        attempt["successful_steps"] = [str(step) for step in row.get("successful_steps", [])
+                                       if isinstance(step, str) and re.fullmatch(r"[A-Za-z0-9_.-]+", step)]
+        if row.get("read_back"):
+            attempt["read_back"] = row["read_back"]
+        if row.get("saves"):
+            attempt["saves"] = row["saves"]
+        if result == "passed" and c.get("repair_baseline_script"):
+            attempt["repair_baseline_script"] = c["repair_baseline_script"]
+            attempt["repair_script"] = c.get("registration", {}).get("script")
+        shot = next((a.get('path') for a in row.get('attachments', []) if a.get('name') == 'uia-redacted-dialog'), None)
+        if shot:
+            from .secrets import unsafe_artifact
+            shot_path = inside(base, shot)
+            if shot_path.is_file() and not unsafe_artifact(shot_path):
+                attempt['redacted_screenshot'] = str(shot_path.relative_to(base))
         prior = c["attempts"][-1] if c["attempts"] else None
         c["attempts"].append(attempt)
         if attempt["executed"] and not m.get("first_result_at"):
             m["first_result_at"] = now()
         c["result"] = result
-        if result == "passed":
-            c["pass_streak"] = (c["pass_streak"] + 1 if prior and prior["version"] == version and prior["result"] == "passed" else 1)
-            stable = c["pass_streak"] >= 2
+        if result == "save_not_persisted":
+            c["classification"] = {"reason": "保存未生效（后台读回不一致）", "suspected_product_defect": True, "at": now()}
+        if result == "passed" and cleanup_pending:
+            c.update(result="remote_pending", pass_streak=0, stability="not_run", stage="remote", work_status="remote_pending")
+        elif result == "passed":
+            need = int(m["config"]["execution"]["stability_passes"])
+            if c.get("preserve_delivery"):
+                c["pass_streak"] = max(c.get("pass_streak", 0), c.get("delivery_pass_streak", 0)) + 1
+                c.pop("preserve_delivery", None)
+                c.pop("delivery_pass_streak", None)
+                c.pop("repair_baseline_script", None)
+            else:
+                c["pass_streak"] = (c["pass_streak"] + 1 if prior and prior["version"] == version and prior["result"] == "passed" else 1)
+            stable = c["pass_streak"] >= need
             c.update(stability="stable" if stable else "candidate", work_status="finished" if stable else "runnable",
                      stage="feedback" if stable else "execution")
             if not m.get("first_pass_at"):
                 m["first_pass_at"] = now()
         else:
+            if prior and prior.get("result") == "passed" and c.get("pass_streak", 0):
+                c["delivery_pass_streak"] = c["pass_streak"]
             c.update(pass_streak=0, stability="unstable", work_status="finished", stage="finished")
             if result in {"environment_blocked", "product_confirmation"}:
                 c["work_status"] = "waiting_human"
@@ -257,7 +421,7 @@ def consume_batch(base, m, exit_code=None):
                 c["stage"] = "execution"
             elif result == "automation_failure" and clean and c["repair_rounds"] < m["config"]["execution"]["repair_rounds"]:
                 c.update(work_status="pending", stage="repair")
-        if not clean and c["registration"]["fixture"]["mutates"] and (row.get("setup_started") or cid not in by_id):
+        if not clean and not cleanup_pending and c["registration"]["fixture"]["mutates"] and (row.get("setup_started") or cid not in by_id):
             contaminated = c["fixture_ids"] or ["case:" + cid]
             for fid in contaminated:
                 m["contaminated_fixtures"][fid] = {"batch_id": batch["id"], "evidence": batch["report"]}
@@ -275,7 +439,15 @@ def consume_batch(base, m, exit_code=None):
     m["active_batch"] = None
     m["delivery"] = {}
     event(m, "batch_finished", batch_id=batch["id"])
-    return {"batch_id": batch["id"], "results": {cid: m["cases"][cid]["result"] for cid in batch["case_ids"]}, "next": "next"}
+    absorbed = None
+    from .remote_checks import collect
+    for cid in batch["case_ids"]:
+        collect(base, m, batch, cid, m["cases"][cid]["attempts"][-1])
+    if any(m["cases"][cid]["result"] == "passed" for cid in batch["case_ids"]):
+        from .workflow import absorb_locators
+        absorbed = absorb_locators(base, m)
+    return {"batch_id": batch["id"], "results": {cid: m["cases"][cid]["result"] for cid in batch["case_ids"]},
+            "locators": absorbed, "next": "next"}
 
 
 def abandon_batch(base, m, evidence):
@@ -306,11 +478,68 @@ def abandon_batch(base, m, evidence):
 def repair(base, m, cid, evidence):
     c = m["cases"][cid]
     require(c.get("attempts") and c["attempts"][-1]["result"] == "automation_failure", "Only automation failures enter repair")
-    require(c["attempts"][-1].get("cleanup_verified") or c.get("cleanup_recovery", {}).get("batch_id") == c["attempts"][-1]["batch_id"],
+    require(c["attempts"][-1].get("cleanup_verified") or c["attempts"][-1].get("setup_started", True) is False or c.get("cleanup_recovery", {}).get("batch_id") == c["attempts"][-1]["batch_id"],
             "Restore the fixture before a repair rerun")
     require(c["repair_rounds"] < m["config"]["execution"]["repair_rounds"], "Repair budget exhausted")
     require(inside(base, evidence).is_file(), "Repair needs a saved diagnosis")
+    registration = c.get("registration") or {}
+    if registration.get("script"):
+        script = Path(registration["script"])
+        try:
+            relative = script.relative_to("runner")
+        except ValueError:
+            relative = script
+        previous = next((b for b in reversed(m.get("batches", []))
+                         if b.get("id") == c["attempts"][-1].get("batch_id")), None)
+        if previous:
+            snapshot = inside(base, previous["directory"]) / "snapshot/files" / relative
+            if snapshot.is_file():
+                c["repair_baseline_script"] = str(snapshot.relative_to(base))
     c["repair_rounds"] += 1
     c.update(stage="discovery", work_status="pending", pass_streak=0, result=None, stability="unstable")
     event(m, "repair_started", case_id=cid, round=c["repair_rounds"], evidence=evidence)
     return {"case_id": cid, "repair_round": c["repair_rounds"], "next": "generate_and_register"}
+
+
+def wait_for_batch(run_id, stale_seconds=180):
+    """Block until the active batch finishes. Progress comes from heartbeat.json, never from PIDs."""
+    import sys
+    import time
+    from .common import load_run, summary
+    announced = None
+    started = time.monotonic()
+    while True:
+        _path, manifest = load_run(run_id)
+        base = _path.parent
+        active = manifest.get("active_batch")
+        beat = read_heartbeat(base)
+        if not active:
+            print("heartbeat idle", file=sys.stderr, flush=True)
+            return {"status": "idle", "summary": summary(manifest), "heartbeat": beat}
+        age = None
+        if beat and beat.get("batch_id") == active.get("id") and beat.get("updated_at"):
+            try:
+                age = elapsed(beat["updated_at"])
+            except (TypeError, ValueError):
+                age = None
+        completed = (beat or {}).get("completed") or []
+        signature = (len(completed), completed[-1].get("case_id") if completed else None)
+        if signature != announced:
+            announced = signature
+            last = (str(completed[-1].get("case_id")) + " " + str(completed[-1].get("result"))) if completed else "starting"
+            age_text = "n/a" if age is None else str(int(age)) + "s"
+            print("heartbeat batch={0} completed={1}/{2} last={3} age={4}".format(
+                str(active.get("id"))[:8], len(completed), len(active.get("case_ids") or []), last, age_text),
+                file=sys.stderr, flush=True)
+        if beat and beat.get("batch_id") == active.get("id") and beat.get("running") is False:
+            if age is not None and age < 60:
+                time.sleep(2)
+                continue
+            require(False, "Batch heartbeat says it stopped, but the run is still active. Inspect heartbeat.json before recover")
+        fresh = age is not None and age < stale_seconds
+        starting = beat is None and elapsed(active.get("started_at") or now()) < stale_seconds
+        if not fresh and not starting:
+            require(False, "Batch heartbeat is stale. Do not infer death from a missing PID; inspect heartbeat.json")
+        if time.monotonic() - started > 6 * 60 * 60:
+            require(False, "wait exceeded 6 hours")
+        time.sleep(5)

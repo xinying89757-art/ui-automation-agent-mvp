@@ -14,9 +14,9 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
-RESULTS = {"passed", "business_failure", "automation_failure", "environment_blocked",
-           "product_confirmation", "not_suitable", "interrupted"}
-DEFAULTS = {"batch_size": 10, "workers": 1, "stability_passes": 2, "repair_rounds": 2,
+RESULTS = {"passed", "business_failure", "save_not_persisted", "automation_failure", "environment_blocked",
+           "product_confirmation", "not_suitable", "interrupted", "remote_pending", "remote_cached", "remote_unreachable", "suspended"}
+DEFAULTS = {"batch_size": 10, "workers": 1, "stability_passes": 1, "repair_rounds": 2,
             "exploration_minutes_per_flow": 10, "strategies_per_gap": 2, "timeout_ms": 180000}
 
 
@@ -85,7 +85,9 @@ def safe_id(text):
 def inside(base, value):
     base = Path(base).resolve()
     target = (base / value).resolve()
-    require(target == base or base in target.parents, "Path escapes its workspace", str(value))
+    shared_runner = ROOT / "assets/playwright-runner"
+    require(target == base or base in target.parents or shared_runner == target or shared_runner in target.parents,
+            "Path escapes its workspace", str(value))
     return target
 
 
@@ -131,7 +133,10 @@ def locked_run(value):
                     fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 break
             except (BlockingIOError, OSError):
-                require(time.monotonic() < deadline, "Run is busy; retry after the current command")
+                run_id = path.parent.name
+                require(time.monotonic() < deadline,
+                        f"Run {run_id} is busy; another uia.py command (for example go or run-batch) is holding it. "
+                        f"Use `uia.py wait --run {run_id}` or `uia.py status --run {run_id}`.")
                 time.sleep(0.05)
         try:
             p, m = load_run(path)
@@ -225,7 +230,8 @@ def config(path):
                     "Execution budgets must be positive numbers", key)
     for key in ("batch_size", "workers", "stability_passes", "repair_rounds", "strategies_per_gap", "timeout_ms"):
         require(isinstance(cfg["execution"][key], int), "Execution count must be an integer", key)
-    require(cfg["execution"]["stability_passes"] == 2, "This workflow requires exactly two independent passes")
+    require(cfg["execution"]["stability_passes"] in {1, 2},
+            "stability_passes must be 1 for a daily deliverable or 2 for nightly regression")
     state = cfg.get("auth", {}).get("storage_state")
     if state:
         cfg["auth"]["storage_state"] = str((p.parent / state).resolve())

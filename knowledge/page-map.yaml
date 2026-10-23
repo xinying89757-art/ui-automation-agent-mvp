@@ -1,0 +1,1632 @@
+schema_version: page-map.v1
+pages:
+  editor:
+    entry: 编辑网站
+    provenance:
+    - source_run: GO-a0f244227ab4
+      verified_by: unverified
+  content-admin:
+    entry: 内容管理
+    provenance:
+    - source_run: GO-a0f244227ab4
+      verified_by:
+      - AUTO-5f470087ed
+      - AUTO-fd895aaf7f
+  public:
+    public: true
+    provenance:
+    - source_run: GO-a0f244227ab4
+      verified_by: unverified
+targets:
+  settings:
+    selector: li.backstage-siteTool-setting .backstage-siteTool-inner
+    open: settings
+    alias_of: settings
+    provenance:
+    - source_run: GO-a0f244227ab4
+      verified_by: unverified
+  txt.entry:
+    selector: '#site_customize_txt a'
+    alias_of: txt.entry
+    provenance:
+    - source_run: GO-a0f244227ab4
+      verified_by: unverified
+  txt.dialog:
+    selector: '#backstage-dialog-customizeFile'
+    open: llms
+    alias_of: txt.dialog
+    provenance:
+    - source_run: GO-a0f244227ab4
+      verified_by: unverified
+  txt.title:
+    name: 管理txt文件
+    dialog: txt.dialog
+    scope: '#backstage-dialog-customizeFile'
+    selector: strong
+    alias_of: txt.title
+    provenance:
+    - source_run: GO-a0f244227ab4
+      verified_by: unverified
+  txt.tab.llms:
+    name: llms.txt
+    dialog: txt.dialog
+    scope: '#backstage-dialog-customizeFile'
+    selector: a.customize-file-tab.on
+    alias_of: txt.tab.llms
+    provenance:
+    - source_run: GO-a0f244227ab4
+      verified_by: unverified
+  txt.cancel:
+    name: 取消
+    dialog: txt.dialog
+    scope: '#backstage-dialog-customizeFile'
+    selector: a.backstage-dialog-cancel
+    alias_of: txt.cancel
+    provenance:
+    - source_run: GO-a0f244227ab4
+      verified_by: unverified
+  txt.save:
+    name: 保存
+    mutation: llms.txt
+    dialog: txt.dialog
+    scope: '#backstage-dialog-customizeFile'
+    selector: a[class*='customize_file_llms']
+    alias_of: txt.save
+    provenance:
+    - source_run: GO-a0f244227ab4
+      verified_by: unverified
+  txt.system:
+    dialog: txt.dialog
+    scope: '#backstage-dialog-customizeFile'
+    selector: label.llms-source-system
+    alias_of: txt.system
+    provenance:
+    - source_run: GO-a0f244227ab4
+      verified_by: unverified
+  txt.custom:
+    dialog: txt.dialog
+    scope: '#backstage-dialog-customizeFile'
+    selector: label.llms-source-custom
+    alias_of: txt.custom
+    provenance:
+    - source_run: GO-a0f244227ab4
+      verified_by: unverified
+  txt.overview:
+    mutation: llms.txt
+    dialog: txt.dialog
+    scope: '#backstage-dialog-customizeFile'
+    selector: input.llms-overview
+    alias_of: txt.overview
+    provenance:
+    - source_run: GO-a0f244227ab4
+      verified_by: unverified
+  txt.content:
+    mutation: llms.txt
+    dialog: txt.dialog
+    scope: '#backstage-dialog-customizeFile'
+    selector: textarea.llms-custom-content
+    alias_of: txt.content
+    provenance:
+    - source_run: GO-a0f244227ab4
+      verified_by: unverified
+  txt.extras:
+    dialog: txt.dialog
+    scope: '#backstage-dialog-customizeFile'
+    selector: .llms-extra-item
+    alias_of: txt.extras
+    provenance:
+    - source_run: GO-a0f244227ab4
+      verified_by: unverified
+  txt.saved:
+    selector: text=llms.txt 配置已保存
+    observe_text: llms.txt 配置已保存
+    alias_of: txt.saved
+    provenance:
+    - source_run: GO-a0f244227ab4
+      verified_by: unverified
+  txt.rule.help:
+    dialog: txt.dialog
+    scope: '#backstage-dialog-customizeFile'
+    selector: .llms-rule-help
+    alias_of: txt.rule.help
+    provenance:
+    - source_run: GO-a0f244227ab4
+      verified_by: unverified
+  txt.rules:
+    dialog: txt.dialog
+    scope: '#backstage-dialog-customizeFile'
+    selector: '#llms-rule-tooltip'
+    alias_of: txt.rules
+    provenance:
+    - source_run: GO-a0f244227ab4
+      verified_by: unverified
+  txt.rule.title:
+    dialog: txt.dialog
+    scope: '#backstage-dialog-customizeFile'
+    selector: '#llms-rule-tooltip .llms-rule-title'
+    alias_of: txt.rule.title
+    provenance:
+    - source_run: GO-a0f244227ab4
+      verified_by: unverified
+  txt.rule.intro:
+    dialog: txt.dialog
+    scope: '#backstage-dialog-customizeFile'
+    selector: '#llms-rule-tooltip .llms-rule-intro'
+    alias_of: txt.rule.intro
+    provenance:
+    - source_run: GO-a0f244227ab4
+      verified_by: unverified
+  txt.rule.modules:
+    dialog: txt.dialog
+    scope: '#backstage-dialog-customizeFile'
+    selector: '#llms-rule-tooltip .llms-rule-list strong'
+    alias_of: txt.rule.modules
+    provenance:
+    - source_run: GO-a0f244227ab4
+      verified_by: unverified
+  txt.custom.error:
+    dialog: txt.dialog
+    scope: '#backstage-dialog-customizeFile'
+    selector: .llms-custom-row .llms-error
+    alias_of: txt.custom.error
+    provenance:
+    - source_run: GO-a0f244227ab4
+      verified_by: unverified
+  txt.extra.name:
+    dialog: txt.dialog
+    scope: '#backstage-dialog-customizeFile'
+    selector: input.llms-extra-name:visible
+    alias_of: txt.extra.name
+    provenance:
+    - source_run: GO-a0f244227ab4
+      verified_by: unverified
+  txt.extra.value:
+    dialog: txt.dialog
+    scope: '#backstage-dialog-customizeFile'
+    selector: input.llms-extra-value:visible
+    alias_of: txt.extra.value
+    provenance:
+    - source_run: GO-a0f244227ab4
+      verified_by: unverified
+  txt.close:
+    dialog: txt.dialog
+    scope: '#backstage-dialog-customizeFile'
+    selector: a.customize_file_manage_close
+    alias_of: txt.close
+    provenance:
+    - source_run: GO-a0f244227ab4
+      verified_by: unverified
+  network.llms.save:
+    network_rule: llms.save
+    alias_of: network.llms.save
+    provenance:
+    - source_run: GO-a0f244227ab4
+      verified_by: unverified
+  public.llms:
+    resource:
+      path: /llms.txt
+      saved_by: network.llms.save
+    alias_of: public.llms
+    provenance:
+    - source_run: GO-a0f244227ab4
+      verified_by: unverified
+  public.llms.immediate:
+    resource:
+      path: /llms.txt
+      max_latency_seconds: 5
+      saved_by: network.llms.save
+    alias_of: public.llms.immediate
+    provenance:
+    - source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq.entry:
+    selector: '#nav_faq a'
+    alias_of: faq.entry
+    provenance:
+    - source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq.list:
+    frame: '#faq'
+    selector: '#content'
+    alias_of: faq.list
+    provenance:
+    - source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq.add:
+    frame: '#faq'
+    scope: .top-title
+    role: link
+    name: 添加FAQ
+    alias_of: faq.add
+    provenance:
+    - source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq.title:
+    frame: '#faq'
+    selector: '#msgTitle'
+    alias_of: faq.title
+    provenance:
+    - source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq.save:
+    frame: '#faq'
+    selector: .topBts_menu_save
+    alias_of: faq.save
+    provenance:
+    - source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq.rows:
+    frame: '#faq'
+    selector: '#content tr:has(input.news_chk)'
+    alias_of: faq.rows
+    provenance:
+    - source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq.answer:
+    frame: '#faq'
+    selector: .tiptap.ProseMirror
+    patterns:
+    - FRAME_JOIN
+    - RERENDER_RELOCATE
+    - OCCLUDED_SCROLL_OR_COLLAPSE
+    nested_frames:
+    - '#tiptap-iframe-faq'
+    - iframe.tiptap-iframe
+    alias_of: faq.answer
+    provenance:
+    - source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq.edit:
+    frame: '#faq'
+    scope: '#content tr'
+    selector: .edItem
+    alias_of: faq.edit
+    provenance:
+    - source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq.delete:
+    frame: '#faq'
+    scope: '#content tr'
+    selector: .edDel
+    alias_of: faq.delete
+    provenance:
+    - source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.entry.faq.component.entry:
+    selector: div.slash-card:has-text("FAQ")
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.entry-promote
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by:
+      - AUTO-5f470087ed
+      - AUTO-fd895aaf7f
+  faq-editor.entry.faq.title:
+    selector: input[placeholder="请输入FAQ标题"]
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.entry-promote
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.entry.faq.content:
+    selector: '[contenteditable="true"]'
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.entry-promote
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.entry.faq.add:
+    selector: button:text-is("添加FAQ")
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.entry-promote
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.entry.faq.save:
+    selector: button:text-is("保存")
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.entry-promote
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.entry.faq.cancel:
+    selector: button:text-is("取消")
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.entry-promote
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.entry.route.3:
+    selector: a[href*="invokeAction=prod_new_update"]
+    frame: iframe[name="prod"]
+    source: generator:faq-editor.entry-promote
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.entry.route.4:
+    selector: '[role="textbox"]'
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.entry-promote
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by:
+      - AUTO-5f470087ed
+      - AUTO-fd895aaf7f
+  faq-editor.group-controls.faqtitlefields:
+    selector: input[placeholder="请输入FAQ标题"]
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.group-controls-promote
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+    alias_of: faq-editor.entry.faq.title
+  faq-editor.group-controls.faqanswerfields:
+    selector: textarea[placeholder="请输入FAQ内容"]
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.group-controls-promote
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.group-controls.groupmoveup:
+    selector: role=button[name="上移"]
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.group-controls-promote
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.group-controls.groupmovedown:
+    selector: role=button[name="下移"]
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.group-controls-promote
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.group-controls.groupdelete:
+    selector: role=button[name="删除"]
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.group-controls-promote
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.group-controls.addfaqgroup:
+    selector: button.faq-editor-add
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.group-controls-promote
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by:
+      - AUTO-5f470087ed
+  faq-editor.group-controls.faqpanelcancel:
+    selector: role=button[name="取消"]
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.group-controls-promote
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by:
+      - AUTO-5f470087ed
+      - AUTO-fd895aaf7f
+  faq-editor.group-controls.producteditorcancel:
+    selector: role=link[name="取消"]
+    frame: iframe[name="prod"]
+    source: generator:faq-editor.group-controls-promote
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.group-controls.productmenu:
+    selector: a[href^="javascript:navigateMenu"] >> nth=0
+    source: generator:faq-editor.group-controls-promote
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by:
+      - AUTO-5f470087ed
+      - AUTO-fd895aaf7f
+  faq-editor.group-controls.faqtitlefieldsall:
+    selector: input[placeholder="请输入FAQ标题"]
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.group-controls-promote
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+    alias_of: faq-editor.entry.faq.title
+  faq-editor.group-controls.faqanswerfieldsall:
+    selector: textarea[placeholder="请输入FAQ内容"]
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.group-controls-promote
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+    alias_of: faq-editor.group-controls.faqanswerfields
+  faq-editor.group-controls.faqtitlefield1:
+    selector: input[placeholder="请输入FAQ标题"] >> nth=0
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.group-controls-promote
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by:
+      - AUTO-5f470087ed
+  faq-editor.group-controls.faqtitlefield2:
+    selector: input[placeholder="请输入FAQ标题"] >> nth=1
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.group-controls-promote
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.group-controls.faqtitlefield3:
+    selector: input[placeholder="请输入FAQ标题"] >> nth=2
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.group-controls-promote
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.group-controls.faqanswerfield1:
+    selector: textarea[placeholder="请输入FAQ内容"] >> nth=0
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.group-controls-promote
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by:
+      - AUTO-5f470087ed
+  faq-editor.group-controls.faqanswerfield2:
+    selector: textarea[placeholder="请输入FAQ内容"] >> nth=1
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.group-controls-promote
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.group-controls.faqanswerfield3:
+    selector: textarea[placeholder="请输入FAQ内容"] >> nth=2
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.group-controls-promote
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.group-controls.groupmoveup0:
+    selector: role=button[name="上移"] >> nth=0
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.group-controls-promote
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.group-controls.groupmoveup1:
+    selector: role=button[name="上移"] >> nth=1
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.group-controls-promote
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.group-controls.groupmoveup2:
+    selector: role=button[name="上移"] >> nth=2
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.group-controls-promote
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.group-controls.groupmovedown0:
+    selector: role=button[name="下移"] >> nth=0
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.group-controls-promote
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.group-controls.groupmovedown1:
+    selector: role=button[name="下移"] >> nth=1
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.group-controls-promote
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.group-controls.groupmovedown2:
+    selector: role=button[name="下移"] >> nth=2
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.group-controls-promote
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.group-controls.groupdeleteb:
+    selector: role=button[name="删除"] >> nth=2
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.group-controls-promote
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.group-controls.faqpaneltitle:
+    selector: text="FAQ"
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.group-controls-promote
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.group-controls.faqpaneldescription:
+    selector: text="快速录入FAQ，自动生成 FAQPage 结构化数据。"
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.group-controls-promote
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.product-edit.productedit:
+    selector: a[href*="invokeAction=prod_new_update"] >> nth=0
+    frame: iframe[name="prod"]
+    source: generator:faq-editor.product-edit-promote
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by:
+      - AUTO-5f470087ed
+      - AUTO-fd895aaf7f
+  faq-editor.group-controls.groupdeletea:
+    selector: role=button[name="删除"]
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.group-controls-promote
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+    alias_of: faq-editor.group-controls.groupdelete
+  faq-editor.group-controls.faqwebcomponents:
+    selector: text="网页组件"
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.group-controls-promote
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.group-controls.questionlabel1:
+    selector: text="问题1"
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.group-controls-promote
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.group-controls.questionlabel2:
+    selector: text="问题2"
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.group-controls-promote
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.group-controls.questionlabel3:
+    selector: text="问题3"
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.group-controls-promote
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.group-controls.canvasquestion1:
+    selector: text="A问题"
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    source: generator:faq-editor.group-controls-promote
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.group-controls.canvasquestion2:
+    selector: text="B问题"
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    source: generator:faq-editor.group-controls-promote
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.group-controls.canvasquestion3:
+    selector: text="C问题"
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    source: generator:faq-editor.group-controls-promote
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.required-validation.faq-title:
+    role: textbox
+    name: 请输入FAQ标题
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.required-validation
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.required-validation.faq-content:
+    role: textbox
+    name: 请输入FAQ内容
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.required-validation
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.required-validation.form-save:
+    role: button
+    name: 保存
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.required-validation
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.required-validation.form-cancel:
+    role: button
+    name: 取消
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.required-validation
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.required-validation.editor-cancel:
+    role: link
+    name: 取消
+    frame: iframe[name="prod"]
+    source: generator:faq-editor.required-validation
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.required-validation.route.5:
+    selector: editor
+    source: generator:faq-editor.required-validation
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.reedit-toolbar-final.faq.insert.option:
+    selector: text="FAQ"
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.reedit-toolbar-final
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+    alias_of: faq-editor.group-controls.faqpaneltitle
+  faq-editor.reedit-toolbar-final.faq.title:
+    role: textbox
+    name: 请输入FAQ标题
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.reedit-toolbar-final
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+    alias_of: faq-editor.required-validation.faq-title
+  faq-editor.reedit-toolbar-final.faq.content:
+    role: textbox
+    name: 请输入FAQ内容
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.reedit-toolbar-final
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+    alias_of: faq-editor.required-validation.faq-content
+  faq-editor.reedit-toolbar-final.faq.add.row:
+    role: button
+    name: 添加FAQ
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.reedit-toolbar-final
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.reedit-toolbar-final.faq.cancel:
+    role: button
+    name: 取消
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.reedit-toolbar-final
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+    alias_of: faq-editor.required-validation.form-cancel
+  faq-editor.reedit-toolbar-final.editor.import.toolbar:
+    role: button
+    name: 导入
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    source: generator:faq-editor.reedit-toolbar-final
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.reedit-toolbar-final.editor.find.replace.toolbar:
+    selector: text="查找替换"
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    source: generator:faq-editor.reedit-toolbar-final
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.reedit-toolbar-final.route.4:
+    role: textbox
+    name: 编辑器
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.reedit-toolbar-final
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.reedit-toolbar-final.route.5:
+    selector: text="FAQ"
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.reedit-toolbar-final
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+    alias_of: faq-editor.group-controls.faqpaneltitle
+  faq-editor.reedit-toolbar-final.route.6:
+    role: textbox
+    name: 请输入FAQ标题
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.reedit-toolbar-final
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+    alias_of: faq-editor.required-validation.faq-title
+  faq-editor.reedit-toolbar-final.route.7:
+    role: textbox
+    name: 请输入FAQ内容
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.reedit-toolbar-final
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+    alias_of: faq-editor.required-validation.faq-content
+  faq-editor.reedit-toolbar-final.route.9:
+    role: textbox
+    name: 请输入FAQ标题
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.reedit-toolbar-final
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+    alias_of: faq-editor.required-validation.faq-title
+  faq-editor.reedit-toolbar-final.route.10:
+    role: textbox
+    name: 请输入FAQ内容
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.reedit-toolbar-final
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+    alias_of: faq-editor.required-validation.faq-content
+  faq-editor.reedit-toolbar-final.route.12:
+    role: textbox
+    name: 请输入FAQ标题
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.reedit-toolbar-final
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+    alias_of: faq-editor.required-validation.faq-title
+  faq-editor.reedit-toolbar-final.route.13:
+    role: textbox
+    name: 请输入FAQ内容
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.reedit-toolbar-final
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+    alias_of: faq-editor.required-validation.faq-content
+  faq-editor.toolbar.import:
+    role: button
+    name: 导入
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    source: observed:exploration/generator-faq-editor.reedit-toolbar-final.json
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+    alias_of: faq-editor.reedit-toolbar-final.editor.import.toolbar
+  faq-editor.new-editor-types.proposed.product.description.component.menu:
+    selector: text="网页组件"
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.new-editor-types
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+    alias_of: faq-editor.group-controls.faqwebcomponents
+  faq-editor.new-editor-types.proposed.faq.component.entry:
+    selector: text="FAQ"
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.new-editor-types
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+    alias_of: faq-editor.group-controls.faqpaneltitle
+  faq-editor.new-editor-types.proposed.faq.title.field:
+    role: textbox
+    name: 请输入FAQ标题
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.new-editor-types
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+    alias_of: faq-editor.required-validation.faq-title
+  faq-editor.new-editor-types.proposed.faq.answer.field:
+    role: textbox
+    name: 请输入FAQ内容
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.new-editor-types
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+    alias_of: faq-editor.required-validation.faq-content
+  faq-editor.new-editor-types.proposed.article.component.menu:
+    selector: text="网页组件"
+    frame: iframe[name="article"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.new-editor-types
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.new-editor-types.proposed.product.category.description:
+    selector: text="产品分类描述"
+    frame: iframe[name="prod"]
+    source: generator:faq-editor.new-editor-types
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.new-editor-types.proposed.video.empty.list:
+    selector: text="无符合条件的记录显示！"
+    frame: iframe[name="video"]
+    source: generator:faq-editor.new-editor-types
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.new-editor-types.route.5:
+    role: textbox
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.new-editor-types
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.new-editor-types.route.6:
+    selector: text="FAQ"
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.new-editor-types
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+    alias_of: faq-editor.group-controls.faqpaneltitle
+  faq-editor.new-editor-types.route.7:
+    role: button
+    name: 取消
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.new-editor-types
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+    alias_of: faq-editor.required-validation.form-cancel
+  faq-editor.new-editor-types.route.11:
+    role: textbox
+    frame: iframe[name="article"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.new-editor-types
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.new-editor-types.route.12:
+    role: textbox
+    frame: iframe[name="article"]
+    nested_frames:
+    - '#tiptap-iframe'
+    - iframe
+    source: generator:faq-editor.new-editor-types
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+    alias_of: faq-editor.new-editor-types.route.11
+  faq-editor.toolbar.find.replace:
+    role: button
+    name: 查找替换
+    frame: iframe[name="prod"]
+    nested_frames:
+    - '#tiptap-iframe'
+    source: observed:exploration/generator-faq-editor.validation-reedit-final.json
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.validation-reedit-toolbar-draft.faq.insert.option:
+    selector: text="FAQ"
+    frame: iframe[name="prod"]
+    nested_frames:
+    - iframe[name="tiptap-iframe"]
+    - iframe
+    source: generator:faq-editor.validation-reedit-toolbar-draft
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.validation-reedit-toolbar-draft.faq.question:
+    role: textbox
+    name: 请输入FAQ标题
+    frame: iframe[name="prod"]
+    nested_frames:
+    - iframe[name="tiptap-iframe"]
+    - iframe
+    source: generator:faq-editor.validation-reedit-toolbar-draft
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.validation-reedit-toolbar-draft.faq.answer:
+    role: textbox
+    name: 请输入FAQ内容
+    frame: iframe[name="prod"]
+    nested_frames:
+    - iframe[name="tiptap-iframe"]
+    - iframe
+    source: generator:faq-editor.validation-reedit-toolbar-draft
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.validation-reedit-toolbar-draft.faq.add.item:
+    role: button
+    name: 添加FAQ
+    frame: iframe[name="prod"]
+    nested_frames:
+    - iframe[name="tiptap-iframe"]
+    - iframe
+    source: generator:faq-editor.validation-reedit-toolbar-draft
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.validation-reedit-toolbar-draft.faq.component.save:
+    role: button
+    name: 保存
+    frame: iframe[name="prod"]
+    nested_frames:
+    - iframe[name="tiptap-iframe"]
+    - iframe
+    source: generator:faq-editor.validation-reedit-toolbar-draft
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.validation-reedit-toolbar-draft.faq.component.cancel:
+    role: button
+    name: 取消
+    frame: iframe[name="prod"]
+    nested_frames:
+    - iframe[name="tiptap-iframe"]
+    - iframe
+    source: generator:faq-editor.validation-reedit-toolbar-draft
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.validation-reedit-toolbar-draft.faq.edit.canvas.component:
+    role: button
+    name: 编辑
+    frame: iframe[name="prod"]
+    nested_frames:
+    - iframe[name="tiptap-iframe"]
+    - iframe
+    source: generator:faq-editor.validation-reedit-toolbar-draft
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.validation-reedit-toolbar-draft.faq.style.category:
+    role: button
+    name: FAQ标题 ▾
+    frame: iframe[name="prod"]
+    nested_frames:
+    - iframe[name="tiptap-iframe"]
+    - iframe
+    source: generator:faq-editor.validation-reedit-toolbar-draft
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.validation-reedit-toolbar-draft.faq.style.title.option:
+    role: menuitem
+    name: FAQ标题
+    frame: iframe[name="prod"]
+    nested_frames:
+    - iframe[name="tiptap-iframe"]
+    - iframe
+    source: generator:faq-editor.validation-reedit-toolbar-draft
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.validation-reedit-toolbar-draft.faq.style.content.option:
+    role: menuitem
+    name: FAQ内容
+    frame: iframe[name="prod"]
+    nested_frames:
+    - iframe[name="tiptap-iframe"]
+    - iframe
+    source: generator:faq-editor.validation-reedit-toolbar-draft
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.validation-reedit-toolbar-draft.faq.html.tag:
+    role: button
+    name: HTML标签
+    frame: iframe[name="prod"]
+    nested_frames:
+    - iframe[name="tiptap-iframe"]
+    - iframe
+    source: generator:faq-editor.validation-reedit-toolbar-draft
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.validation-reedit-toolbar-draft.faq.bold:
+    role: button
+    name: 加粗
+    frame: iframe[name="prod"]
+    nested_frames:
+    - iframe[name="tiptap-iframe"]
+    - iframe
+    source: generator:faq-editor.validation-reedit-toolbar-draft
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.validation-reedit-toolbar-draft.faq.italic:
+    role: button
+    name: 斜体
+    frame: iframe[name="prod"]
+    nested_frames:
+    - iframe[name="tiptap-iframe"]
+    - iframe
+    source: generator:faq-editor.validation-reedit-toolbar-draft
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.validation-reedit-toolbar-draft.faq.underline:
+    role: button
+    name: 下划线
+    frame: iframe[name="prod"]
+    nested_frames:
+    - iframe[name="tiptap-iframe"]
+    - iframe
+    source: generator:faq-editor.validation-reedit-toolbar-draft
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.validation-reedit-toolbar-draft.faq.font.size:
+    role: button
+    name: 字号 21px
+    frame: iframe[name="prod"]
+    nested_frames:
+    - iframe[name="tiptap-iframe"]
+    - iframe
+    source: generator:faq-editor.validation-reedit-toolbar-draft
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.validation-reedit-toolbar-draft.faq.line.spacing:
+    role: button
+    name: 行间距
+    frame: iframe[name="prod"]
+    nested_frames:
+    - iframe[name="tiptap-iframe"]
+    - iframe
+    source: generator:faq-editor.validation-reedit-toolbar-draft
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.validation-reedit-toolbar-draft.editor.import:
+    role: button
+    name: 导入
+    frame: iframe[name="prod"]
+    nested_frames:
+    - iframe[name="tiptap-iframe"]
+    source: generator:faq-editor.validation-reedit-toolbar-draft
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.validation-reedit-toolbar-draft.editor.find.replace:
+    selector: text="查找替换"
+    frame: iframe[name="prod"]
+    nested_frames:
+    - iframe[name="tiptap-iframe"]
+    source: generator:faq-editor.validation-reedit-toolbar-draft
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.validation-reedit-toolbar-draft.product.outer.cancel:
+    role: link
+    name: 取消
+    frame: iframe[name="prod"]
+    source: generator:faq-editor.validation-reedit-toolbar-draft
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+    alias_of: faq-editor.required-validation.editor-cancel
+  faq-editor.validation-reedit-toolbar-draft.route.4:
+    selector: FAQ
+    source: generator:faq-editor.validation-reedit-toolbar-draft
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.validation-reedit-toolbar-draft.route.5:
+    selector: 保存
+    source: generator:faq-editor.validation-reedit-toolbar-draft
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.validation-reedit-toolbar-draft.route.6:
+    role: textbox
+    name: 请输入FAQ标题
+    frame: iframe[name="prod"]
+    nested_frames:
+    - iframe[name="tiptap-iframe"]
+    - iframe
+    source: generator:faq-editor.validation-reedit-toolbar-draft
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+    alias_of: faq-editor.validation-reedit-toolbar-draft.faq.question
+  faq-editor.validation-reedit-toolbar-draft.route.7:
+    role: textbox
+    name: 请输入FAQ内容
+    frame: iframe[name="prod"]
+    nested_frames:
+    - iframe[name="tiptap-iframe"]
+    - iframe
+    source: generator:faq-editor.validation-reedit-toolbar-draft
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+    alias_of: faq-editor.validation-reedit-toolbar-draft.faq.answer
+  faq-editor.validation.message:
+    selector: text="请输入FAQ内容"
+    frame: iframe[name="prod"]
+    nested_frames:
+    - iframe[name="tiptap-iframe"]
+    - iframe
+    source: observed:exploration/generator-faq-editor.validation-reedit-toolbar-draft.json
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.public-product-path.product.path:
+    role: textbox
+    name: 请输入URL
+    frame: iframe[name="prod"]
+    source: generator:faq-editor.public-product-path
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.public-product-path.frontend.view:
+    selector: '[title="前台查看"] a'
+    frame: iframe[name="prod"]
+    source: generator:faq-editor.public-product-path
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.product-one.public:
+    resource:
+      path: /product-one.html
+    source: observed:exploration/generator-faq-editor.public-product-path.json
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.outer-save-restore-controls.product.name:
+    selector: input
+    frame: iframe[name="prod"]
+    source: generator:faq-editor.outer-save-restore-controls
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.outer-save-restore-controls.outer.save:
+    role: link
+    name: 保存
+    frame: iframe[name="prod"]
+    source: generator:faq-editor.outer-save-restore-controls
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.outer-save-restore-controls.outer.cancel:
+    role: link
+    name: 取消
+    frame: iframe[name="prod"]
+    source: generator:faq-editor.outer-save-restore-controls
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+    alias_of: faq-editor.required-validation.editor-cancel
+  faq-editor.outer-save-restore-controls.product.status.listed:
+    role: radio
+    name: 上架
+    frame: iframe[name="prod"]
+    source: generator:faq-editor.outer-save-restore-controls
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.outer-save-restore-controls.product.status.unlisted:
+    role: radio
+    name: 下架
+    frame: iframe[name="prod"]
+    source: generator:faq-editor.outer-save-restore-controls
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.outer-save-restore-controls.product.recycle-bin:
+    role: link
+    name: 产品回收站
+    frame: iframe[name="prod"]
+    source: generator:faq-editor.outer-save-restore-controls
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.outer-save-restore-controls.product.description:
+    role: heading
+    name: 产品描述
+    frame: iframe[name="prod"]
+    source: generator:faq-editor.outer-save-restore-controls
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.product-description.tab:
+    selector: text="产品描述"
+    frame: iframe[name="prod"]
+    source: observed:exploration/generator-faq-editor.public-product-path.json
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+  faq-editor.validation.case858.form-cancel:
+    role: button
+    name: 取消
+    frame: iframe[name="prod"]
+    nested_frames:
+    - iframe[name="tiptap-iframe"]
+    - iframe
+    source: observed:exploration/generator-faq-editor.validation-reedit-toolbar-draft.json
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+    alias_of: faq-editor.validation-reedit-toolbar-draft.faq.component.cancel
+  faq-editor.validation.case7c.form-cancel:
+    role: button
+    name: 取消
+    frame: iframe[name="prod"]
+    nested_frames:
+    - iframe[name="tiptap-iframe"]
+    - iframe
+    source: observed:exploration/generator-faq-editor.validation-reedit-toolbar-draft.json
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+    alias_of: faq-editor.validation-reedit-toolbar-draft.faq.component.cancel
+  faq-editor.validation.case500.form-cancel:
+    role: button
+    name: 取消
+    frame: iframe[name="prod"]
+    nested_frames:
+    - iframe[name="tiptap-iframe"]
+    - iframe
+    source: observed:exploration/generator-faq-editor.validation-reedit-toolbar-draft.json
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+    alias_of: faq-editor.validation-reedit-toolbar-draft.faq.component.cancel
+  faq-editor.validation.case946.form-cancel:
+    role: button
+    name: 取消
+    frame: iframe[name="prod"]
+    nested_frames:
+    - iframe[name="tiptap-iframe"]
+    - iframe
+    source: observed:exploration/generator-faq-editor.validation-reedit-toolbar-draft.json
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+    alias_of: faq-editor.validation-reedit-toolbar-draft.faq.component.cancel
+  faq-editor.validation.case858.outer-cancel:
+    role: link
+    name: 取消
+    frame: iframe[name="prod"]
+    source: observed:exploration/generator-faq-editor.outer-save-restore-controls.json
+    confirmed: false
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+    alias_of: faq-editor.required-validation.editor-cancel
+  faq-editor.product-description.heading:
+    role: heading
+    name: 产品描述
+    frame: iframe[name="prod"]
+    source: observed:batches/e7edd46c0bf9432b92e468f89520ddfc/case-results.json
+    confirmed: false
+    alias_of: faq-editor.outer-save-restore-controls.product.description
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified
+observations:
+  duplicate_names:
+  - role: link
+    name: Contact Us
+    frame: '#backstage-innerpage'
+    matches: 2
+    evidence: spike-phase0.md section 1.2 (header and footer)
+  faq:
+    evidence: docs/phase4-verification.md
+    navigation: '内容管理 → #nav_faq a → iframe#faq'
+    baseline_count: 1
+    editor: 旧记录读取保存字段 textarea#faqContent；新建兼容 CKEditor 与双层 Tiptap iframe；按 link 角色等待异步导航
+    preserve: existing IDs, order, answer HTML and visible metadata; remove owner-created
+      rows only

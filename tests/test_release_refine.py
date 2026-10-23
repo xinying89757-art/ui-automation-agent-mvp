@@ -42,15 +42,46 @@ class ReleaseAndRefineTests(unittest.TestCase):
         self.assertEqual(q['status'], 'closed')
         self.assertEqual(self.m['cases']['C1']['work_status'], 'pending')
 
-    def test_next_returns_refine_specs_not_review_when_placeholders_remain(self):
+    def test_next_batches_missing_targets_for_cases_sharing_entry_and_frame(self):
         entries.confirm(self.m, '新版内容编辑器', ['click:content-admin', 'click:text=产品'])
         workflow.release_resolved(self.m)
         with patch.object(workflow, 'refresh'), patch('uia_core.preconditions.triage', return_value=[]):
             task = workflow.next_task(self.base, self.m)
         self.assertEqual(task['action'], 'explore')
-        self.assertEqual(task['case_ids'], ['C1'])
-        self.assertEqual(task['targets'], ['?faq_state_C1'])
+        self.assertEqual(task['case_ids'], ['C1', 'C2'])
+        self.assertEqual(task['targets_by_case'], {'C1': ['?faq_state_C1'], 'C2': ['?faq_state_C2']})
         self.assertEqual(task['entry'], 'content-admin')
+
+    def test_ready_runnable_cases_precede_batched_exploration(self):
+        ready = {'case_id':'C3','priority':'P1','work_status':'runnable','stage':'finished','result':None,
+                 'registration':{'script':'runner/ready.spec.ts'},'attempts':[],'case_spec':'C3/case-spec.yaml'}
+        (self.base/'runner').mkdir(exist_ok=True)
+        (self.base/'runner/ready.spec.ts').write_text('test(\"ready\")')
+        common.atomic_write(self.base/'C3/case-spec.yaml', {'start_page':'content-admin','steps':[{'target':'faq.cancel'}]}, as_yaml=True)
+        m=dict(self.m); m['cases']={**self.m['cases'],'C3':ready}; m['preflight']={'status':'passed'}
+        with patch.object(workflow,'refresh'), patch('uia_core.preconditions.triage',return_value=[]):
+            task=workflow.next_task(self.base,m)
+        self.assertEqual(task['action'],'run-batch')
+        self.assertEqual(task['case_ids'],['C3'])
+
+    def test_next_reads_page_map_once_for_synthetic_thirty_cases(self):
+        import time
+        for index in range(30):
+            cid=f'N{index:02d}'
+            folder=self.base/cid; folder.mkdir()
+            common.atomic_write(folder/'case-spec.yaml', {'start_page':'content-admin','steps':[{'target':'faq.cancel'}]}, as_yaml=True)
+            common.atomic_write(folder/'source.json', {'case_id':cid})
+            self.m['cases'][cid]={'case_id':cid,'case_spec':cid+'/case-spec.yaml','priority':'P2','work_status':'pending',
+                'source':cid+'/source.json','stage':'spec','result':None,'attempts':[]}
+        real_read=workflow.read_yaml; reads=[]
+        def counted(path):
+            if Path(path).name=='page-map.yaml': reads.append(Path(path))
+            return real_read(path)
+        with patch.object(workflow,'read_yaml',side_effect=counted), patch.object(workflow,'refresh'), \
+             patch('uia_core.preconditions.triage',return_value=[]):
+            started=time.perf_counter(); workflow.next_task(self.base,self.m); elapsed=time.perf_counter()-started
+        self.assertLessEqual(len(reads),1)
+        self.assertLess(elapsed,3.0, f'synthetic 30-case next() took {elapsed:.3f}s')
 
     def test_open_questions_do_not_reopen_concluded_cases(self):
         m={'cases':{'C1':{'case_id':'C1','result':'automation_failure','stage':'finished','work_status':'finished'},
@@ -89,6 +120,22 @@ class ReleaseAndRefineTests(unittest.TestCase):
                 self.assertEqual(task['reason'],'缺控件：faq_state_C1')
                 self.assertEqual(task['evidence'],rel)
                 self.assertEqual(task['attempt_evidence'],[f'exploration/{cid}-attempt-1.json',rel])
+
+    def test_unbound_successful_explorations_consume_placeholder_failure_bound(self):
+        entries.confirm(self.m, '新版内容编辑器', ['click:content-admin', 'click:text=产品'])
+        workflow.release_resolved(self.m)
+        cid='C1'; target='?faq_state_C1'
+        for number in (1,2):
+            rel=f'exploration/{cid}-unbound-{number}.json'; path=self.base/rel
+            path.parent.mkdir(parents=True,exist_ok=True); path.write_text('{"result":"ok"}')
+            exploration.log(self.m,'snapshot',target,'ok','explored but did not bind',base=self.base,
+                case_id=cid,target=target,evidence=rel)
+            with patch.object(workflow,'refresh'),patch('uia_core.preconditions.triage',return_value=[]):
+                task=workflow.next_task(self.base,self.m)
+            if number==1: self.assertEqual(task['action'],'explore')
+            else:
+                self.assertEqual(task['action'],'classify')
+                self.assertEqual(task['reason'],'缺控件：faq_state_C1')
 
     def test_snapshot_evidence_stores_only_bounded_outcome_metadata(self):
         args = SimpleNamespace(node='content-admin', entry='content-admin', purpose='faq.cancel', goto=None, frame='#backstage-innerpage')
@@ -203,6 +250,8 @@ class TodoScriptSchedulingTests(ReleaseAndRefineTests):
         (self.base / 'runner/b.spec.ts').write_text("test('y', async () => {});\n")
         for cid, f in (('C1', 'a'), ('C2', 'b')):
             self.m['cases'][cid].update(work_status='runnable', registration={'script': 'runner/%s.spec.ts' % f})
+        common.atomic_write(self.base/'C2/case-spec.yaml', {'start_page':'content-admin',
+            'steps':[{'id':'S1','verb':'click','target':'faq.cancel'}]}, as_yaml=True)
         self.m['preflight'] = {'status': 'passed'}
         with patch.object(workflow, 'refresh'), patch('uia_core.preconditions.triage', return_value=[]):
             task = workflow.next_task(self.base, self.m)

@@ -382,7 +382,60 @@ def same_locator(targets, row, name):
                  and {k: existing.get(k) for k in keys} == ident), None)
 
 
-def promote(base, m, report, prefix=None, page=None, overwrite=False):
+def bind_placeholders(base, m, placeholders, target_name):
+    """Bind spec placeholders to a verified catalog target and rewrite run-local specs."""
+    if not placeholders:
+        return {}
+    from .specs import spec_path
+    normalized = [str(value).strip() for value in placeholders if str(value).strip()]
+    require(normalized and all(value.startswith(('?', '？')) for value in normalized),
+            '--for values must be ?case-spec placeholders')
+    require(target_name in (read_yaml(knowledge_path('page-map.yaml')) or {}).get('targets', {}),
+            'binding target is not in the page-map catalog: ' + str(target_name))
+    mapping = {}
+    for cid, case in m.get('cases', {}).items():
+        path = spec_path(base, case)
+        if not path.is_file():
+            continue
+        spec = read_yaml(path) or {}
+        found = set()
+        def collect(value):
+            if isinstance(value, dict):
+                for key, item in value.items():
+                    if key in {'target', 'start_page'} and isinstance(item, str) and item in normalized:
+                        found.add(item)
+                    else:
+                        collect(item)
+            elif isinstance(value, list):
+                for item in value: collect(item)
+        collect(spec)
+        if not found:
+            continue
+        bindings = case.setdefault('target_bindings', {})
+        for placeholder in found:
+            bindings[placeholder] = target_name
+            mapping[placeholder] = target_name
+        def rewrite(value):
+            if isinstance(value, dict):
+                for key, item in list(value.items()):
+                    if key in {'target', 'start_page'} and isinstance(item, str) and item in found:
+                        value[key] = target_name
+                    else:
+                        rewrite(item)
+            elif isinstance(value, list):
+                for item in value: rewrite(item)
+        rewrite(spec)
+        from .common import atomic_write
+        atomic_write(path, spec, as_yaml=True)
+    require(mapping, '--for placeholders were not found in any run case-spec')
+    return mapping
+
+
+def _for_values(value):
+    return [item.strip() for item in (value or '').split(',') if item.strip()]
+
+
+def promote(base, m, report, prefix=None, page=None, overwrite=False, for_placeholders=None):
     """Promote a generator report's targets and route into shared knowledge (page-map + confirmed entry)."""
     path = (base / report) if not Path(report).is_absolute() else Path(report)
     require(path.is_file(), 'generator report not found: ' + str(report))
@@ -448,6 +501,16 @@ def promote(base, m, report, prefix=None, page=None, overwrite=False):
         steps.append(verb + ':' + name + value)
     safe(catalog, m['config'])
     save_catalog('page-map.yaml', catalog)
+    placeholder_mapping = {}
+    placeholders = _for_values(for_placeholders)
+    if placeholders:
+        candidates = list(dict.fromkeys(added + skipped))
+        for placeholder in placeholders:
+            tail = re.sub(r'[^a-z0-9]+', '.', placeholder.lstrip('?？').lower()).strip('.')
+            matches = [name for name in candidates if name.endswith(tail) or tail.endswith(name.rsplit('.', 1)[-1])]
+            chosen = matches[0] if len(matches) == 1 else candidates[0] if len(candidates) == 1 else None
+            require(chosen, '--for placeholder must identify one promoted target; use hints target for explicit binding')
+            placeholder_mapping.update(bind_placeholders(base, m, [placeholder], chosen))
     result = {'page_map': str(map_path), 'targets_added': added, 'targets_skipped': skipped, 'route_steps': steps}
     page = page or data.get('entry')
     if page and route.get('reached_entry') and steps:
@@ -460,10 +523,12 @@ def promote(base, m, report, prefix=None, page=None, overwrite=False):
         result.update(confirm(m, page, lead + steps, frame))
         result['entry_confirmed'] = page
     m.setdefault('knowledge_promotions', []).append({'at': now(), 'report': str(report), 'targets': added, 'entry': result.get('entry_confirmed')})
+    if placeholder_mapping:
+        result['placeholder_bindings'] = placeholder_mapping
     return result
 
 
-def add_target(base, m, name, locator, evidence, overwrite=False, resource=None, saved_by=None):
+def add_target(base, m, name, locator, evidence, overwrite=False, resource=None, saved_by=None, for_placeholders=None):
     """Register one observed target (from a snapshot/generator artifact) without fabricating a report."""
     require(re.fullmatch(r'[a-z0-9][a-z0-9.-]*', name or ''), 'target name: lowercase dotted, e.g. faq-editor.add')
     path = base / evidence
@@ -499,4 +564,5 @@ def add_target(base, m, name, locator, evidence, overwrite=False, resource=None,
     safe(catalog, m['config'])
     save_catalog('page-map.yaml', catalog)
     m.setdefault('knowledge_promotions', []).append({'at': now(), 'target': name, 'evidence': str(evidence)})
-    return {'target': name, 'row': targets[name], 'page_map': str(map_path)}
+    placeholder_mapping = bind_placeholders(base, m, _for_values(for_placeholders), name) if for_placeholders else {}
+    return {'target': name, 'row': targets[name], 'page_map': str(map_path), **({'placeholder_bindings': placeholder_mapping} if placeholder_mapping else {})}

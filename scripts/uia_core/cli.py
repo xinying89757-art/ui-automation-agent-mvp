@@ -40,6 +40,7 @@ def parser():
     hints.add_argument("--evidence", help="target: exploration artifact that shows it")
     hints.add_argument("--resource", help="target: public relative path (e.g. /products/x.html) for defer_public/remote checks")
     hints.add_argument("--saved-by", help="target --resource: network rule/target that saves it")
+    hints.add_argument("--for", dest="placeholder_for", help="comma-separated case-spec placeholders to bind, e.g. ?markdown.dialog.confirm")
     hints.add_argument("--report", help="promote: exploration/generator-<slug>.json")
     hints.add_argument("--prefix")
     hints.add_argument("--overwrite", action="store_true")
@@ -224,11 +225,13 @@ def dispatch(args, path, m):
         from .experience import sync_checklist
         if args.action == "target":
             from .entries import add_target
-            result = add_target(base, m, args.name, args.locator, args.evidence, args.overwrite, resource=args.resource, saved_by=args.saved_by)
+            result = add_target(base, m, args.name, args.locator, args.evidence, args.overwrite, resource=args.resource, saved_by=args.saved_by,
+                                for_placeholders=args.placeholder_for)
         elif args.action == "promote":
             from .entries import promote
             require(args.report, "hints promote requires --report exploration/generator-<slug>.json")
-            result = promote(base, m, args.report, args.prefix, args.page, args.overwrite)
+            result = promote(base, m, args.report, args.prefix, args.page, args.overwrite,
+                             for_placeholders=args.placeholder_for)
         elif args.action == "add":
             require(args.text, "hints add requires 页面=路径")
             result = add(m, args.text)

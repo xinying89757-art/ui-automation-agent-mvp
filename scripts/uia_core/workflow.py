@@ -596,7 +596,7 @@ def release_resolved(m):
     return released
 
 
-def unresolved_targets(base, m, c):
+def unresolved_targets(base, m, c, spec_cache=None):
     from . import specs
     path = specs.spec_path(base, c)
     if not path.is_file():
@@ -612,35 +612,48 @@ def unresolved_targets(base, m, c):
         elif isinstance(value, list):
             for v in value:
                 walk(v)
-    walk(read_yaml(path))
-    return list(dict.fromkeys(found))
+    spec = spec_cache[c['case_id']] if spec_cache is not None and c['case_id'] in spec_cache else None
+    walk(spec if spec is not None else read_yaml(path))
+    bindings = c.get('target_bindings') or {}
+    return list(dict.fromkeys(target for target in found if target not in bindings))
 
 
-def missing_catalog_targets(base, c):
+def missing_catalog_targets(base, c, spec_cache=None, known_targets=None):
     """Return concrete spec targets absent from shared page-map knowledge."""
     from . import specs
     path = specs.spec_path(base, c)
     if not path.is_file():
         return []
-    spec = read_yaml(path) or {}
-    from .common import ROOT
-    shared = ROOT / 'knowledge/page-map.yaml'
-    pages = read_yaml(shared if shared.is_file() else ROOT / 'assets/playwright-runner/knowledge/page-map.yaml') or {}
-    known = set((pages.get('pages') or {})) | set((pages.get('targets') or {}))
+    spec = spec_cache[c['case_id']] if spec_cache is not None and c['case_id'] in spec_cache else read_yaml(path) or {}
+    if known_targets is None:
+        from .common import ROOT
+        shared = ROOT / 'knowledge/page-map.yaml'
+        pages = read_yaml(shared if shared.is_file() else ROOT / 'assets/playwright-runner/knowledge/page-map.yaml') or {}
+        known_targets = set((pages.get('pages') or {})) | set((pages.get('targets') or {}))
+    known = set(known_targets)
+    known.update((c.get('target_bindings') or {}).values())
     names = [spec.get('start_page')]
     names.extend(row.get('target') for row in spec.get('steps', []) if isinstance(row, dict))
     names.extend(check.get('target') for assertion in spec.get('assertions', [])
                  for check in assertion.get('checks', []) if isinstance(check, dict))
     return list(dict.fromkeys(name for name in names if isinstance(name, str) and name and
-                              not name.startswith(('?', '？')) and name not in known and
+                              not name.startswith(('?', '？')) and name not in known and name not in (c.get('target_bindings') or {}).values() and
                               name not in {'defer_public', 'remote_file'}))
 
 
-def target_exploration_state(case, target):
+def target_exploration_state(case, target, known_targets=None):
     name = str(target or '').lstrip('?？')
     attempts = [row for row in case.get('explore_attempts', []) if row.get('target') == name]
-    succeeded = any(row.get('result') == 'ok' for row in attempts)
+    bound = (case.get('target_bindings') or {}).get(str(target or '')) or (case.get('target_bindings') or {}).get(name)
+    placeholder = str(target or '').startswith(('?', '？'))
+    succeeded = bool(bound and (known_targets is None or bound in known_targets)) or (
+        not placeholder and name in (known_targets or set()) and any(row.get('result') == 'ok' for row in attempts))
     failed = [row for row in attempts if row.get('result') == 'failed' and isinstance(row.get('evidence'), str) and row.get('evidence')]
+    # A successful browser exploration that did not bind its spec placeholder did not
+    # resolve the requested target. Count it against the same bounded retry budget.
+    if placeholder and not bound:
+        failed.extend({**row, 'result': 'failed', 'note': 'exploration target was not bound to a catalog target'}
+                      for row in attempts if row.get('result') == 'ok' and row.get('evidence'))
     return {'succeeded': succeeded, 'failed': failed, 'attempts': attempts}
 
 
@@ -677,10 +690,26 @@ def next_task(base, m):
     concluded = {"passed", "business_failure", "automation_failure", "product_confirmation", "environment_blocked", "not_suitable", "suspended"}
     available = sorted([c for c in cases if c["work_status"] not in {"waiting_human", "finished"}
                         and not (c.get("result") in concluded and c.get("stage") != "repair")], key=rank)
+    # Read every case spec and the shared catalog once. This keeps next() independent of
+    # case count for filesystem metadata while preserving fresh data on each invocation.
+    from . import specs
+    spec_cache = {c['case_id']: (read_yaml(specs.spec_path(base, c)) or {})
+                  for c in available if specs.spec_path(base, c).is_file()}
+    from .common import ROOT
+    page_map = ROOT / 'knowledge/page-map.yaml'
+    if not page_map.is_file():
+        page_map = ROOT / 'assets/playwright-runner/knowledge/page-map.yaml'
+    page_data = read_yaml(page_map) or {}
+    known_targets = set((page_data.get('pages') or {})) | set((page_data.get('targets') or {}))
+    missing_by_case = {}
     for c in available:
-        targets = unresolved_targets(base, m, c) + missing_catalog_targets(base, c)
+        spec = spec_cache.get(c['case_id'], {})
+        unresolved = unresolved_targets(base, m, c, spec_cache)
+        missing = missing_catalog_targets(base, c, spec_cache, known_targets)
+        targets = list(dict.fromkeys(unresolved + missing))
+        missing_by_case[c['case_id']] = targets
         for target in targets:
-            state = target_exploration_state(c, target)
+            state = target_exploration_state(c, target, known_targets)
             if len(state['failed']) >= 2 and not state['succeeded']:
                 evidence = [row.get('evidence') for row in state['failed'] if row.get('evidence')]
                 latest = evidence[-1] if evidence else None
@@ -694,8 +723,9 @@ def next_task(base, m):
                         'instruction': '两次有界探索均失败。执行 `uia.py classify --run RUN --case ' + c['case_id'] +
                                        ' --result suspended --reason ' + shlex.quote(reason) +
                                        ' --evidence ' + shlex.quote(str(latest or '<evidence-path>')) + '；不得再次探索。'}
-    # Never schedule what run-batch's static gate will reject: scripts with exploration TODOs go to refine_specs.
-    ready = [c for c in available if c["work_status"] == "runnable" and not script_todos(base, c)]
+    # Breadth first: runnable cases with complete specs go before any further exploration.
+    ready = [c for c in available if c["work_status"] == "runnable" and
+             not missing_by_case.get(c['case_id']) and not script_todos(base, c)]
     if ready:
         if not m.get("preflight") or m["preflight"]["status"] != "passed":
             return {"action": "preflight", "skill": "uia-runtime", "case_ids": [c["case_id"] for c in ready]}
@@ -706,27 +736,33 @@ def next_task(base, m):
     if repairs and not untried:
         return {"action": "repair", "skill": "uia-runtime", "case_ids": [c["case_id"] for c in repairs[:budget]]}
     if m.get("checklist_issued"):
-        refine = [(c, unresolved_targets(base, m, c) + missing_catalog_targets(base, c) +
+        refine = [(c, missing_by_case.get(c['case_id'], []) +
                    ["TODO explore: " + t for t in script_todos(base, c)]) for c in available]
         refine = [(c, t) for c, t in refine if t]
         if refine:
             missing = []
             for c, targets in refine:
-                pending = [target for target in targets if target.startswith(("?", "？")) or
-                           target in missing_catalog_targets(base, c)]
-                pending = [target for target in pending if not target_exploration_state(c, target)['succeeded']]
+                pending = [target for target in targets if not target.startswith('TODO explore:')]
+                pending = [target for target in pending if not target_exploration_state(c, target, known_targets)['succeeded']]
                 if pending:
                     missing.append((c, pending))
             missing = [(c, targets) for c, targets in missing if targets]
             if missing:
-                c, targets = missing[0]
-                spec = read_yaml(inside(base, c.get("case_spec", ""))) if c.get("case_spec") else {}
-                return {"action": "explore", "skill": "uia-runtime", "case_ids": [c["case_id"]],
-                        "entry": spec.get("start_page"), "targets": targets,
-                        "instruction": "对每个未知目标执行有界 snapshot --entry/--step 或 generator --entry（允许 --draft）；记录实际到达/失败证据。成功后通过 entries.save_catalog/hints target 或 hints promote 写入共享知识，再 lint/gen 继续本案。只有探索达到上限且失败时才按缺控件分类挂起。"}
-            from .common import ROOT
-            catalog = read_yaml(ROOT / "assets/playwright-runner/knowledge/page-map.yaml")
-            known = sorted((catalog.get("targets") or {}).keys())
+                groups = {}
+                for c, targets in missing:
+                    spec = spec_cache.get(c['case_id'], {})
+                    entry = spec.get('start_page')
+                    frame = spec.get('frame') or (page_data.get('pages') or {}).get(entry, {}).get('frame')
+                    groups.setdefault((entry, frame), []).append((c, targets))
+                (entry, frame), members = sorted(groups.items(), key=lambda item: (-len(item[1]), str(item[0])))[0]
+                case_ids = [c['case_id'] for c, _ in members]
+                targets_by_case = {c['case_id']: targets for c, targets in members}
+                return {"action": "explore", "skill": "uia-runtime", "case_ids": case_ids,
+                        "entry": entry, "frame": frame,
+                        "targets_by_case": targets_by_case,
+                        "targets": list(dict.fromkeys(t for _, ts in members for t in ts)),
+                        "instruction": "对 targets_by_case 中每个 case 的目标执行一次共享的有界 snapshot --run RUN --entry ENTRY --step ... 或 generator --run RUN --entry ENTRY --purpose TARGET --plan PLAN --draft，按 case/目标记录实际到达或失败证据。成功后用 hints target --for '?占位符' 或 hints promote --for '?占位符' 写入并绑定已观察到的 page-map 目标，再运行 spec lint/gen；绝不猜目标。每个 case/目标都用 uia.py exploration-log --run RUN --method snapshot|generator --purpose TARGET --result ok|failed --note NOTE --case CID --target '?placeholder' --evidence evidence/FILE 报告。每个 case/目标最多失败两次；第二次失败后 next 返回带证据的缺控件分类。"}
+            known = sorted((page_data.get("targets") or {}).keys())
             return {"action": "refine_specs", "skill": "uia-case-spec",
                     "case_ids": [c["case_id"] for c, _ in refine[:budget]],
                     "unresolved": {c["case_id"]: t for c, t in refine[:budget]},

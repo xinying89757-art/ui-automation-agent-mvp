@@ -9,7 +9,8 @@ Excel 导入接受常见中英文表头别名并跳过无用例内容的行；�
 一次把整份 Excel、所有 Intent 和知识库正文塞入上下文。
 
 总控读取 `next` 返回的 action。每完成一阶段、一个批次或收到人工答复后重新调用
-`next`。用户仅查询进度时使用 `status`，不自动开始执行。
+`next`，并持续循环处理所有 AI action 和 runnable case，直至所有用例均已结论并生成最终报告；
+不得以中间进度摘要结束当前自动化任务。用户仅查询进度时使用 `status`，不自动开始执行。
 
 | 阶段 | 输入与动作 | 完成门 | 下一步 |
 |---|---|---|---|
@@ -38,7 +39,7 @@ Excel 导入接受常见中英文表头别名并跳过无用例内容的行；�
 
 提测可选 `go --hints FILE_OR_TEXT` 或 `hints add --run R "页面=路径"`；未知入口合并一次清单 D（可用 `preconditions classify --page` 注册），后发现只进异步审核。
 D 答复（页面=路径或 D1/D2）写入环境记忆及 `assets/playwright-runner/knowledge/entries.yaml`，跨需求复用；草稿答复在清单定稿时自动应用。
-探索从 `snapshot --entry PAGE` / `generator --entry PAGE` 开始；粗略路径转为 --goto/--step 后用 `hints confirm` 保存；仅已知入口到达且 generator 在指定 --interaction 失败后才可请求演示。
+探索从 `snapshot --entry PAGE` / `generator --entry PAGE` 开始；`next` 会把同入口/frame 的多例缺失目标合并为一项探索任务，按返回的 `targets_by_case` 为每例逐项采证。快照命令示例：`uia.py snapshot --run R --node editor --entry PAGE --purpose TARGET --save-as evidence/TARGET.json`；生成器示例：`uia.py generator --run R --purpose TARGET --entry PAGE --plan PLAN --draft`。每个 case/目标完成后必须调用 `uia.py exploration-log --run R --method snapshot|generator --purpose TARGET --result ok|failed --note NOTE --case CID --target '?placeholder' --evidence evidence/FILE.json`，成功与失败都记录；失败证据须是实际存在的文件。成功发现占位目标后，通过 `hints target --run R --name catalog.target --locator 'JSON' --evidence evidence/FILE.json --for '?placeholder'`，或 `hints promote --run R --report exploration/generator-SLUG.json --for '?placeholder'` 将已观察控件写入目录并绑定规格占位符；多个占位符用逗号分隔。随后运行 `spec lint` 和 `spec gen`。禁止猜测控件或在探索报告未成功时绑定。粗略路径转为 --goto/--step 后用 `hints confirm` 保存；仅已知入口到达且 generator 在指定 --interaction 失败后才可请求演示。
 
 问题保存类型、影响用例、尝试记录和恢复位置。登录和凭证只接收状态/环境变量引用，
 不在对话或清单中保存密码值。同一缺口合并询问，已经确认的业务答案再次使用；
@@ -93,4 +94,4 @@ Xinying 已授权测试站及账号自由修改、保存、发布；实际可行
 
 report/close-out 自动执行知识回写。已执行成功的操作步骤可在最终断言失败时回写已到达入口、已定位/交互控件和已走路线；断言与业务语义不作为知识证据。完整的入口与定位器成功记录仍按重复验证更新稳定性计数。两次独立失败会将同版本知识设为 `needs_review`，默认不注入。`kb prune` 超过 90 天未验证标为 stale；180 天无命中仅列删除候选，不删文件。历史扁平 `entries.yaml`/`page-map.yaml` 由 `knowledge merge` 迁移到按页面/组件/流程/模式拆分的 YAML 文件。
 
-缺失 page-map 控件是探索任务，不是生成门禁结论。`next` 返回 `explore` 后，使用返回的 case、entry 和 target 执行有界 `snapshot --entry/--step` 或 `generator --entry`；生成器允许 `--draft`。成功后用 `hints target`/`hints promote` 保存观察到的目标，再 lint/gen 继续。只有探索尝试确实失败且证据已记录，才以 `缺控件：…` 挂起。
+缺失 page-map 控件是探索任务，不是生成门禁结论。每个 case/target 最多两次失败探索；`next` 在第二次有证据失败后返回 `缺控件：…` 分类任务。写入 catalog 但未绑定 `?placeholder` 不算该规格目标已发现，且不能重置失败上限。每次成功后运行 lint/gen，并继续调用 `next`；只有所有用例均结论并已生成最终报告后才结束。

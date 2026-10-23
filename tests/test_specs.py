@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
-from uia_core import specs, common, workflow, cli
+from uia_core import specs, common, workflow, cli, entries, exploration
 
 
 class CaseSpecTests(unittest.TestCase):
@@ -71,6 +71,49 @@ class CaseSpecTests(unittest.TestCase):
             generated = specs.generate(base, manifest, 'T1')
             body = (base / generated['script']).read_text()
             self.assertEqual(body.count('page = await openTarget(page, "article-editor-markdown-import")'), 1)
+
+    def test_exploration_write_binding_rewrites_placeholder_and_generates_without_todo(self):
+        repo = Path(__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp); base=root/'runs/R'; base.mkdir(parents=True)
+            shutil.copytree(repo/'knowledge',root/'knowledge')
+            shutil.copytree(repo/'assets/playwright-runner/knowledge',root/'assets/playwright-runner/knowledge')
+            shutil.copyfile(repo/'preconditions.yaml',root/'preconditions.yaml')
+            for name in ('network.yaml','data-prep.yaml'):
+                shutil.copyfile(repo/'assets/playwright-runner/knowledge'/name,root/'assets/playwright-runner/knowledge'/name)
+            with patch.object(common,'ROOT',root),patch.object(specs,'ROOT',root):
+                folder=base/'cases/T1'; folder.mkdir(parents=True)
+                shutil.copytree(repo/'assets/playwright-runner',base/'runner',
+                                ignore=shutil.ignore_patterns('node_modules','results'))
+                (base/'runner/tests/generated').mkdir(parents=True,exist_ok=True)
+                source={'case_id':'T1','expected':['1. 弹窗显示管理txt文件。']}
+                spec=copy.deepcopy(self.spec)
+                spec['steps']=[{'id':'S1','verb':'click','target':'?markdown.dialog.confirm'}]
+                common.atomic_write(folder/'source.json',source)
+                common.atomic_write(folder/'case-spec.yaml',spec,as_yaml=True)
+                evidence=base/'exploration/control.json'; evidence.parent.mkdir(parents=True); evidence.write_text('{"result":"ok"}')
+                manifest={'run_id':'R','cases':{'T1':{'case_id':'T1','source':'cases/T1/source.json',
+                    'case_spec':'cases/T1/case-spec.yaml','source_hash':'hash','intent':'cases/T1/source.json',
+                    'reuse_plan':'cases/T1/source.json','fixture_ids':[],'flow_ids':[],'attempts':[],
+                    'priority':'P1','stage':'spec','work_status':'pending','result':None}},
+                    'config':{'mutation':{'allowed':False,'scope':[]},'execution':{'workers':1,'timeout_ms':60000,'batch_size':10}},
+                    'questions':{},'history':[],'sources':[],'checklist_issued':True}
+                exploration.log(manifest,'snapshot','?markdown.dialog.confirm','ok','control discovered',
+                    base=base,case_id='T1',target='?markdown.dialog.confirm',evidence='exploration/control.json')
+                added=entries.add_target(base,manifest,'markdown.dialog.confirm','text=确认','exploration/control.json',
+                                         for_placeholders='?markdown.dialog.confirm')
+                rewritten=common.read_yaml(folder/'case-spec.yaml')
+                self.assertEqual(rewritten['steps'][0]['target'],'markdown.dialog.confirm')
+                self.assertEqual(workflow.unresolved_targets(base,manifest,manifest['cases']['T1']),[])
+                self.assertEqual(manifest['cases']['T1']['target_bindings']['?markdown.dialog.confirm'],
+                                 'markdown.dialog.confirm')
+                with patch.object(workflow,'refresh'),patch('uia_core.preconditions.triage',return_value=[]):
+                    task=workflow.next_task(base,manifest)
+                self.assertNotEqual(task['action'],'explore')
+                generated=specs.generate(base,manifest,'T1')
+                body=(base/generated['script']).read_text()
+                self.assertNotIn('TODO explore:',body)
+                self.assertIn('page.locator("text=',body)
 
     def test_menu_option_clicks_get_keyboard_pattern_automatically(self):
         self.assertIn('MENU_KEYBOARD', specs.interaction_patterns_for_target({'role':'option'}, 'click'))

@@ -117,6 +117,25 @@ class PromoteTests(unittest.TestCase):
         self.assertEqual(task['action'],'run-batch')
         self.assertEqual(task['case_ids'],['C1'])
 
+    def test_promote_is_idempotent_after_draft_rewrote_spec(self):
+        case_dir=self.base/'cases/C1'; case_dir.mkdir(parents=True)
+        (case_dir/'case-spec.yaml').write_text(
+            'start_page: content-admin\nsteps:\n  - id: S1\n    verb: click\n    target: markdown.dialog.confirm\n',encoding='utf-8')
+        self.m.update(run_id='R',sources=[],questions={},checklist_issued=True,
+            preflight={'status':'passed'},config={'execution':{'batch_size':10}},cases={'C1':{
+                'case_id':'C1','case_spec':'cases/C1/case-spec.yaml','priority':'P1','work_status':'pending',
+                'stage':'spec','result':None,'attempts':[],'registration':None}})
+        report=dict(REPORT,route=dict(REPORT['route'],route=['click:text=产品'],targets={},step_targets=[{
+            'case_id':'C1','step_id':'S1','placeholder':'?markdown.dialog.confirm','target':'markdown.dialog.confirm',
+            'locator':{'text':'确认'},'verified':True,'match_count':1}]),
+            case_targets=[{'case_id':'C1','targets':['?markdown.dialog.confirm']}])
+        (self.base/'exploration/generator-draft.json').write_text(json.dumps(report,ensure_ascii=False),encoding='utf-8')
+        result=entries.promote(self.base,self.m,'exploration/generator-draft.json')
+        self.assertEqual(result['placeholder_bindings'],{'?markdown.dialog.confirm':'markdown.dialog.confirm'})
+        self.assertEqual(self.m['cases']['C1']['target_bindings'],
+                         {'?markdown.dialog.confirm':'markdown.dialog.confirm'})
+        self.assertIn('target: markdown.dialog.confirm',(case_dir/'case-spec.yaml').read_text(encoding='utf-8'))
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -31,16 +31,26 @@ class ReleaseAndRefineTests(unittest.TestCase):
         entries.add(self.m, '新版内容编辑器=内容管理 → 产品 → 编辑')
         workflow.question(self.m, 'environment', 'faq-editor-entry', '入口没到', ['C1', 'C2'], page='新版内容编辑器')
 
-    def test_deferred_item_parks_until_entry_confirmed_then_releases(self):
+    def test_deferred_agent_review_item_does_not_park_case(self):
         q = self.m['questions']['environment:faq-editor-entry'] if 'environment:faq-editor-entry' in self.m['questions'] \
             else next(iter(self.m['questions'].values()))
         self.assertEqual((q['status'], q['page']), ('deferred', '新版内容编辑器'))
         self.assertEqual(workflow.release_resolved(self.m), [])
-        self.assertEqual(self.m['cases']['C1']['work_status'], 'waiting_human')
+        self.assertEqual(self.m['cases']['C1']['work_status'], 'pending')
         entries.confirm(self.m, '新版内容编辑器', ['click:content-admin', 'click:text=产品'])
         self.assertEqual(workflow.release_resolved(self.m), [q['id']])
         self.assertEqual(q['status'], 'closed')
         self.assertEqual(self.m['cases']['C1']['work_status'], 'pending')
+
+    def test_deferred_product_environment_process_reviews_do_not_park_active_cases(self):
+        for kind in ('product', 'environment', 'process'):
+            m={'interaction_mode':'once','cases':{'C1':{'case_id':'C1','work_status':'runnable',
+                'stage':'execution','result':None}},'questions':{},'history':[]}
+            q=workflow.question(m,kind,'defect-'+kind,'Agent review item', ['C1'],key='review-'+kind)
+            self.assertEqual(q['status'],'deferred')
+            self.assertEqual(m['cases']['C1']['work_status'],'runnable')
+            workflow.park_cases_with_open_questions(m)
+            self.assertEqual(m['cases']['C1']['work_status'],'runnable')
 
     def test_next_batches_missing_targets_for_cases_sharing_entry_and_frame(self):
         entries.confirm(self.m, '新版内容编辑器', ['click:content-admin', 'click:text=产品'])
@@ -78,8 +88,10 @@ class ReleaseAndRefineTests(unittest.TestCase):
         self.assertIn("--targets '?faq_state_C1'",task['generator_command'])
         self.assertEqual(task['promote_command'],
             'python3 scripts/uia.py hints promote --run R --report exploration/generator-case-C1-controls.json')
+        self.assertNotIn('--for',task['promote_command'])
         self.assertIn(task['generator_command'],task['instruction'])
         self.assertIn(task['promote_command'],task['instruction'])
+        self.assertIn('step_targets',task['instruction'])
 
     def test_ready_runnable_cases_precede_batched_exploration(self):
         ready = {'case_id':'C3','priority':'P1','work_status':'runnable','stage':'finished','result':None,
@@ -115,7 +127,7 @@ class ReleaseAndRefineTests(unittest.TestCase):
     def test_open_questions_do_not_reopen_concluded_cases(self):
         m={'cases':{'C1':{'case_id':'C1','result':'automation_failure','stage':'finished','work_status':'finished'},
                     'C2':{'case_id':'C2','result':None,'stage':'spec','work_status':'pending'}},
-           'questions':{'Q':{'status':'open','case_ids':['C1','C2']}}}
+           'questions':{'Q':{'status':'open','kind':'preconditions','case_ids':['C1','C2']}}}
         workflow.park_cases_with_open_questions(m)
         self.assertEqual(m['cases']['C1']['work_status'],'finished')
         self.assertEqual(m['cases']['C2']['work_status'],'waiting_human')

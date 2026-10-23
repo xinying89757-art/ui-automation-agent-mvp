@@ -382,7 +382,7 @@ def same_locator(targets, row, name):
                  and {k: existing.get(k) for k in keys} == ident), None)
 
 
-def bind_placeholders(base, m, placeholders, target_name):
+def bind_placeholders(base, m, placeholders, target_name, case_ids=None, allow_rewritten=False):
     """Bind spec placeholders to a verified catalog target and rewrite run-local specs."""
     if not placeholders:
         return {}
@@ -394,6 +394,8 @@ def bind_placeholders(base, m, placeholders, target_name):
             'binding target is not in the page-map catalog: ' + str(target_name))
     mapping = {}
     for cid, case in m.get('cases', {}).items():
+        if case_ids is not None and cid not in case_ids:
+            continue
         path = spec_path(base, case)
         if not path.is_file():
             continue
@@ -409,10 +411,24 @@ def bind_placeholders(base, m, placeholders, target_name):
             elif isinstance(value, list):
                 for item in value: collect(item)
         collect(spec)
-        if not found:
+        already_rewritten = set()
+        if allow_rewritten and case_ids is not None and cid in case_ids:
+            def collect_rewritten(value):
+                if isinstance(value, dict):
+                    for key, item in value.items():
+                        if key in {'target', 'start_page'} and item == target_name:
+                            already_rewritten.update(normalized)
+                        else:
+                            collect_rewritten(item)
+                elif isinstance(value, list):
+                    for item in value:
+                        collect_rewritten(item)
+            collect_rewritten(spec)
+        if not found and not already_rewritten:
             continue
+        bound = found | already_rewritten
         bindings = case.setdefault('target_bindings', {})
-        for placeholder in found:
+        for placeholder in bound:
             bindings[placeholder] = target_name
             mapping[placeholder] = target_name
         def rewrite(value):
@@ -424,9 +440,10 @@ def bind_placeholders(base, m, placeholders, target_name):
                         rewrite(item)
             elif isinstance(value, list):
                 for item in value: rewrite(item)
-        rewrite(spec)
-        from .common import atomic_write
-        atomic_write(path, spec, as_yaml=True)
+        if found:
+            rewrite(spec)
+            from .common import atomic_write
+            atomic_write(path, spec, as_yaml=True)
     require(mapping, '--for placeholders were not found in any run case-spec')
     return mapping
 
@@ -478,10 +495,10 @@ def promote(base, m, report, prefix=None, page=None, overwrite=False, for_placeh
             require(placeholder in requested_by_case.get(cid, set()),
                     'Generator mapped a placeholder that was not requested for case ' + str(cid))
         spec = read_yaml(spec_path(base, m['cases'][cid])) or {}
-        on_step = any(row.get('id') == step_id and row.get('target') == placeholder
+        on_step = any(row.get('id') == step_id and row.get('target') in {placeholder, target_name}
                       for row in spec.get('steps', []) if isinstance(row, dict))
         on_assertion = any((assertion.get('after') or assertion.get('id')) == step_id and
-                           any(check.get('target') == placeholder for check in assertion.get('checks', [])
+                           any(check.get('target') in {placeholder, target_name} for check in assertion.get('checks', [])
                                if isinstance(check, dict))
                            for assertion in spec.get('assertions', []) if isinstance(assertion, dict))
         require(on_step or on_assertion,
@@ -567,7 +584,8 @@ def promote(base, m, report, prefix=None, page=None, overwrite=False, for_placeh
     placeholder_mapping = {}
     for binding in auto_bindings:
         if binding['placeholder'].startswith(('?', '？')):
-            placeholder_mapping.update(bind_placeholders(base, m, [binding['placeholder']], binding['target']))
+            placeholder_mapping.update(bind_placeholders(base, m, [binding['placeholder']], binding['target'],
+                                                         case_ids={binding['case_id']}, allow_rewritten=True))
     placeholders = _for_values(for_placeholders)
     if placeholders:
         candidates = list(dict.fromkeys(added + skipped))

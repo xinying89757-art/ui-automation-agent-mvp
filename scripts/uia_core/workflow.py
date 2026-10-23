@@ -78,7 +78,7 @@ def question(m, kind, subject, prompt, case_ids, key=None, attempted=None, sheet
             q["case_ids"].append(cid)
             q["resume_states"][cid] = m["cases"][cid]["work_status"]
         c = m["cases"][cid]
-        if c["work_status"] != "finished":
+        if c["work_status"] != "finished" and question_requires_human_answer(q):
             c["work_status"] = "waiting_human"
     m["questions"][key] = q
     event(m, "question_queued", question_id=key, case_ids=case_ids)
@@ -558,13 +558,18 @@ def refresh(base, m):
 
 
 def park_cases_with_open_questions(m):
-    """Questions affect only cases that have not already earned a result."""
+    """Only explicit human-answer gates park cases; deferred review items are advisory."""
     for q in m.get("questions", {}).values():
-        if q["status"] in {"open", "deferred"}:
+        if q["status"] in {"open", "deferred"} and question_requires_human_answer(q):
             for cid in q["case_ids"]:
                 case = m.get("cases", {}).get(cid)
                 if case and case.get("result") is None and case.get("stage") != "finished":
                     case["work_status"] = "waiting_human"
+
+
+def question_requires_human_answer(q):
+    """Return whether this question is a blocking checklist the human must answer."""
+    return q.get("kind") in {"preconditions", "checklist", "login"}
 
 
 PUBLIC_RE = re.compile(r"公开(?:前台|页面|站点)|前台不可达|public[ _-]?(?:front|site|page)", re.I)

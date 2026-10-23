@@ -47,6 +47,14 @@ class CaseSpecTests(unittest.TestCase):
         self.assertEqual(unknown, ['?new_entry'])
         self.assertIsNone(specs.locator_expression('?new_entry', self.pages))
 
+    def test_menu_option_clicks_get_keyboard_pattern_automatically(self):
+        self.assertIn('MENU_KEYBOARD', specs.interaction_patterns_for_target({'role':'option'}, 'click'))
+        self.assertIn('MENU_KEYBOARD', specs.interaction_patterns_for_target({'selector':'[role="menuitem"]'}, 'click'))
+        self.assertIn('MENU_KEYBOARD', specs.interaction_patterns_for_target({'patterns':['MENU_KEYBOARD']}, 'click'))
+        self.assertIn('MENU_KEYBOARD', specs.interaction_patterns_for_target({}, 'click', 'article.slash-command-menu'))
+        self.assertIn('MENU_KEYBOARD', specs.interaction_patterns_for_target({'selector':'[role="listbox"]'}, 'click'))
+        self.assertNotIn('MENU_KEYBOARD', specs.interaction_patterns_for_target({'role':'option'}, 'fill'))
+
     def test_extensible_env_and_data_vocabulary(self):
         self.spec['required_env'] = ['new_permission']
         self.assertTrue(self.errors())
@@ -166,6 +174,7 @@ class CaseSpecTests(unittest.TestCase):
             self.assertFalse(first['runnable'])
             self.assertIn(b'TODO explore: S1 ?unknown', body)
             self.assertIn(b'UIA_EXPLORATION_REQUIRED', body)
+            self.assertIn(b'test.step("uia-step:S1"', body)
             specs.generate(base, m, 'T1')
             self.assertEqual(body, (base / first['script']).read_bytes())
             self.assertNotIn('registration', case)

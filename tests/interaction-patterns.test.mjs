@@ -34,3 +34,15 @@ test('scrolls and collapses an expanded covering panel after an intercepted clic
   assert.equal(collapsed, 1);
   assert.equal(attempts, 2);
 });
+
+test('uses typeahead and Enter after a menu option visibility timeout without focusing the option', async () => {
+  const keys = [];
+  let focused = false;
+  const target = { waitFor: async () => { throw new Error('Timeout 5000ms exceeded waiting for locator to be visible'); },
+    click: async () => {}, textContent: async () => 'Markdown', getAttribute: async () => null,
+    focus: async () => { focused = true; } };
+  const page = { keyboard: { type: async value => keys.push(value), press: async value => keys.push(value) } };
+  await clickWithPatterns(page, () => target, ['MENU_KEYBOARD']);
+  assert.deepEqual(keys, ['Markdown', 'Enter']);
+  assert.equal(focused, false);
+});

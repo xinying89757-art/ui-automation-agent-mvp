@@ -521,8 +521,15 @@ def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_m
                 try:
                     specs.generate(base, m, cid)
                 except UiaError as error:
-                    c.update(work_status='waiting_human', classification={'reason': scrub_text(str(error), m['config'])})
-                    add_review(m, 'new_ambiguity', [cid], 'case-spec/生成门禁：' + str(error), details=error.details)
+                    missing = workflow.unresolved_targets(base, m, c) + workflow.missing_catalog_targets(base, c)
+                    if missing:
+                        # Missing controls are an exploration task, not a generation verdict.
+                        c['spec_generation_blocked'] = scrub_text(str(error), m['config'])
+                        c['work_status'] = 'pending'
+                        c.pop('classification', None)
+                    else:
+                        c.update(work_status='waiting_human', classification={'reason': scrub_text(str(error), m['config'])})
+                        add_review(m, 'new_ambiguity', [cid], 'case-spec/生成门禁：' + str(error), details=error.details)
             sync_checklist(base, m)
         tasks = [{'case_id': cid, 'source': c['source'], 'action': '编写 case-spec'} for cid, c in m['cases'].items() if not specs.spec_path(base, c).is_file() and not c.get('registration')]
         m['spec_tasks'] = tasks

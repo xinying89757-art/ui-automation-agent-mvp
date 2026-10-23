@@ -80,7 +80,8 @@ def select(case, budget=None):
     page/frame/version/status filtering and are loaded in BM25/freshness order.
     """
     case = {'text': case} if isinstance(case, str) else dict(case or {})
-    query = ' '.join(str(case.get(k) or '') for k in ('page', 'route', 'title', 'module', 'intent', 'text', 'entry', 'flow', 'frame'))
+    query = ' '.join([*(str(case.get(k) or '') for k in ('title', 'module', 'intent', 'text', 'feature')),
+                      ' '.join(str(x) for x in case.get('targets', []) if x)])
     if budget is None and case.get('max_tokens') is not None:
         budget = case['max_tokens']
     if budget is not None:
@@ -98,11 +99,8 @@ def select(case, budget=None):
     ranked = []
     for tokens, item in docs:
         score = _bm25(qtokens, tokens, average, len(docs), document_frequency)
-        # Explicit page/frame/route matches get deterministic preference within the hard-filtered set.
-        if case.get('page') == item.get('page'): score += 8
-        if case.get('frame') and case.get('frame') == item.get('frame'): score += 4
-        if case.get('route') and item.get('route') and str(case['route']).startswith(item['route']): score += 6
-        if score > 0: ranked.append((score, item))
+        direct = item.get('id') in set(case.get('direct_ids') or [])
+        if score > 0 or direct: ranked.append((score, item))
     ranked.sort(key=lambda pair: pair[1]['id'])
     ranked.sort(key=lambda pair: (pair[0], pair[1].get('last_verified') or '', pair[1].get('pass_count', 0), -pair[1].get('fail_count', 0)), reverse=True)
     selected, discarded, read_files, used = [], [], [], 0

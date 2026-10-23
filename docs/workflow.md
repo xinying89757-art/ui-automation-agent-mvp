@@ -16,7 +16,7 @@ Excel 导入接受常见中英文表头别名并跳过无用例内容的行；�
 | Excel 导入 | CLI 保留原文，bind-specs 索引并优先执行现有脚本 | 来源与绑定可追溯 | spec |
 | case-spec | uia-case-spec 编写；spec lint 校验 Excel 原文、词表、目标和去重 | 独立目标；未知聚合 | gen |
 | 预检/生成 | 环境、会话、数据预检；spec gen 按模板生成单用例文件 | 统一 fixture；标记自动推出覆盖 | execution |
-| 探索 | 仅对未知页面节点做限定快照，再处理 TODO | 不持久化 snapshot refs | execution |
+| 探索 | `next` 对缺失知识目标返回 `explore`；按入口做限定快照/生成器探索 | 成功知识回写；失败须有有界尝试证据 | spec gen / execution |
 | 运行 | run-batch/wait 保留尝试；环境→会话→数据→定位/时序→业务分诊 | 每日 1 次，夜间 2 批同版本成功 | feedback |
 | 反馈交付 | 生成审核候选与结果 | 长期写回经用户审核 | completed |
 
@@ -89,6 +89,8 @@ Xinying 已授权测试站及账号自由修改、保存、发布；实际可行
 
 ### 知识库检索与回写
 
-`go` 在问题清单、探索和 spec generation 之前运行索引检索：先以页面/frame/版本/状态硬过滤，再对摘要、标签和入口词做 BM25 排序，逐需加载匹配的小文件。generator 与 spec-gen 只收到该用例命中项及其模式；默认没有 token 上限，CLI 显式传入 `kb query --max-tokens N` 才截断。`runs/<id>/knowledge-match.json` 保存所选条目、被预算截断条目和注入 token 数。报告记录 token p50/p95；对已知页面再次探索会增加 `re_explored_known_pages` 并作为 `process_issue` 显示。
+`go` 在问题清单、探索和 spec generation 之前运行索引检索：每例按页面/frame/版本/状态硬过滤，并把 case 与 spec 的目标、feature 和关键词送入 BM25 排序，再按每例 token 预算加载相关小文件。generator 与 spec-gen 只收到该用例命中项及其模式。`runs/<id>/knowledge-match.json` 保存所选条目、被预算截断条目和注入 token 数。报告记录 token p50/p95；对已知页面再次探索会增加 `re_explored_known_pages` 并作为 `process_issue` 显示。
 
-report/close-out 自动执行知识回写。入口与定位器需执行成功且至少两个用例或两次执行验证；故障修复模式需多个用例经历失败后成功。回写更新 provenance、`last_verified` 和计数，不触碰断言或业务语义。两次独立失败会将同版本知识设为 `needs_review`，默认不注入。`kb prune` 超过 90 天未验证标为 stale；180 天无命中仅列删除候选，不删文件。历史扁平 `entries.yaml`/`page-map.yaml` 由 `knowledge merge` 迁移到按页面/组件/流程/模式拆分的 YAML 文件。
+report/close-out 自动执行知识回写。已执行成功的操作步骤可在最终断言失败时回写已到达入口、已定位/交互控件和已走路线；断言与业务语义不作为知识证据。完整的入口与定位器成功记录仍按重复验证更新稳定性计数。两次独立失败会将同版本知识设为 `needs_review`，默认不注入。`kb prune` 超过 90 天未验证标为 stale；180 天无命中仅列删除候选，不删文件。历史扁平 `entries.yaml`/`page-map.yaml` 由 `knowledge merge` 迁移到按页面/组件/流程/模式拆分的 YAML 文件。
+
+缺失 page-map 控件是探索任务，不是生成门禁结论。`next` 返回 `explore` 后，使用返回的 case、entry 和 target 执行有界 `snapshot --entry/--step` 或 `generator --entry`；生成器允许 `--draft`。成功后用 `hints target`/`hints promote` 保存观察到的目标，再 lint/gen 继续。只有探索尝试确实失败且证据已记录，才以 `缺控件：…` 挂起。

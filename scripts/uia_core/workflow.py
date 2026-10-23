@@ -554,11 +554,17 @@ def refresh(base, m):
                 c.update(version=version, work_status="runnable")
     release_resolved(m)
     reopen_unearned(m)
-    for q in m["questions"].values():
+    park_cases_with_open_questions(m)
+
+
+def park_cases_with_open_questions(m):
+    """Questions affect only cases that have not already earned a result."""
+    for q in m.get("questions", {}).values():
         if q["status"] in {"open", "deferred"}:
             for cid in q["case_ids"]:
-                if cid in m["cases"] and m["cases"][cid]["work_status"] != "finished":
-                    m["cases"][cid]["work_status"] = "waiting_human"
+                case = m.get("cases", {}).get(cid)
+                if case and case.get("result") is None and case.get("stage") != "finished":
+                    case["work_status"] = "waiting_human"
 
 
 PUBLIC_RE = re.compile(r"公开(?:前台|页面|站点)|前台不可达|public[ _-]?(?:front|site|page)", re.I)
@@ -610,6 +616,34 @@ def unresolved_targets(base, m, c):
     return list(dict.fromkeys(found))
 
 
+def missing_catalog_targets(base, c):
+    """Return concrete spec targets absent from shared page-map knowledge."""
+    from . import specs
+    path = specs.spec_path(base, c)
+    if not path.is_file():
+        return []
+    spec = read_yaml(path) or {}
+    from .common import ROOT
+    shared = ROOT / 'knowledge/page-map.yaml'
+    pages = read_yaml(shared if shared.is_file() else ROOT / 'assets/playwright-runner/knowledge/page-map.yaml') or {}
+    known = set((pages.get('pages') or {})) | set((pages.get('targets') or {}))
+    names = [spec.get('start_page')]
+    names.extend(row.get('target') for row in spec.get('steps', []) if isinstance(row, dict))
+    names.extend(check.get('target') for assertion in spec.get('assertions', [])
+                 for check in assertion.get('checks', []) if isinstance(check, dict))
+    return list(dict.fromkeys(name for name in names if isinstance(name, str) and name and
+                              not name.startswith(('?', '？')) and name not in known and
+                              name not in {'defer_public', 'remote_file'}))
+
+
+def target_exploration_state(case, target):
+    name = str(target or '').lstrip('?？')
+    attempts = [row for row in case.get('explore_attempts', []) if row.get('target') == name]
+    succeeded = any(row.get('result') == 'ok' for row in attempts)
+    failed = [row for row in attempts if row.get('result') == 'failed' and isinstance(row.get('evidence'), str) and row.get('evidence')]
+    return {'succeeded': succeeded, 'failed': failed, 'attempts': attempts}
+
+
 def script_todos(base, c):
     """Exploration TODO labels left in a case's generated script (run-batch's static gate rejects them)."""
     script = (c.get("registration") or {}).get("script")
@@ -640,7 +674,26 @@ def next_task(base, m):
     cases = list(m["cases"].values())
     budget = m["config"]["execution"]["batch_size"]
     rank = lambda c: ({"P0": 0, "P1": 1, "P2": 2, "P3": 3}.get(c["priority"].upper(), 4), c["case_id"])
-    available = sorted([c for c in cases if c["work_status"] not in {"waiting_human", "finished"}], key=rank)
+    concluded = {"passed", "business_failure", "automation_failure", "product_confirmation", "environment_blocked", "not_suitable", "suspended"}
+    available = sorted([c for c in cases if c["work_status"] not in {"waiting_human", "finished"}
+                        and not (c.get("result") in concluded and c.get("stage") != "repair")], key=rank)
+    for c in available:
+        targets = unresolved_targets(base, m, c) + missing_catalog_targets(base, c)
+        for target in targets:
+            state = target_exploration_state(c, target)
+            if len(state['failed']) >= 2 and not state['succeeded']:
+                evidence = [row.get('evidence') for row in state['failed'] if row.get('evidence')]
+                latest = evidence[-1] if evidence else None
+                display_target = str(target).lstrip('?？')
+                import shlex
+                reason = '缺控件：' + display_target
+                return {'action': 'classify', 'skill': 'uia-runtime', 'case_ids': [c['case_id']],
+                        'case_id': c['case_id'], 'result': 'suspended',
+                        'reason': reason,
+                        'evidence': latest, 'attempt_evidence': evidence[-2:],
+                        'instruction': '两次有界探索均失败。执行 `uia.py classify --run RUN --case ' + c['case_id'] +
+                                       ' --result suspended --reason ' + shlex.quote(reason) +
+                                       ' --evidence ' + shlex.quote(str(latest or '<evidence-path>')) + '；不得再次探索。'}
     # Never schedule what run-batch's static gate will reject: scripts with exploration TODOs go to refine_specs.
     ready = [c for c in available if c["work_status"] == "runnable" and not script_todos(base, c)]
     if ready:
@@ -653,9 +706,24 @@ def next_task(base, m):
     if repairs and not untried:
         return {"action": "repair", "skill": "uia-runtime", "case_ids": [c["case_id"] for c in repairs[:budget]]}
     if m.get("checklist_issued"):
-        refine = [(c, unresolved_targets(base, m, c) + ["TODO explore: " + t for t in script_todos(base, c)]) for c in available]
+        refine = [(c, unresolved_targets(base, m, c) + missing_catalog_targets(base, c) +
+                   ["TODO explore: " + t for t in script_todos(base, c)]) for c in available]
         refine = [(c, t) for c, t in refine if t]
         if refine:
+            missing = []
+            for c, targets in refine:
+                pending = [target for target in targets if target.startswith(("?", "？")) or
+                           target in missing_catalog_targets(base, c)]
+                pending = [target for target in pending if not target_exploration_state(c, target)['succeeded']]
+                if pending:
+                    missing.append((c, pending))
+            missing = [(c, targets) for c, targets in missing if targets]
+            if missing:
+                c, targets = missing[0]
+                spec = read_yaml(inside(base, c.get("case_spec", ""))) if c.get("case_spec") else {}
+                return {"action": "explore", "skill": "uia-runtime", "case_ids": [c["case_id"]],
+                        "entry": spec.get("start_page"), "targets": targets,
+                        "instruction": "对每个未知目标执行有界 snapshot --entry/--step 或 generator --entry（允许 --draft）；记录实际到达/失败证据。成功后通过 entries.save_catalog/hints target 或 hints promote 写入共享知识，再 lint/gen 继续本案。只有探索达到上限且失败时才按缺控件分类挂起。"}
             from .common import ROOT
             catalog = read_yaml(ROOT / "assets/playwright-runner/knowledge/page-map.yaml")
             known = sorted((catalog.get("targets") or {}).keys())

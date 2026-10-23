@@ -128,19 +128,25 @@ test('semantic text action reveals a nested row link before clicking passive dup
   } finally { await browser.close(); }
 });
 
-test('entry replay treats a navigation click as satisfied when the next target is already showing', async () => {
+test('entry replay skips only when the current route step has an active destination signal', async () => {
   const browser = await chromium.launch({ headless: true });
   try {
     const page = await browser.newPage();
-    await page.setContent('<button id="target">Edit</button><button onclick="document.body.innerHTML=\'reloaded\'">Products</button>');
+    await page.setContent('<button id="target">Edit</button><button aria-current="page" onclick="document.body.innerHTML=\'reloaded\'">Products</button>');
     const pre = await navigateSnapshot(page, cfg, { steps: ['click:text=Products', 'click:#target'], entrySteps: 3 });
     assert.equal(pre.failed_step, null);
     assert.deepEqual(pre.steps[0], { index: 1, skipped: 'already_satisfied' });
-    await page.setContent('<button id="target">Edit</button>');
+    await page.setContent('<button id="target">Edit</button><button aria-current="page">Products</button>');
     const ok = await navigateSnapshot(page, cfg, { steps: ['click:text=Products', 'click:#target'], entrySteps: 2 });
     assert.equal(ok.failed_step, null);
     assert.deepEqual(ok.steps[0], { index: 1, skipped: 'already_satisfied' });
     const strict = await navigateSnapshot(page, cfg, { steps: ['click:text=Products', 'click:#target'] });
-    assert.equal(strict.failed_step.index, 1);
+    assert.equal(strict.failed_step, null);
+    assert.equal(strict.steps.some(step => step.skipped === 'already_satisfied'), false);
+    await page.route('https://example.test/**', route => route.fulfill({ status: 200, body: '<html><body><button>内容管理</button><button>文章</button></body></html>' }));
+    await page.goto('https://example.test/phoenix/pagebuilder/layout');
+    await page.setContent('<button>内容管理</button><button>文章</button>');
+    const wrongPage = await navigateSnapshot(page, cfg, { steps: ['click:text=内容管理', 'click:text=文章'], entrySteps: 2 });
+    assert.equal(wrongPage.steps.some(step => step.skipped === 'already_satisfied'), false);
   } finally { await browser.close(); }
 });

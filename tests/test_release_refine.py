@@ -1,11 +1,12 @@
 import sys
 import tempfile
 import unittest
+from types import SimpleNamespace
 from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
-from uia_core import common, entries, workflow
+from uia_core import common, entries, workflow, exploration
 
 
 class ReleaseAndRefineTests(unittest.TestCase):
@@ -46,9 +47,61 @@ class ReleaseAndRefineTests(unittest.TestCase):
         workflow.release_resolved(self.m)
         with patch.object(workflow, 'refresh'), patch('uia_core.preconditions.triage', return_value=[]):
             task = workflow.next_task(self.base, self.m)
-        self.assertEqual(task['action'], 'refine_specs')
-        self.assertEqual(task['unresolved']['C1'], ['?faq_state_C1'])
-        self.assertIn('faq.cancel', task['known_targets'])
+        self.assertEqual(task['action'], 'explore')
+        self.assertEqual(task['case_ids'], ['C1'])
+        self.assertEqual(task['targets'], ['?faq_state_C1'])
+        self.assertEqual(task['entry'], 'content-admin')
+
+    def test_open_questions_do_not_reopen_concluded_cases(self):
+        m={'cases':{'C1':{'case_id':'C1','result':'automation_failure','stage':'finished','work_status':'finished'},
+                    'C2':{'case_id':'C2','result':None,'stage':'spec','work_status':'pending'}},
+           'questions':{'Q':{'status':'open','case_ids':['C1','C2']}}}
+        workflow.park_cases_with_open_questions(m)
+        self.assertEqual(m['cases']['C1']['work_status'],'finished')
+        self.assertEqual(m['cases']['C2']['work_status'],'waiting_human')
+
+    def test_next_does_not_reschedule_closed_failure(self):
+        m={'run_id':'R','cases':{'C1':{'case_id':'C1','priority':'P1','work_status':'runnable','stage':'finished',
+            'registration':{'script':'runner/closed-failure.spec.ts'},
+            'result':'automation_failure','attempts':[{'executed':True,'result':'automation_failure'}]}},
+           'questions':{},'sources':[],'preflight':{'status':'passed'},
+           'config':{'execution':{'batch_size':10}},'checklist_issued':True}
+        with patch.object(workflow,'refresh'), patch('uia_core.preconditions.triage',return_value=[]):
+            task=workflow.next_task(self.base,m)
+        self.assertNotEqual(task.get('action'),'run-batch')
+
+    def test_unknown_target_exploration_is_bounded_and_classifies_after_two_evidenced_failures(self):
+        entries.confirm(self.m, '新版内容编辑器', ['click:content-admin', 'click:text=产品'])
+        workflow.release_resolved(self.m)
+        cid='C1'; target='?faq_state_C1'
+        for number in (1, 2):
+            rel=f'exploration/{cid}-attempt-{number}.json'
+            path=self.base/rel; path.parent.mkdir(parents=True,exist_ok=True); path.write_text('{"failed_step":1}')
+            exploration.log(self.m,'generator',target,'failed',f'bounded failure {number}',base=self.base,
+                             case_id=cid,target=target,evidence=rel)
+            with patch.object(workflow,'refresh'), patch('uia_core.preconditions.triage',return_value=[]):
+                task=workflow.next_task(self.base,self.m)
+            if number == 1:
+                self.assertEqual(task['action'],'explore')
+            else:
+                self.assertEqual(task['action'],'classify')
+                self.assertEqual(task['result'],'suspended')
+                self.assertEqual(task['reason'],'缺控件：faq_state_C1')
+                self.assertEqual(task['evidence'],rel)
+                self.assertEqual(task['attempt_evidence'],[f'exploration/{cid}-attempt-1.json',rel])
+
+    def test_snapshot_evidence_stores_only_bounded_outcome_metadata(self):
+        args = SimpleNamespace(node='content-admin', entry='content-admin', purpose='faq.cancel', goto=None, frame='#backstage-innerpage')
+        rel = exploration.save_snapshot_evidence(self.base, 'evidence/snapshot.json', args,
+            {'entry_reached': True, 'structure': {'failed_step': None, 'frame_reached': True},
+             'text': 'must not be copied'}, self.m['config'])
+        saved = common.read_json(self.base / rel)
+        self.assertTrue(saved['entry_reached'])
+        self.assertTrue(saved['frame_reached'])
+        self.assertNotIn('text', saved)
+        recorded = exploration.log(self.m, 'snapshot', 'faq.cancel', 'failed', 'target absent',
+                                   base=self.base, case_id='C1', target='faq.cancel', evidence=rel)
+        self.assertEqual(recorded['target_attempts'], 1)
 
 
 if __name__ == '__main__':
@@ -125,7 +178,7 @@ class BreadthFirstTests(ReleaseAndRefineTests):
         self.m['cases']['C3'] = {'case_id': 'C3', 'priority': 'P0', 'work_status': 'pending', 'stage': 'repair',
                                  'result': 'automation_failure', 'attempts': [{'result': 'automation_failure'}]}
         with patch.object(workflow, 'refresh'), patch('uia_core.preconditions.triage', return_value=[]):
-            self.assertEqual(workflow.next_task(self.base, self.m)['action'], 'refine_specs')
+            self.assertEqual(workflow.next_task(self.base, self.m)['action'], 'explore')
             for cid in ('C1', 'C2'):
                 self.m['cases'][cid]['work_status'] = 'finished'
             self.assertEqual(workflow.next_task(self.base, self.m)['action'], 'repair')
@@ -156,5 +209,5 @@ class TodoScriptSchedulingTests(ReleaseAndRefineTests):
             self.assertEqual((task['action'], task['case_ids']), ('run-batch', ['C2']))
             self.m['cases']['C2']['work_status'] = 'finished'
             task = workflow.next_task(self.base, self.m)
-        self.assertEqual(task['action'], 'refine_specs')
-        self.assertIn('TODO explore: markdown.dialog', task['unresolved']['C1'])
+        self.assertEqual(task['action'], 'explore')
+        self.assertIn('?faq_state_C1', task['targets'])

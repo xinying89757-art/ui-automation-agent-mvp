@@ -10,7 +10,7 @@
       "type": "object", "minProperties": 1,
       "additionalProperties": {"type": "object", "required": ["description", "strategy"],
         "properties": {"description": {"type": "string", "minLength": 1},
-          "strategy": {"enum": ["frame_chain", "stable_relocate", "scroll_collapse"]},
+          "strategy": {"enum": ["frame_chain", "stable_relocate", "scroll_collapse", "menu_keyboard"]},
           "retries": {"type": "integer", "minimum": 1, "maximum": 5}},
         "additionalProperties": false}
     }

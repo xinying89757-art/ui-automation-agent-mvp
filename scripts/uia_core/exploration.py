@@ -1,16 +1,50 @@
 """Exploration evidence and the focused demonstration escalation gate."""
-from .common import require, now, read_yaml
+from .common import inside, require, now, read_yaml
 from .secrets import scrub_text
 
 
-def log(m, method, purpose, result, note):
+def save_snapshot_evidence(base, relative, args, result, cfg=None):
+    """Persist outcome-only snapshot evidence; never copy DOM contents or locator values."""
+    import json
+    from .common import atomic_write
+    path = inside(base, relative)
+    structure = result.get('structure', {}) if isinstance(result, dict) else {}
+    frame_hint = result.get('frame_hint') if isinstance(result, dict) else None
+    payload = {
+        'method': 'snapshot', 'node': args.node, 'entry': args.entry,
+        'purpose': scrub_text(args.purpose, cfg), 'goto': args.goto, 'frame': args.frame or frame_hint,
+        'entry_reached': bool(result.get('entry_reached')) if isinstance(result, dict) else False,
+        'failed_step': result.get('failed_step', structure.get('failed_step')) if isinstance(result, dict) else None,
+        'frame_reached': structure.get('frame_reached') if isinstance(structure, dict) else None,
+        'result': result.get('result', 'ok') if isinstance(result, dict) else 'ok',
+        'error': result.get('error') if isinstance(result, dict) else None,
+    }
+    text = json.dumps(payload, ensure_ascii=False)
+    require(scrub_text(text, cfg) == text, 'Snapshot evidence contains sensitive metadata')
+    atomic_write(path, payload)
+    return str(path.relative_to(base))
+
+
+def log(m, method, purpose, result, note, base=None, case_id=None, target=None, evidence=None):
     require(purpose and purpose.strip(), 'Exploration purpose must name a specific node')
-    require(method in {'generator', 'midscene'} and result in {'ok', 'failed'}, 'Invalid exploration method/result')
+    require(method in {'snapshot', 'generator', 'midscene'} and result in {'ok', 'failed'}, 'Invalid exploration method/result')
     row = {'at': now(), 'method': method, 'purpose': purpose, 'result': result, 'note': note}
+    if case_id is not None:
+        require(base is not None and case_id in m.get('cases', {}), 'Exploration case is unknown')
+        require(isinstance(target, str) and target.strip(), 'Case exploration reports require --target')
+        require(isinstance(evidence, str) and evidence.strip(), 'Case exploration reports require --evidence')
+        evidence_path = inside(base, evidence)
+        require(evidence_path.is_file(), 'Exploration evidence file does not exist')
+        target_name = target.strip().lstrip('?？')
+        require(target_name, 'Exploration target is empty')
+        row.update(case_id=case_id, target=target_name, evidence=str(evidence_path.relative_to(base)))
+        attempt = {key: row[key] for key in ('at', 'method', 'purpose', 'result', 'target', 'evidence', 'note')}
+        m['cases'][case_id].setdefault('explore_attempts', []).append(attempt)
     import json
     require(scrub_text(json.dumps(row, ensure_ascii=False), m['config']) == json.dumps(row, ensure_ascii=False), 'Exploration metadata contains sensitive values')
     m.setdefault('exploration', []).append(row)
-    return {'recorded': row}
+    return {'recorded': row, 'target_attempts': sum(1 for item in m.get('cases', {}).get(case_id, {}).get('explore_attempts', [])
+                                                     if item.get('target') == row.get('target')) if case_id else None}
 
 
 def demo_gate(m, node, cases, interaction=None, base=None, page=None):

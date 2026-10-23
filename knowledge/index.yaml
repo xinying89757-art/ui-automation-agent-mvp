@@ -2887,6 +2887,24 @@ entries:
   observed_runs:
   - EXPORT
   failure_runs: []
+- id: entry.article-editor-markdown-import
+  page: article-editor-markdown-import
+  route: 内容管理 → 文章 → 编辑 → 导入 → Markdown
+  frame: 'iframe[name="article"] >> internal:control=enter-frame >> #tiptap-iframe
+    >> internal:control=enter-frame >> iframe.tiptap-iframe'
+  tags:
+  - article-editor-markdown-import
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: null
+  summary: article-editor-markdown-import
+  path: flows/entry-article-editor-markdown-import.yaml
+  hit_count: 0
+  pass_count: 0
+  fail_count: 0
+  observed_runs: []
+  failure_runs: []
 - id: pattern.FRAME_JOIN
   page: '*'
   route: ''
@@ -2948,4 +2966,25 @@ entries:
   fail_count: 0
   observed_runs:
   - EXPORT
+  failure_runs: []
+- id: pattern.MENU_KEYBOARD
+  page: '*'
+  route: ''
+  frame: ''
+  tags:
+  - MENU_KEYBOARD
+  - For visible menu or listbox options that do not accept pointer clicks, focus the
+    option, type its visible label to filter when supported, then press Enter; use
+    ArrowDown then Enter as a bounded fallback.
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: null
+  summary: For visible menu or listbox options that do not accept pointer clicks,
+    focus the option, type its visible label to filter when supported, th
+  path: patterns/pattern-menu_keyboard.yaml
+  hit_count: 0
+  pass_count: 0
+  fail_count: 0
+  observed_runs: []
   failure_runs: []

@@ -121,6 +121,48 @@ class KnowledgeTests(unittest.TestCase):
         self.assertEqual(measured['count'],1)
         self.assertGreater(measured['p95'],0)
 
+    def test_match_run_filters_same_page_siblings_without_default_token_cap(self):
+        pages={'schema_version':'page-map.v1','pages':{'content-admin':{'entry':'内容管理'}},'targets':{}}
+        for i in range(12):
+            pages['targets'][f'content-admin.unrelated{i}']={'label':f'unrelated widget {i}', 'selector':f'.unrelated-{i}', 'description':'details '*20}
+        pages['targets']['content-admin.article-import']={'label':'Article Markdown import command menu', 'selector':'[role="menuitem"]'}
+        pages['targets']['content-admin.product-title']={'label':'Product title editor field', 'selector':'input.product-title'}
+        knowledge.sync_layout(pages=pages)
+        base=self.root/'runs/R'; base.mkdir(parents=True)
+        for cid,target,title in [('C1','content-admin.article-import','Article Markdown import'),('C2','content-admin.product-title','Product title editor')]:
+            common.atomic_write(base/f'{cid}.json', {'title':title, 'expected':'verify the target'})
+            common.atomic_write(base/f'{cid}.yaml', {'start_page':'content-admin','intent':f'operate {title}',
+                'steps':[{'id':'S1','verb':'click','target':target}], 'assertions':[]}, as_yaml=True)
+        m={'run_id':'R','cases':{
+            'C1':{'source':'C1.json','case_spec':'C1.yaml','title':'Article Markdown import'},
+            'C2':{'source':'C2.json','case_spec':'C2.yaml','title':'Product title editor'}}}
+        result=knowledge.match_run(base,m)
+        first=set(result['matched']['C1']); second=set(result['matched']['C2'])
+        self.assertNotEqual(first,second)
+        self.assertIn('target.content-admin.article-import',first)
+        self.assertNotIn('target.content-admin.product-title',first)
+        self.assertIn('target.content-admin.product-title',second)
+        self.assertNotIn('target.content-admin.article-import',second)
+        self.assertLess(len(first),13)
+        self.assertLess(len(second),13)
+        self.assertTrue(all(row['max_tokens'] is None for row in result['budgets'].values()))
+
+    def test_partial_writeback_keeps_successful_steps_after_assertion_failure(self):
+        pages={'schema_version':'page-map.v1','pages':{'faq':{}},'targets':{'faq.cancel':{'selector':'button.cancel'}}}
+        common.atomic_write(knowledge.ROOT/'page-map.yaml',pages,as_yaml=True)
+        knowledge.sync_layout(pages=pages)
+        base=self.root/'runs/R'; base.mkdir(parents=True)
+        common.atomic_write(base/'C1.yaml',{'start_page':'faq','steps':[{'id':'S1','verb':'click','target':'faq.cancel'}],
+            'assertions':[{'id':'A1','after':'S1','checks':[{'target':'faq.cancel'}]}]},as_yaml=True)
+        manifest={'run_id':'R','cases':{'C1':{'case_id':'C1','case_spec':'C1.yaml','attempts':[
+            {'executed':True,'result':'business_failure','successful_steps':['S1'],'assertions':[{'id':'A1','passed':False}]}]}}}
+        result=knowledge.writeback(base,manifest)
+        self.assertEqual(result['partial_count'],1)
+        page_map=common.read_yaml(knowledge.ROOT/'page-map.yaml')
+        proof=page_map['targets']['faq.cancel']['provenance'][-1]
+        self.assertEqual(proof['evidence'],'executed_successful_steps')
+        self.assertEqual(proof['verified_by'],['C1'])
+
     def test_kb_query_has_no_default_token_limit(self):
         args=cli.parser().parse_args(['kb','query','--case','C1'])
         self.assertIsNone(args.max_tokens)

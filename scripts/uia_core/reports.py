@@ -52,6 +52,8 @@ def opening(m, metrics, review):
     writeback = m.get('knowledge_writeback', {})
     if writeback.get('count'):
         metrics_text += ' 本轮知识新增或更新：' + '、'.join(x['name'] for x in writeback.get('added_or_updated', [])) + '。'
+    if writeback.get('partial_count'):
+        metrics_text += f" 执行成功步骤的部分知识回写 {writeback['partial_count']} 项。"
     checklist = m.get('questions', {}).get('run-preconditions', {})
     if (checklist.get('entry_count', 0) and checklist.get('memory_answer_count') == checklist.get('entry_count')
             and checklist.get('status') == 'answered' and metrics['checklist_questions'] == 0):

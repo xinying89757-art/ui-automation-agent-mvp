@@ -371,6 +371,8 @@ def consume_batch(base, m, exit_code=None):
                    "duration_ms": row.get("duration_ms", 0), "errors": row.get("errors", []),
                    "attachments": row.get("attachments", []),
                    "assertions": row.get("assertions", []), "failure_stage": row.get("failure_stage")}
+        attempt["successful_steps"] = [str(step) for step in row.get("successful_steps", [])
+                                       if isinstance(step, str) and re.fullmatch(r"[A-Za-z0-9_.-]+", step)]
         if row.get("read_back"):
             attempt["read_back"] = row["read_back"]
         if row.get("saves"):

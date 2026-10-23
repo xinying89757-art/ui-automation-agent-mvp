@@ -138,8 +138,25 @@ async function alreadyThere(page, actions, index, entrySteps, options, waitMs = 
   if (kind !== 'step' || index >= entrySteps || !/^(click|hover):/u.test(action ?? '')) return false;
   if (nextKind !== 'step' || !/^(click|hover|fill|type):/u.test(nextAction ?? '')) return false;
   try {
+    const current = parseStep(action);
     const next = parseStep(nextAction);
     const nextOptions = index + 1 < entrySteps ? { ...options, frame: undefined, scope: undefined } : options;
+    const currentMatch = await resolveActionTarget(page, current.target, nextOptions);
+    if (!currentMatch) return false;
+    const currentURL = new URL(page.url());
+    const destinationVerified = await currentMatch.locator.evaluate((el, location) => {
+      const active = Boolean((el.getAttribute('aria-current') && el.getAttribute('aria-current') !== 'false') ||
+        el.getAttribute('aria-selected') === 'true' || el.classList.contains('active') ||
+        el.classList.contains('current') || el.classList.contains('selected'));
+      if (active) return true;
+      const link = el.closest('a[href]');
+      if (!link) return false;
+      try {
+        const target = new URL(link.href);
+        return target.pathname === location.pathname && target.search === location.search;
+      } catch { return false; }
+    }, { pathname: currentURL.pathname, search: currentURL.search }).catch(() => false);
+    if (!destinationVerified) return false;
     const deadline = Date.now() + waitMs;
     do {
       const matched = await resolveActionTarget(page, next.target, nextOptions);

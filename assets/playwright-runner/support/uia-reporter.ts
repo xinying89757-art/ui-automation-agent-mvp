@@ -7,6 +7,7 @@ import { scrubText, unsafeArtifact } from './redact.mjs';
 export default class UiaReporter implements Reporter {
   private cases: Record<string, unknown>[] = [];
   private assertions = new Map<string, { id: string; passed: boolean }[]>();
+  private successfulSteps = new Map<string, string[]>();
   private startedAt = new Date().toISOString();
   private output: string;
   private secrets: string[];
@@ -46,10 +47,17 @@ export default class UiaReporter implements Reporter {
   }
   onStepEnd(test: TestCase, _result: TestResult, step: TestStep): void {
     const id = /^assert:(A\d+)$/u.exec(step.title)?.[1];
-    if (!id) return;
-    const rows = this.assertions.get(test.id) ?? [];
-    rows.push({ id, passed: !step.error });
-    this.assertions.set(test.id, rows);
+    if (id) {
+      const rows = this.assertions.get(test.id) ?? [];
+      rows.push({ id, passed: !step.error });
+      this.assertions.set(test.id, rows);
+    }
+    const processStep = /^uia-step:([A-Za-z0-9_.-]+)$/u.exec(step.title)?.[1];
+    if (processStep && !step.error) {
+      const steps = this.successfulSteps.get(test.id) ?? [];
+      steps.push(processStep);
+      this.successfulSteps.set(test.id, steps);
+    }
   }
   onTestEnd(test: TestCase, result: TestResult): void {
     const caseId = test.annotations.find(a => a.type === 'uia_case')?.description ?? /^\[([^\]]+)\]/u.exec(test.title)?.[1];
@@ -74,6 +82,7 @@ export default class UiaReporter implements Reporter {
       setup_started: result.attachments.some(a => a.name === 'uia-setup-started'),
       duration_ms: result.duration, retry: result.retry, errors, lifecycle,
       assertions: this.assertions.get(test.id) ?? [],
+      successful_steps: this.successfulSteps.get(test.id) ?? [],
       failure_stage: passed ? null : /UIA_SAVE_NOT_PERSISTED/u.test(message) ? "save_not_persisted" : /UIA_ENVIRONMENT_BLOCKED/u.test(message) ? "environment_or_session" : /UIA_SETUP_FAILED/u.test(message) ? "data_preparation" : this.locatorNeverResolved(message) ? "locator_resolution" : /UIA_BUSINESS_FAILURE/u.test(message) ? "business_assertion" : "locator_or_timing",
       read_back: this.readBack(caseId),
       saves: this.saveObservations(caseId),

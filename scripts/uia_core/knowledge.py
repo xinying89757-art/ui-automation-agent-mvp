@@ -267,7 +267,7 @@ def validate():
     try:
         pattern_doc = json.loads(pattern_schema.read_text(encoding='utf-8'))
         strategies = pattern_doc['properties']['patterns']['additionalProperties']['properties']['strategy']['enum']
-        if set(strategies) != {'frame_chain','stable_relocate','scroll_collapse'}: errors.append('knowledge patterns schema strategy mismatch')
+        if set(strategies) != {'frame_chain','stable_relocate','scroll_collapse','menu_keyboard'}: errors.append('knowledge patterns schema strategy mismatch')
     except (OSError, ValueError, KeyError, TypeError):
         errors.append('knowledge patterns schema is invalid JSON or shape')
     if patterns.get('schema_version') != 'uia-patterns.v1' or not isinstance(patterns.get('patterns'), dict):
@@ -275,7 +275,7 @@ def validate():
     else:
         for name, row in patterns['patterns'].items():
             if (not isinstance(row, dict) or not isinstance(row.get('description'), str) or
-                    row.get('strategy') not in {'frame_chain','stable_relocate','scroll_collapse'}): errors.append('invalid pattern: ' + name)
+                    row.get('strategy') not in {'frame_chain','stable_relocate','scroll_collapse','menu_keyboard'}): errors.append('invalid pattern: ' + name)
     for name, row in pages.get('targets', {}).items():
         refs = row.get('patterns', [])
         if not isinstance(refs, list) or any(ref not in patterns.get('patterns', {}) for ref in refs): errors.append('invalid patterns reference: ' + name)
@@ -358,10 +358,35 @@ def match_run(base, m):
         source = read_json(base / case['source']) if case.get('source') and (base / case['source']).is_file() else {}
         spec_path = base / case.get('case_spec', '')
         spec = read_yaml(spec_path) if spec_path.is_file() else {}
-        text = ' '.join(str(x or '') for x in (case.get('title'), case.get('module'), spec.get('intent'), source.get('title'), source.get('expected')))
-        page = spec.get('start_page') or resolve_page(text)
-        retrieval = select({'page': page, 'title': case.get('title'), 'module': case.get('module'),
-                            'intent': spec.get('intent'), 'text': text}) if page else {'selected': [], 'discarded': [], 'max_tokens': None, 'used_tokens': 0, 'truncated': False}
+        text = ' '.join(str(x or '') for x in (case.get('title'), case.get('module'), spec.get('intent'), spec.get('feature'), source.get('title')))
+        page = spec.get('start_page') or case.get('page') or resolve_page(text)
+        targets = list(dict.fromkeys([str(row.get('target')) for row in spec.get('steps', [])
+                                      if isinstance(row, dict) and row.get('target')]
+                                     + [str(check.get('target')) for assertion in spec.get('assertions', [])
+                                        for check in assertion.get('checks', []) if isinstance(check, dict) and check.get('target')]))
+        frame = spec.get('frame') or case.get('frame')
+        # Page/frame are hard filters only. Direct spec references are retained even if their
+        # labels do not overlap the natural language query; all other rows need positive BM25.
+        index_ids = {row.get('id') for row in load_index()}
+        direct_ids = set()
+        def route_refs(value):
+            if isinstance(value, str):
+                return [value]
+            if isinstance(value, dict):
+                return [name for child in value.values() for name in route_refs(child)]
+            if isinstance(value, list):
+                return [name for child in value for name in route_refs(child)]
+            return []
+        refs = [spec.get('start_page'), *route_refs(spec.get('route')), *targets]
+        for ref in refs:
+            if not isinstance(ref, str) or not ref:
+                continue
+            candidates = {ref, 'page.' + ref, 'entry.' + ref, 'target.' + ref}
+            direct_ids.update(candidate for candidate in candidates if candidate in index_ids)
+        retrieval = select({'page': page, 'frame': frame, 'route': spec.get('route'),
+                            'title': case.get('title'), 'module': case.get('module'),
+                            'intent': spec.get('intent'), 'feature': spec.get('feature'),
+                            'targets': targets, 'direct_ids': sorted(direct_ids), 'text': text}) if page else {'selected': [], 'discarded': [], 'max_tokens': None, 'used_tokens': 0, 'truncated': False}
         selected = {item['id']: item for item in retrieval['selected']}
         if selected:
             output['matched'][cid] = selected
@@ -441,6 +466,57 @@ def writeback(base, m):
         if record not in provenance:
             provenance.append(record); row['provenance'] = provenance
             changes.append({'kind': 'target', 'name': name, 'case_ids': ids, 'verification_count': sum(case_passes.values())})
+    # Partial evidence is useful even when a later assertion fails. Only reporter-marked
+    # successful operational steps from an executed attempt are eligible; assertions never are.
+    partial = {}
+    partial_routes = {}
+    for case in cases:
+        spec_path = base / case.get('case_spec', '')
+        if not spec_path.is_file():
+            continue
+        spec = read_yaml(spec_path) or {}
+        steps = {row.get('id'): row for row in spec.get('steps', []) if isinstance(row, dict)}
+        for attempt in case.get('attempts', []):
+            if not attempt.get('executed'):
+                continue
+            for step_id in attempt.get('successful_steps', []):
+                step = steps.get(step_id)
+                if not step:
+                    continue
+                target = step.get('target')
+                if target in pages.get('targets', {}):
+                    partial.setdefault(('target', target), set()).add(case['case_id'])
+                if target in pages.get('pages', {}):
+                    partial.setdefault(('page', target), set()).add(case['case_id'])
+                if step.get('verb') == 'open' and spec.get('start_page') in pages.get('pages', {}):
+                    partial.setdefault(('page', spec['start_page']), set()).add(case['case_id'])
+                if spec.get('start_page') and step.get('verb') in {'open', 'click', 'hover'}:
+                    partial_routes.setdefault(spec['start_page'], set()).add(case['case_id'])
+    for (kind, name), ids in sorted(partial.items()):
+        row = pages[kind + 's'][name]
+        provenance = row.get('provenance')
+        provenance = provenance if isinstance(provenance, list) else ([provenance] if provenance else [])
+        proof = {'source_run': m['run_id'], 'verified_by': sorted(ids), 'verification_count': len(ids),
+                 'evidence': 'executed_successful_steps'}
+        if proof not in provenance:
+            provenance.append(proof)
+            row['provenance'] = provenance
+            changes.append({'kind': 'partial_' + kind, 'name': name, 'case_ids': sorted(ids),
+                            'verification_count': len(ids)})
+    entry_catalog = catalog('entries.yaml') or {'schema_version': 'entry-hints.v1', 'entries': {}}
+    for name, ids in sorted(partial_routes.items()):
+        row = entry_catalog.get('entries', {}).get(name)
+        if not row:
+            continue
+        provenance = row.get('provenance')
+        provenance = provenance if isinstance(provenance, list) else ([provenance] if provenance else [])
+        proof = {'source_run': m['run_id'], 'verified_by': sorted(ids), 'verification_count': len(ids),
+                 'evidence': 'executed_successful_route_steps'}
+        if proof not in provenance:
+            provenance.append(proof)
+            row['provenance'] = provenance
+            changes.append({'kind': 'partial_route', 'name': name, 'case_ids': sorted(ids),
+                            'verification_count': len(ids)})
     # Aggregate evidence by stable target and independent execution batches.
     index = load_index() if (_root() / 'index.yaml').is_file() else []
     match_path = base / (m.get('knowledge_match') or {}).get('file', 'knowledge-match.json')
@@ -509,7 +585,11 @@ def writeback(base, m):
     atomic_write(common.ROOT / 'assets/playwright-runner/knowledge/page-map.yaml', pages, as_yaml=True)
     atomic_write(_root() / 'experience.yaml', experience, as_yaml=True)
     sync_layout(pages=pages, experience=experience)
-    result = {'added_or_updated': changes, 'count': len(changes), 'at': now()}
+    if any(row.get('kind') == 'partial_route' for row in changes):
+        from .entries import save_catalog
+        save_catalog('entries.yaml', entry_catalog)
+    result = {'added_or_updated': changes, 'count': len(changes),
+              'partial_count': sum(row.get('kind', '').startswith('partial_') for row in changes), 'at': now()}
     m['knowledge_writeback'] = result
     return result
 

@@ -228,6 +228,20 @@ def locator_expression(name, pages):
     return None
 
 
+def interaction_patterns_for_target(target_row, action, target_name=''):
+    patterns = list((target_row or {}).get('patterns', []))
+    selector = str((target_row or {}).get('selector') or '')
+    role = (target_row or {}).get('role')
+    menu_target = ('MENU_KEYBOARD' in patterns or
+        role in {'option', 'menuitem', 'menuitemcheckbox', 'menuitemradio'} or
+        bool(re.search(r'\[role\s*=\s*["\']?(?:option|menuitem|menuitemcheckbox|menuitemradio)', selector, re.I)) or
+        bool(re.search(r'menu|listbox|suggest|command|slash|dropdown', str(target_name), re.I)) or
+        bool(re.search(r'menu|listbox|suggest|command|slash|dropdown', selector, re.I)))
+    if action == 'click' and menu_target:
+        patterns = list(dict.fromkeys([*patterns, 'MENU_KEYBOARD']))
+    return patterns
+
+
 def locator_errors(body, pages):
     errors = []
     if not re.search(r"import\s*\{[^}]*\btest\b[^}]*\}\s*from\s*['\"][^'\"]*support/fixtures(?:\.js|\.ts)?['\"]", body):
@@ -430,6 +444,7 @@ def generate(base, m, cid):
         lines.append('  throw new Error(' + json.dumps('UIA_EXPLORATION_REQUIRED: ' + label) + ');')
     for step in spec['steps']:
         sid, verb, name = step['id'], step['verb'], step['target']
+        lines.append('  await test.step(' + json.dumps('uia-step:' + sid) + ', async () => {')
         lines.append('  // @step ' + sid)
         loc = locator_expression(name, pages)
         if verb == 'observe':
@@ -450,7 +465,7 @@ def generate(base, m, cid):
             lines.append('  page = await openTarget(page, ' + json.dumps(name) + ');')
         elif verb in {'click', 'hover', 'check', 'uncheck', 'close'}:
             action = 'click' if verb == 'close' else verb
-            target_patterns = pages['targets'].get(name, {}).get('patterns', [])
+            target_patterns = interaction_patterns_for_target(pages['targets'].get(name, {}), action, name)
             if target_patterns:
                 lines.append('  await performWithPatterns(page, () => ' + loc + ', ' + json.dumps(target_patterns) +
                              ', target => target.' + action + '());')
@@ -467,6 +482,7 @@ def generate(base, m, cid):
                 lines.append('  await ' + loc + '.' + method + '(' + value + ');')
         elif verb in {'wait', 'assert'}:
             lines.append('  await expect(' + loc + ').toBeVisible();')
+        lines.append('  });')
         for assertion in (a for a in spec['assertions'] if a['after'] == sid):
             lines.append('  // Excel: ' + assertion['excel'].replace('\n', '\n  // '))
             if all(c['op'] == 'remote_file' for c in assertion['checks']):

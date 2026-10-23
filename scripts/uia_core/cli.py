@@ -112,6 +112,7 @@ def parser():
     snapshot.add_argument("--goto")
     snapshot.add_argument("--step", action="append", default=[])
     snapshot.add_argument("--save-as")
+    snapshot.add_argument("--evidence", help="write bounded, redacted snapshot outcome metadata under the run")
     snapshot.add_argument("--purpose", default="")
     snapshot.add_argument("--entry")
     spec = commands.add_parser("spec")
@@ -144,10 +145,13 @@ def parser():
             cmd.add_argument("--entry")
             cmd.add_argument("--draft", action="store_true", help="allow in-editor/component saves and empty submits (never outer save/publish)")
         if name == "exploration-log":
-            cmd.add_argument("--method", choices=["generator", "midscene"], required=True)
+            cmd.add_argument("--method", choices=["snapshot", "generator", "midscene"], required=True)
             cmd.add_argument("--purpose", required=True)
             cmd.add_argument("--result", choices=["ok", "failed"], required=True)
             cmd.add_argument("--note", required=True)
+            cmd.add_argument("--case", dest="explore_case")
+            cmd.add_argument("--target")
+            cmd.add_argument("--evidence")
         if name == "import":
             cmd.add_argument("--excel", required=True)
             cmd.add_argument("--mapping")
@@ -384,7 +388,8 @@ def dispatch(args, path, m):
         return run_generator(base, m, args.purpose, args.plan, args.minutes, args.model, entry=args.entry, draft=args.draft)
     if cmd == "exploration-log":
         from .exploration import log
-        return log(m, args.method, args.purpose, args.result, args.note)
+        return log(m, args.method, args.purpose, args.result, args.note, base=base,
+                   case_id=args.explore_case, target=args.target, evidence=args.evidence)
     if cmd == "preconditions":
         from .preconditions import sync_preconditions, classify_precondition
         if args.action == "classify":
@@ -525,6 +530,7 @@ def execute(args):
         from .common import config
         require(not args.save_as or args.run, "--save-as requires --run")
         require(not args.entry or args.run, "--entry requires --run")
+        require(not args.evidence or args.run, "--evidence requires --run")
         if args.run:
             with locked_run(args.run) as (path, m):
                 import time as _time
@@ -536,17 +542,26 @@ def execute(args):
                     from .entries import snapshot_route
                     entry_hint, entry_count = snapshot_route(args, m['config'])
                     if entry_count is None:
-                        return {'entry': args.entry, 'entry_hint': entry_hint, 'entry_reached': False,
+                        result = {'entry': args.entry, 'entry_hint': entry_hint, 'entry_reached': False,
                                 'not_a_page': bool(entry_hint.get('not_a_page')),
                                 'instruction': '该项不是页面，跳过导航。' if entry_hint.get('not_a_page') else
                                 '将入口路径翻译为 --goto/--step 后执行 snapshot；再用 uia.py hints confirm --run R --page P --step ... [--frame ...] 保存具体步骤。'}
+                        if args.evidence:
+                            from .exploration import save_snapshot_evidence
+                            result['evidence'] = save_snapshot_evidence(path.parent, args.evidence, args, result, m['config'])
+                        return result
                 area = {"page": None, "content-admin": "内容管理", "editor": "编辑网站"}[args.node]
                 started, t0 = now(), _time.monotonic()
                 try:
                     snapshot_result = profiles.invoke_snapshot(m["config"], path.parent / "runner", area, args.manual, args.frame, args.scope, args.open_target, args.hover, args.click, args.goto, args.step,
                                                               **({'entry_steps': entry_count} if args.entry else {}))
-                except UiaError:
+                except UiaError as error:
                     from .secrets import scrub_text
+                    evidence_result = {'entry': args.entry, 'entry_reached': False, 'result': 'failed',
+                                       'error': scrub_text(str(error), m['config'])[:500]}
+                    if args.evidence:
+                        from .exploration import save_snapshot_evidence
+                        save_snapshot_evidence(path.parent, args.evidence, args, evidence_result, m['config'])
                     m.setdefault('exploration', []).append({'at': now(), 'method': 'snapshot', 'purpose': scrub_text(args.purpose, m['config']),
                                                           'entry': args.entry, 'entry_reached': False, 'result': 'failed'})
                     save(path, m)
@@ -562,8 +577,12 @@ def execute(args):
                                            route_used={'node': args.node, 'goto': args.goto, 'open_target': args.open_target,
                                                        'steps': args.step[:entry_count - bool(args.goto) - bool(args.open_target)]},
                                            frame_hint=entry_hint.get('frame'), failed_step=failed)
-                    if entry_reached:
-                        snapshot_result['confirm_command'] = confirmation(args.run, args.entry, entry_hint)
+                if args.evidence:
+                    from .exploration import save_snapshot_evidence
+                    snapshot_result['evidence'] = save_snapshot_evidence(path.parent, args.evidence, args, snapshot_result, m['config'])
+                if args.entry and entry_reached:
+                    from .entries import confirmation
+                    snapshot_result['confirm_command'] = confirmation(args.run, args.entry, entry_hint)
                 known = bool(known_target)
                 # Exploration baseline: one row per snapshot (method/where/how long); no page content.
                 m.setdefault("exploration", []).append({"node": args.node, "known_page": known,

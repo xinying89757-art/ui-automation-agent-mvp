@@ -17,7 +17,17 @@ python3 scripts/uia.py kb prune [--stale-after-days 90] [--candidate-after-days 
 python3 scripts/uia.py kb writeback --run GO-id
 ```
 
-默认不设 token 注入上限；只有显式传 `--max-tokens` 才截断。索引过滤与 BM25 排序、被截断条目和注入 token 指标见 [知识库设计](knowledge-base.md)。
+自动匹配按 case 的页面、frame 执行硬过滤，再仅保留 case 查询 BM25 分数大于 0 的条目，以及 case-spec 直接引用的入口、路线和目标；不会设置默认 token 上限。手动 `kb query` 只有显式传 `--max-tokens` 才应用上限。`knowledge-match.json` 继续记录每例实际用量，报告保留 p50/p95。索引过滤与排序见 [知识库设计](knowledge-base.md)。
+
+### `explore` action
+
+`next` 返回 `explore` 时不提问。对给定 case/target 使用 `snapshot --run R --entry PAGE --purpose TARGET --evidence evidence/CASE-TARGET-1.json`，或 `generator --run R --purpose TARGET --entry PAGE --plan PLAN`（编辑器内保存时允许加 `--draft`）。快照证据只保存脱敏后的入口、frame、失败步骤等结果元数据，不保存 DOM。生成器应将其报告文件用作 `--evidence`。每次尝试后必须记录结果及现存证据文件：
+
+```bash
+python3 scripts/uia.py exploration-log --run R --case CASE --target TARGET --method snapshot --purpose TARGET --result failed --evidence evidence/CASE-TARGET-1.json --note '到达入口后控件仍不可见'
+```
+
+成功同样用 `--result ok` 记录，再通过 `hints target`/`hints promote` 写入实际观察到的控件并更新 case-spec。每个 case/target 最多两次失败；此后 `next` 返回 `classify`，按返回的 `reason` 与 `evidence` 执行 `uia.py classify --run R --case CASE --result suspended --reason REASON --evidence PATH`。报告必须引用本次实际生成的证据路径。不要自行增加重试或向用户提问。
 
 ## 初始化、导入、状态与分组
 

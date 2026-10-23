@@ -71,6 +71,8 @@ TC-0048 保留空字符串及纯空格，不把禁用态代替 Excel 要求的�
 
 完整文件协议见 [remote-checks.md](remote-checks.md)。`defer_public` 关联带 `resource` 的 page-map 目标，断言用 `remote_file`，条件支持 contains、equals、按指定二级标题截取的 ordered_pairs。`excel` 原文不能改写。本机脚本用 `// @deferred A2` 标识交接覆盖；该断言不记为本机 PASS。远程等待期间数据保留，最终回执后恢复核验；清理 pending 不能计通过。
 
+远程 `remote_file` 条件也支持 `not_contains`、`max_length`、`truncated_at` 和 `faq_page`。`truncated_at` 的 `value` 是 N、`text` 是预期完整文本，正文必须恰为前 N 个字符且不含第 N+1 个字符。`faq_page` 对 JSON-LD 的 FAQPage 对象逐个核对对象数与问答集合，不允许跨对象拼接问答。页面目标可引用 `knowledge/patterns.yaml` 中的交互模式；spec generator 会为嵌套 iframe、重绘后重新定位、遮挡滚动/收起生成对应 runtime 调用。
+
 网络规则在 `assets/playwright-runner/knowledge/network.yaml`，page-map 的 `network_rule` 引用该规则，不在用例中放 URL/定位器。`network_delay` 的字符串 value 为 1..30000 毫秒；使用 Playwright route 按 method/path 匹配、计数和延迟。`network_release` 释放同一规则。脚本 finally 释放并移除规则，避免污染清理。`request_count` 核验精确请求数。`double_click` 为物理双击，第二击仍落在同一位置；`attempt_click` 为真实指针尝试，用于核验处理中取消、关闭被阻止。不会 force-click 或绕过 DOM 禁用状态派发事件。
 
 `visible_text` 核验控件实际显示的文字，适合内部同时存在隐藏“保存”和显示“保存中…”节点的按钮。`observe` 在操作前安装观察器，`occurrence_count` 检查提示全程可见出现次数，提示消失后仍可验证；不会用已消失 toast 的当前 DOM 数量冒充全程计数。

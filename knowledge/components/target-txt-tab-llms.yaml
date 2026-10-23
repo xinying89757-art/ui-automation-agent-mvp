@@ -1,0 +1,11 @@
+id: target.txt.tab.llms
+kind: component
+name: llms.txt
+dialog: txt.dialog
+scope: '#backstage-dialog-customizeFile'
+selector: a.customize-file-tab.on
+alias_of: target.txt.tab.llms
+provenance:
+- source_run: GO-a0f244227ab4
+  verified_by: unverified
+created_at: '2026-10-23'

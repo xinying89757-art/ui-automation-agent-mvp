@@ -40,7 +40,41 @@ function parsePairs(lines) {
 }
 export function evaluate(body, condition) {
   if (condition.op === 'contains') return body.includes(condition.value);
+  if (condition.op === 'not_contains') return !body.includes(condition.value);
   if (condition.op === 'equals') return body === condition.value;
+  if (condition.op === 'max_length') return Array.from(body).length <= condition.value;
+  if (condition.op === 'truncated_at') {
+    const actual = Array.from(body), expected = Array.from(condition.text ?? '');
+    return Number.isInteger(condition.value) && condition.value >= 0 && expected.length > condition.value &&
+      actual.length === condition.value && actual.join('') === expected.slice(0, condition.value).join('');
+  }
+  if (condition.op === 'faq_page') {
+    const objects = [];
+    const visit = value => {
+      if (Array.isArray(value)) { for (const item of value) visit(item); return; }
+      if (!value || typeof value !== 'object') return;
+      const types = Array.isArray(value['@type']) ? value['@type'] : [value['@type']];
+      if (types.includes('FAQPage')) objects.push(value);
+      visit(value['@graph']);
+    };
+    for (const match of body.matchAll(/<script\b[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script\s*>/gi)) {
+      try { visit(JSON.parse(match[1])); } catch { /* ignore invalid JSON-LD blocks */ }
+    }
+    const expected = condition.value;
+    if (!expected || objects.length !== expected.count || !Array.isArray(expected.objects) || expected.objects.length !== objects.length) return false;
+    const pairSets = objects.map(object => new Set((object.mainEntity ?? []).map(item => {
+      const answer = item?.acceptedAnswer?.text ?? item?.answer;
+      return answer === undefined ? null : JSON.stringify([String(item.name ?? item.question ?? ''), String(answer)]);
+    }).filter(Boolean)));
+    const remaining = [...pairSets];
+    for (const item of expected.objects) {
+      const wanted = new Set((item.pairs ?? []).map(pair => JSON.stringify(pair.map(String))));
+      const index = remaining.findIndex(actual => actual.size === wanted.size && [...wanted].every(pair => actual.has(pair)));
+      if (index < 0) return false;
+      remaining.splice(index, 1);
+    }
+    return remaining.length === 0;
+  }
   if (condition.op === 'ordered_pairs') {
     const section = sectionFor(body, condition.section);
     if (!section) return false;
@@ -60,7 +94,8 @@ function evidenceFor(body, condition) {
   let excerpt;
   if (condition.op === 'ordered_pairs') excerpt = sectionFor(body, condition.section)?.text ?? body.slice(0, 400);
   else if (condition.op === 'equals') excerpt = body.slice(0, 400);
-  else { const i = body.indexOf(condition.value); excerpt = i < 0 ? body.slice(0, 400) : body.slice(Math.max(0, i - 200), Math.min(body.length, i + String(condition.value).length + 200)); }
+  else if (condition.op === 'faq_page') excerpt = body.slice(0, 1200);
+  else { const needle = typeof condition.value === 'string' ? condition.value : JSON.stringify(condition.value); const i = body.indexOf(needle); excerpt = i < 0 ? body.slice(0, 400) : body.slice(Math.max(0, i - 200), Math.min(body.length, i + needle.length + 200)); }
   excerpt = redactEvidence(excerpt).slice(0, 2000);
   return { section_sha256: createHash('sha256').update(excerpt).digest('hex'), excerpt };
 }

@@ -1,0 +1,35 @@
+/** Shared, bounded interaction patterns selected from knowledge/patterns.yaml. */
+export async function performWithPatterns(page, locate, patterns = [], action) {
+  const retries = Math.max(patterns.includes('RERENDER_RELOCATE') ? 3 : 1,
+    patterns.includes('OCCLUDED_SCROLL_OR_COLLAPSE') ? 2 : 1);
+  for (let attempt = 0; attempt < retries; attempt++) {
+    let target = locate();
+    await target.waitFor({ state: 'visible' });
+    if (patterns.includes('OCCLUDED_SCROLL_OR_COLLAPSE')) await target.scrollIntoViewIfNeeded();
+    if (patterns.includes('RERENDER_RELOCATE')) {
+      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    }
+    target = locate(); // resolve again after scrolling/layout changes
+    try {
+      await action(target);
+      return;
+    } catch (error) {
+      const intercepted = /intercepts pointer events|not receiving pointer events|outside of the viewport/i.test(String(error));
+      const detached = /detached|not attached|not connected|target closed/i.test(String(error));
+      if (intercepted && patterns.includes('OCCLUDED_SCROLL_OR_COLLAPSE') && attempt < 1) {
+        const covering = page.locator('[aria-expanded="true"]').last();
+        if (await covering.count()) {
+          const collapse = covering.locator('..').locator('button,a,[role="button"],[role="link"]').first();
+          if (await collapse.count()) await collapse.click({ timeout: 3000 }).catch(() => {});
+        }
+        continue;
+      }
+      if (!detached || attempt + 1 >= retries) throw error;
+    }
+  }
+  throw new Error('Interaction pattern retries exhausted');
+}
+
+export async function clickWithPatterns(page, locate, patterns = []) {
+  return performWithPatterns(page, locate, patterns, target => target.click({ timeout: 5000 }));
+}

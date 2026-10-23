@@ -19,6 +19,13 @@ rather than hardcoding case branches. Unsupported data handlers remain TODO.
 Use named targets from assets/playwright-runner/knowledge/page-map.yaml; unknowns are
 ?name. No selectors in case-spec. Steps use open/click/fill/hover/select/check/uncheck/
 press/upload/wait/close/assert, each with its own target and unique S-number.
+Before writing a case-spec or generating Playwright, consume the automatic per-case
+knowledge match from `uia go` (or query `uia.py kb query --case CASE_ID`). The index
+filters page/frame/version/status before BM25 ranking and loads only relevant files;
+never read the whole catalog into the prompt. Token caps are opt-in via `--max-tokens`.
+Page targets may reference `knowledge/patterns.yaml`: preserve `FRAME_JOIN`,
+`RERENDER_RELOCATE`, and `OCCLUDED_SCROLL_OR_COLLAPSE` and let spec-gen compile them
+to shared runtime helpers. Do not store transient snapshot references.
 Use checks op disabled/enabled for blocked/available controls (native and aria-disabled).
 Blocked / cannot save / 无法保存 / 置灰 expectations require a disabled check and an
 assert observation step, never click a disabled control. Preserve every Excel error

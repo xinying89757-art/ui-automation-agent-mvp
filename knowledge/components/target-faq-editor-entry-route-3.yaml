@@ -1,0 +1,10 @@
+id: target.faq-editor.entry.route.3
+kind: component
+selector: a[href*="invokeAction=prod_new_update"]
+frame: iframe[name="prod"]
+source: generator:faq-editor.entry-promote
+confirmed: false
+provenance:
+  source_run: GO-a0f244227ab4
+  verified_by: unverified
+created_at: '2026-10-23'

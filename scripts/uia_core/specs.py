@@ -24,7 +24,8 @@ def has_snapshot_ref(value):
 
 
 def catalogs():
-    pages = read_yaml(ROOT / 'assets/playwright-runner/knowledge/page-map.yaml')
+    shared = ROOT / 'knowledge/page-map.yaml'
+    pages = read_yaml(shared if shared.is_file() else ROOT / 'assets/playwright-runner/knowledge/page-map.yaml')
     networks = read_yaml(ROOT / 'assets/playwright-runner/knowledge/network.yaml')['rules']
     for entry in pages['targets'].values():
         if entry.get('network_rule'):
@@ -145,7 +146,17 @@ def schema_errors(spec, source, env, data, pages):
                 fail(all(isinstance(c, dict) and c.get('op') == 'remote_file' for c in checks), 'deferred assertions cannot mix local checks')
                 value = check.get('value', {})
                 fail(attached.get('verb') == 'defer_public' and check.get('target') == attached.get('target'), 'remote_file needs its deferred resource step')
-                fail(isinstance(value, dict) and value.get('op') in {'contains', 'equals', 'ordered_pairs'} and isinstance(value.get('value'), (str, list)), 'invalid remote file condition')
+                fail(isinstance(value, dict) and value.get('op') in {'contains', 'not_contains', 'equals', 'ordered_pairs', 'max_length', 'truncated_at', 'faq_page'} and isinstance(value.get('value'), (str, list, int, dict)), 'invalid remote file condition')
+                if isinstance(value, dict):
+                    if value.get('op') in {'contains', 'not_contains', 'equals'}: fail(isinstance(value.get('value'), str), 'remote text condition needs string value')
+                    if value.get('op') == 'ordered_pairs': fail(isinstance(value.get('section'), str) and isinstance(value.get('value'), list) and all(isinstance(p, list) and len(p) == 2 and all(isinstance(x, str) for x in p) for p in value.get('value', [])), 'ordered_pairs needs section and ordered string pairs')
+                    if value.get('op') == 'max_length': fail(type(value.get('value')) is int and value['value'] >= 0, 'max_length needs a nonnegative integer')
+                    if value.get('op') == 'truncated_at': fail(type(value.get('value')) is int and value['value'] >= 0 and isinstance(value.get('text'), str) and len(value['text']) > value['value'], 'truncated_at needs N and the expected full text')
+                    if value.get('op') == 'faq_page':
+                        expected = value.get('value')
+                        fail(isinstance(expected, dict) and type(expected.get('count')) is int and expected['count'] >= 0 and isinstance(expected.get('objects'), list) and len(expected['objects']) == expected.get('count'), 'faq_page needs count and one expected object per FAQPage')
+                        if isinstance(expected, dict):
+                            fail(all(isinstance(obj, dict) and isinstance(obj.get('pairs'), list) and all(isinstance(pair, list) and len(pair) == 2 and all(isinstance(x, str) for x in pair) for pair in obj.get('pairs', [])) for obj in expected.get('objects', [])), 'faq_page objects need question/answer pairs')
             if check.get('op') == 'request_count':
                 fail(type(check.get('value')) is int and check['value'] >= 0 and bool(pages['targets'].get(check.get('target'), {}).get('network')), 'request_count requires a network rule and integer')
             if check.get('op') == 'left_of':
@@ -385,10 +396,16 @@ def generate(base, m, cid):
                 mutation.get('scope') == ['*'] and mutation.get('authorization_profile', {}).get('approved_by') == 'Xinying'),
                 'case-spec mutation scope exceeds configured authorization')
     require(spec['automatable']['status'] != 'manual', 'Manual case cannot generate executable code')
-    lines = ["// Generated deterministically from case-spec.v1; edit the spec or explicitly review an AI repair.",
+    from .knowledge import match_run, matched_context
+    if not (base / 'knowledge-match.json').is_file():
+        match_run(base, m)
+    knowledge_context = matched_context(base, m, cid)
+    lines = ["// Generated deterministically from case-spec.v1 and shared interaction patterns.",
+             '// Knowledge targets: ' + ', '.join(sorted(item['id'] for item in knowledge_context.get('selected', []))),
              "import { test, expect, businessAssertion } from '../../support/fixtures.js';",
              "import { openTarget } from '../../support/case-spec.js';",
              "import { delayRequests, doubleClick, attemptClick, observeOccurrences } from '../../flows/network-control.mjs';",
+             "import { performWithPatterns } from '../../support/interaction-patterns.mjs';",
              "import { deferPublic, trackSave, verifyPersisted, readFieldValue, assertSaveBusinessOk } from '../../support/remote-checks.mjs';", '',
              'test(' + json.dumps('[' + cid + '] ' + spec['intent'], ensure_ascii=False) + ', async ({ page, caseContext }) => {', '  const networks: Record<string, any> = {};', '  const observations: Record<string, any> = {};', '  try {']
     tracked_rules = set()
@@ -432,10 +449,22 @@ def generate(base, m, cid):
         elif verb == 'open':
             lines.append('  page = await openTarget(page, ' + json.dumps(name) + ');')
         elif verb in {'click', 'hover', 'check', 'uncheck', 'close'}:
-            lines.append('  await ' + loc + '.' + ('click' if verb == 'close' else verb) + '();')
+            action = 'click' if verb == 'close' else verb
+            target_patterns = pages['targets'].get(name, {}).get('patterns', [])
+            if target_patterns:
+                lines.append('  await performWithPatterns(page, () => ' + loc + ', ' + json.dumps(target_patterns) +
+                             ', target => target.' + action + '());')
+            else:
+                lines.append('  await ' + loc + '.' + action + '();')
         elif verb in {'fill', 'select', 'press', 'upload'}:
             method = {'select': 'selectOption', 'upload': 'setInputFiles'}.get(verb, verb)
-            lines.append('  await ' + loc + '.' + method + '(' + json.dumps(step['value'], ensure_ascii=False) + ');')
+            target_patterns = pages['targets'].get(name, {}).get('patterns', [])
+            value = json.dumps(step['value'], ensure_ascii=False)
+            if target_patterns:
+                lines.append('  await performWithPatterns(page, () => ' + loc + ', ' + json.dumps(target_patterns) +
+                             ', target => target.' + method + '(' + value + '));')
+            else:
+                lines.append('  await ' + loc + '.' + method + '(' + value + ');')
         elif verb in {'wait', 'assert'}:
             lines.append('  await expect(' + loc + ').toBeVisible();')
         for assertion in (a for a in spec['assertions'] if a['after'] == sid):
@@ -535,7 +564,7 @@ def register_script(base, m, cid, script_path):
         require(set(refs[field]) == {x['id'] for x in spec[field]}, 'Coverage markers differ from case-spec ' + field)
     reg = {'case_id':cid, 'case_spec':True, 'script':'runner/' + relative,
            'fixture':{'hooks':'fixtures/case-spec.mjs', 'mutates':bool(spec['mutation_scope']), 'mutation_scope':spec['mutation_scope']},
-           'dependencies':['knowledge/page-map.yaml', 'knowledge/data-prep.yaml', 'knowledge/network.yaml'], 'needs_public':pages['pages'][spec['start_page']].get('public', False) or ('public_frontend' in spec['required_env'] and not any(s['verb'] == 'defer_public' for s in spec['steps'])),
+           'dependencies':['knowledge/page-map.yaml', 'knowledge/data-prep.yaml', 'knowledge/network.yaml', 'knowledge/patterns.yaml'], 'needs_public':pages['pages'][spec['start_page']].get('public', False) or ('public_frontend' in spec['required_env'] and not any(s['verb'] == 'defer_public' for s in spec['steps'])),
            'coverage':refs}
     previous = case.get('version')
     case.update(registration=reg, daily_spec=False, case_spec=str(spec_path(base, case).relative_to(base)),

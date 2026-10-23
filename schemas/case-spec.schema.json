@@ -108,6 +108,20 @@
         "save_target": {"type":"string", "minLength":1}
       }
     },
+    "remoteCondition": {
+      "type": "object", "additionalProperties": false, "required": ["op", "value"],
+      "properties": {
+        "op": {"enum": ["contains", "not_contains", "equals", "ordered_pairs", "max_length", "truncated_at", "faq_page"]},
+        "value": {"oneOf": [{"type": "string"}, {"type": "integer", "minimum": 0}, {"type": "array"}, {"type": "object"}]},
+        "section": {"type": "string"},
+        "text": {"type": "string"}
+      },
+      "allOf": [
+        {"if": {"properties": {"op": {"const": "truncated_at"}}}, "then": {"required": ["text"], "properties": {"value": {"type": "integer", "minimum": 0}}}},
+        {"if": {"properties": {"op": {"const": "max_length"}}}, "then": {"properties": {"value": {"type": "integer", "minimum": 0}}}},
+        {"if": {"properties": {"op": {"const": "faq_page"}}}, "then": {"properties": {"value": {"type": "object", "required": ["count", "objects"], "properties": {"count": {"type": "integer", "minimum": 0}, "objects": {"type": "array", "items": {"type": "object", "required": ["pairs"], "properties": {"pairs": {"type": "array", "items": {"type": "array", "prefixItems": [{"type": "string"}, {"type": "string"}], "minItems": 2, "maxItems": 2}}}}}}}}}}
+      ]
+    },
     "step": {
       "type": "object",
       "additionalProperties": false,
@@ -286,6 +300,10 @@
               "attribute"
             ]
           }
+        },
+        {
+          "if": {"properties": {"op": {"const": "remote_file"}}},
+          "then": {"properties": {"value": {"$ref": "#/$defs/remoteCondition"}}}
         }
       ]
     }

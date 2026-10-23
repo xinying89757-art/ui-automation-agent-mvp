@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "uia-knowledge-index.v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "entries"],
+  "properties": {
+    "schema_version": {"const": "uia-knowledge-index.v2"},
+    "entries": {
+      "type": "array", "maxItems": 5000,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["id", "page", "route", "frame", "tags", "version", "status", "last_verified", "last_hit", "summary", "path", "hit_count", "pass_count", "fail_count", "observed_runs", "failure_runs"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1, "maxLength": 160},
+          "page": {"type": "string"}, "route": {"type": "string"}, "frame": {"type": "string"},
+          "tags": {"type": "array", "items": {"type": "string"}, "maxItems": 80},
+          "version": {"type": "string"},
+          "status": {"enum": ["stable", "verified", "unverified", "needs_review", "stale", "deprecated"]},
+          "last_verified": {"type": ["string", "null"], "format": "date"},
+          "last_hit": {"type": ["string", "null"], "format": "date"},
+          "summary": {"type": "string", "maxLength": 180},
+          "path": {"type": "string", "pattern": "^(pages|components|flows|patterns)/[^/]+\\.yaml$"},
+          "hit_count": {"type": "integer", "minimum": 0}, "pass_count": {"type": "integer", "minimum": 0},
+          "fail_count": {"type": "integer", "minimum": 0},
+          "observed_runs": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+          "failure_runs": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
+        }
+      }
+    }
+  }
+}

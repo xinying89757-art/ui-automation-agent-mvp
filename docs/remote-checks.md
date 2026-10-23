@@ -4,7 +4,7 @@
 
 ## 产生与执行
 
-case-spec 使用 page-map 中声明 `resource: {path: /任意公开文件}` 的目标，`defer_public` 步骤，以及 `remote_file` 检查。每个断言的 `excel` 必须逐字引用导入的 Excel 单元格或完整行。`contains`、`equals`、`ordered_pairs` 是可执行条件，不能代替原文；FAQ 条件从准备后真实列表读取问题、答案及顺序。`ordered_pairs` 用 `section` 指定二级标题，要求该节恰好是 N 组问题/答案两行，拒绝缺项、多项、乱序或合并一行。
+case-spec 使用 page-map 中声明 `resource: {path: /任意公开文件}` 的目标，`defer_public` 步骤，以及 `remote_file` 检查。每个断言的 `excel` 必须逐字引用导入的 Excel 单元格或完整行。`contains`、`not_contains`、`equals`、`max_length`、`truncated_at`、`ordered_pairs` 与 `faq_page` 是可执行条件，不能代替原文。`truncated_at` 使用 `{op: truncated_at, value: N, text: 完整预期文本}`，要求远程正文恰为完整文本的前 N 个 Unicode 字符，因而明确不含第 N+1 个字符。`faq_page` 使用 `{op: faq_page, value: {count: N, objects: [{pairs: [[问题, 答案], ...]}, ...]}}`；每个 JSON-LD FAQPage 对象分别核对，严格检查对象数、对象内问答集合且不接受跨对象混合。`ordered_pairs` 用 `section` 指定二级标题，要求该节恰好是 N 组问题/答案两行，拒绝缺项、多项、乱序或合并一行。
 
 ```yaml
 steps:

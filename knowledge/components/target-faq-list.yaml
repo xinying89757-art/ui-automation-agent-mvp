@@ -1,0 +1,9 @@
+id: target.faq.list
+kind: component
+frame: '#faq'
+selector: '#content'
+alias_of: target.faq.list
+provenance:
+- source_run: GO-a0f244227ab4
+  verified_by: unverified
+created_at: '2026-10-23'

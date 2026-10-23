@@ -1,0 +1,14 @@
+id: target.faq-editor.new-editor-types.route.12
+kind: component
+role: textbox
+frame: iframe[name="article"]
+nested_frames:
+- '#tiptap-iframe'
+- iframe
+source: generator:faq-editor.new-editor-types
+confirmed: false
+provenance:
+  source_run: GO-a0f244227ab4
+  verified_by: unverified
+alias_of: target.faq-editor.new-editor-types.route.11
+created_at: '2026-10-23'

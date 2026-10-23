@@ -1,0 +1,18 @@
+schema_version: entry-hints.v1
+entries:
+  编辑面板:
+    label: 编辑面板
+    path_text: '内容管理→产品（或文章）→编辑，内嵌编辑器框架 #tiptap-iframe 插入 FAQ 组件后出现编辑面板'
+    frame: iframe[name="prod"] >> internal:control=enter-frame >> iframe
+    not_a_page: false
+    aliases: []
+    source: explored
+    confirmed: true
+    at: '2026-10-22T15:21:56.051293+00:00'
+    steps:
+    - click:text=内容管理
+    - click:text=product one
+    - click:text=产品描述
+    provenance:
+      source_run: GO-a0f244227ab4
+      verified_by: unverified

@@ -117,12 +117,17 @@ class CaseSpecTests(unittest.TestCase):
             self.spec['read_back'] = [{'id':'R1','after':'S2','target':'txt.overview','value':'wanted',
                                       'reopen':['settings','txt.entry'],'save_target':'network.llms.save'}]
             common.atomic_write(folder / 'case-spec.yaml', self.spec, as_yaml=True)
-            with patch.object(specs, 'register_script', return_value={'script':'runner/tests/generated/T1.spec.ts'}):
+            generated_pages = copy.deepcopy(self.pages)
+            generated_pages['targets']['txt.save']['patterns'] = ['RERENDER_RELOCATE']
+            with patch.object(specs, 'catalogs', return_value=(self.env, self.data, generated_pages)), \
+                    patch.object(specs, 'register_script', return_value={'script':'runner/tests/generated/T1.spec.ts'}):
                 specs.generate(base, manifest, 'T1')
             generated = (base / 'runner/tests/generated/T1.spec.ts').read_text()
             self.assertIn('verifyPersisted(page, caseContext', generated)
             self.assertIn('readFieldValue(', generated)
             self.assertIn('await page.reload()', generated)
+            self.assertIn('performWithPatterns(page, () =>', generated)
+            self.assertIn("target => target.click()", generated)
 
     def test_lint_records_true_first_pass_and_cross_case_duplicates(self):
         import yaml

@@ -375,6 +375,9 @@ def consume_batch(base, m, exit_code=None):
             attempt["read_back"] = row["read_back"]
         if row.get("saves"):
             attempt["saves"] = row["saves"]
+        if result == "passed" and c.get("repair_baseline_script"):
+            attempt["repair_baseline_script"] = c["repair_baseline_script"]
+            attempt["repair_script"] = c.get("registration", {}).get("script")
         shot = next((a.get('path') for a in row.get('attachments', []) if a.get('name') == 'uia-redacted-dialog'), None)
         if shot:
             from .secrets import unsafe_artifact

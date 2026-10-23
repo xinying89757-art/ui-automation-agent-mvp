@@ -1,0 +1,11 @@
+id: target.txt.overview
+kind: component
+mutation: llms.txt
+dialog: txt.dialog
+scope: '#backstage-dialog-customizeFile'
+selector: input.llms-overview
+alias_of: target.txt.overview
+provenance:
+- source_run: GO-a0f244227ab4
+  verified_by: unverified
+created_at: '2026-10-23'

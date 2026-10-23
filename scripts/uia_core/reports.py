@@ -44,6 +44,14 @@ def opening(m, metrics, review):
                     f"计划外人工介入 {metrics['unplanned_interventions']}，会话轮次 {metrics['session_turns']}；"
                     f"脚本实际执行覆盖率 {metrics['script_coverage']['ratio']:.1%}；"
                     f"越权 {metrics['scope_violations']}，泄露 {metrics['leak_hits']}，未审核断言变更 {metrics['unreviewed_assertion_changes']}。")
+    if metrics.get('re_explored_known_pages', 0):
+        metrics_text += f"流程问题：已知页面重复探索 {metrics['re_explored_known_pages']} 次（re_explored_known_pages）。"
+    if metrics.get('knowledge_injected_tokens', {}).get('count'):
+        kb = metrics['knowledge_injected_tokens']
+        metrics_text += f"知识注入 token p50/p95：{kb['p50']}/{kb['p95']}（{kb['count']} 条用例）。"
+    writeback = m.get('knowledge_writeback', {})
+    if writeback.get('count'):
+        metrics_text += ' 本轮知识新增或更新：' + '、'.join(x['name'] for x in writeback.get('added_or_updated', [])) + '。'
     checklist = m.get('questions', {}).get('run-preconditions', {})
     if (checklist.get('entry_count', 0) and checklist.get('memory_answer_count') == checklist.get('entry_count')
             and checklist.get('status') == 'answered' and metrics['checklist_questions'] == 0):
@@ -70,6 +78,8 @@ def brief_error(attempt, cfg=None):
 
 
 def make_report(base, m):
+    from .knowledge import writeback as knowledge_writeback
+    knowledge_writeback(base, m)
     from .experience import review as build_review
     review = build_review(base, m)
     removed = drop_unsafe_artifacts(base / "batches")

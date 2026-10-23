@@ -1,0 +1,31 @@
+name: Knowledge catalog
+
+on:
+  pull_request:
+    paths:
+      - 'knowledge/**'
+      - 'schemas/knowledge-*.schema.json'
+      - 'scripts/uia_core/knowledge.py'
+      - 'scripts/uia_core/retrieval.py'
+      - 'scripts/check_knowledge.py'
+      - 'tests/test_knowledge.py'
+  push:
+    paths:
+      - 'knowledge/**'
+      - 'schemas/knowledge-*.schema.json'
+      - 'scripts/uia_core/knowledge.py'
+      - 'scripts/uia_core/retrieval.py'
+      - 'scripts/check_knowledge.py'
+      - 'tests/test_knowledge.py'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install PyYAML
+      - run: python scripts/check_knowledge.py
+      - run: python -m unittest tests.test_knowledge

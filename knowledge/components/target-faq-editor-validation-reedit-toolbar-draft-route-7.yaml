@@ -1,0 +1,15 @@
+id: target.faq-editor.validation-reedit-toolbar-draft.route.7
+kind: component
+role: textbox
+name: 请输入FAQ内容
+frame: iframe[name="prod"]
+nested_frames:
+- iframe[name="tiptap-iframe"]
+- iframe
+source: generator:faq-editor.validation-reedit-toolbar-draft
+confirmed: false
+provenance:
+  source_run: GO-a0f244227ab4
+  verified_by: unverified
+alias_of: target.faq-editor.validation-reedit-toolbar-draft.faq.answer
+created_at: '2026-10-23'

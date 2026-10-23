@@ -13,6 +13,14 @@ The project root is three parents above this folder. Run CLI commands there usin
 API-backed agent server. Read and follow stage skills in the current conversation;
 do not invoke Claude Code `Task()` or assume a shell script can invoke the model.
 
+Before any question, exploration planning, or spec generation, use the automatic
+per-case knowledge match written by `uia go` in `knowledge-match.json`. Retrieval
+uses the index and loads only matched page/frame/version records; never load the
+whole knowledge directory into a prompt. The default has no token truncation. Use
+`uia.py kb query --case CASE_ID [--max-tokens N]` only when a focused query is needed;
+`--max-tokens` is opt-in. Treat `needs_review` records as excluded. A positive
+`re_explored_known_pages` is a process issue to report and correct.
+
 Before presenting the checklist, classify every unmatched workbook precondition; ai_prepare/explore are AI tasks, human_env joins the single upfront question block.
 For any page with an entry hint, always begin with `snapshot --entry` / `generator --entry`.
 Follow the hinted backend area first; never start component exploration in another area.
@@ -121,6 +129,9 @@ of the same script, dependencies and configuration. Show that count. Never claim
 stability from retries, a reused page, or a previous version. Passing batches write
 locator memory automatically; do not skip that step and do not store raw panel text
 as an element name.
+Long-term knowledge write-back runs automatically at report/close-out, but only for
+execution-verified reusable knowledge; it never changes assertions or business
+semantics. Read the report's added/updated entries and stale/review status.
 Every source case retains a result or an explained pending/blocked state; do not remove
 difficult cases from the denominator. Separately report execution coverage, pass rate,
 stability rate, elapsed time, human waits and reuse.

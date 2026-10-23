@@ -1,0 +1,11 @@
+id: target.txt.cancel
+kind: component
+name: 取消
+dialog: txt.dialog
+scope: '#backstage-dialog-customizeFile'
+selector: a.backstage-dialog-cancel
+alias_of: target.txt.cancel
+provenance:
+- source_run: GO-a0f244227ab4
+  verified_by: unverified
+created_at: '2026-10-23'

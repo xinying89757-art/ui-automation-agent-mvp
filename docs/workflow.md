@@ -86,3 +86,9 @@ fixtures 可继续。清理恢复需要实际证据，通过 `resolve-fixture` �
 Xinying 已授权测试站及账号自由修改、保存、发布；实际可行时恢复数据以便复跑。
 
 公开文件采用远程交接时，先运行不需要 hold 的用例，再准备 deferred 用例并最后生成请求。hold 写在环境私有记忆 `.auth/remote-holds/`；同环境的其他 run/clone 会阻止数据修改，但可运行只读用例。清理快照保留在本机，远程最终回执后按准备反序恢复。只有远程断言和本机恢复核验都通过才计通过/稳定。缓存结果保持等待；不可达不会冒充业务失败。到期通过 go 或 `remote-checks restore` 恢复，详细协议见 [remote-checks.md](remote-checks.md)。
+
+### 知识库检索与回写
+
+`go` 在问题清单、探索和 spec generation 之前运行索引检索：先以页面/frame/版本/状态硬过滤，再对摘要、标签和入口词做 BM25 排序，逐需加载匹配的小文件。generator 与 spec-gen 只收到该用例命中项及其模式；默认没有 token 上限，CLI 显式传入 `kb query --max-tokens N` 才截断。`runs/<id>/knowledge-match.json` 保存所选条目、被预算截断条目和注入 token 数。报告记录 token p50/p95；对已知页面再次探索会增加 `re_explored_known_pages` 并作为 `process_issue` 显示。
+
+report/close-out 自动执行知识回写。入口与定位器需执行成功且至少两个用例或两次执行验证；故障修复模式需多个用例经历失败后成功。回写更新 provenance、`last_verified` 和计数，不触碰断言或业务语义。两次独立失败会将同版本知识设为 `needs_review`，默认不注入。`kb prune` 超过 90 天未验证标为 stale；180 天无命中仅列删除候选，不删文件。历史扁平 `entries.yaml`/`page-map.yaml` 由 `knowledge merge` 迁移到按页面/组件/流程/模式拆分的 YAML 文件。

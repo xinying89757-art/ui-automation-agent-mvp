@@ -98,20 +98,13 @@
               ],
               "properties": {
                 "op": {
-                  "enum": [
-                    "contains",
-                    "equals",
-                    "ordered_pairs"
-                  ]
+                "enum": ["contains", "not_contains", "equals", "ordered_pairs", "max_length", "truncated_at", "faq_page"]
                 },
                 "section": {
                   "type": "string"
                 },
                 "value": {
-                  "type": [
-                    "string",
-                    "array"
-                  ],
+                  "type": ["string", "integer", "array", "object"],
                   "items": {
                     "type": "array",
                     "minItems": 2,
@@ -121,7 +114,8 @@
                     }
                   }
                 }
-              }
+              },
+              "text": {"type": "string"}
             }
           }
         }

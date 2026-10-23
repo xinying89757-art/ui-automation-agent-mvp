@@ -1,0 +1,7 @@
+id: pattern.RERENDER_RELOCATE
+kind: pattern
+description: Wait for a stable visible target, resolve it again after redraw, and
+  retry a bounded number of times.
+strategy: stable_relocate
+retries: 3
+created_at: '2026-10-23'

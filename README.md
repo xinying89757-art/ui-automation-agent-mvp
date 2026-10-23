@@ -138,6 +138,19 @@ record must have a verified restoration hook.
 
 后续阶段的完整接口见 [接口说明](docs/interfaces.md)，阶段执行约定见 [工作流](docs/workflow.md)。
 
+## 可检索知识库
+
+`uia go` 会在生成 spec、提问或探索前按用例页面/入口检索 `knowledge/index.yaml`，再只读取相关页面、组件、流程和模式文件；知识内容不会整库注入。默认不限制注入 token 数，`kb query --max-tokens N` 仅在显式指定时截断。每轮报告记录注入 token 的 p50/p95。旧 `entries.yaml` / `page-map.yaml` 仍可读，迁移和维护命令如下：
+
+```bash
+python3 scripts/uia.py kb query --case TC-0004 [--run GO-xxx] [--max-tokens 3000]
+python3 scripts/uia.py knowledge merge --from /path/to/assets/playwright-runner/knowledge --run-id GO-xxx
+python3 scripts/uia.py kb validate
+python3 scripts/uia.py kb prune   # >90 天标 stale；>180 天且无命中只列删除候选
+```
+
+报告收尾会自动把执行验证且至少被两个用例或两次执行复用的入口/定位器/修复模式写回，并展示新增或更新项；不会修改断言或业务语义。相同版本两次独立失败会隔离为 `needs_review`，默认检索排除。详见 [知识库与远程检查](docs/knowledge-base.md) 和 [远程检查协议](docs/remote-checks.md)。
+
 运行状态位于 `runs/<run-id>/run.json`；源用例归一记录、Intent、复用计划、脚本和运行证据
 位于该运行目录。运行数据、认证状态、本地账号配置和依赖目录默认不进入 Git；三环境默认配置和灰度 PAC 随项目交付。
 

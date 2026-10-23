@@ -7,6 +7,18 @@ coverage、hooks、dependencies 的代码路径相对该运行下的 runner。
 
 命令实际执行需由 Codex 按技能推进。`next` 只返回下一动作，**不调用模型、不启动浏览器**。
 
+知识查询通过 `uia go` 自动按每例的页面/入口运行，结果写入 `runs/<id>/knowledge-match.json`，在 generator/spec-gen 之前完成。手动查询与维护命令：
+
+```bash
+python3 scripts/uia.py kb query --case TC-0004 [--run GO-id] [--max-tokens N]
+python3 scripts/uia.py knowledge merge --from /path/to/assets/playwright-runner/knowledge --run-id GO-id
+python3 scripts/uia.py kb validate
+python3 scripts/uia.py kb prune [--stale-after-days 90] [--candidate-after-days 180]
+python3 scripts/uia.py kb writeback --run GO-id
+```
+
+默认不设 token 注入上限；只有显式传 `--max-tokens` 才截断。索引过滤与 BM25 排序、被截断条目和注入 token 指标见 [知识库设计](knowledge-base.md)。
+
 ## 初始化、导入、状态与分组
 
 配置三环境及公共登录见 [环境与登录说明](environments-and-login.md)。新增接口：

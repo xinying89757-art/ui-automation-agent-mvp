@@ -424,9 +424,11 @@ def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_m
         if m.get('active_batch'):
             if hints:
                 save(manifest, m)
+            repeat_count = sum(bool(x.get('re_explored')) for x in m.get('exploration', []))
             return {'run_id': m['run_id'], 'run_reused': bool(matches),
                     'run_selection': '复用同一工作簿与环境的 run；继续已有活动批次' if matches else '使用当前匹配 run；继续已有活动批次',
-                    'question_count': 0, 'entry_question_count': 0, 'next': workflow.next_task(base, m)}
+                    'question_count': 0, 'entry_question_count': 0, 'next': {**workflow.next_task(base, m),
+                        **({'process_issue': {'code': 're_explored_known_pages', 'count': repeat_count}} if repeat_count else {})}}
         previous_selection = m.get('selected_cases')
         m.update(go_key=key, go_source=str(source), go_profile=str(path.resolve()), interaction_mode='once', selected_cases=selected)
         save(manifest, m)
@@ -450,6 +452,9 @@ def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_m
                     matched.append(cid)
                 elif c.get('spec_generation_blocked'):
                     matched.append(cid)
+        # Retrieval is a fixed pre-generation step, including source-only matches.
+        from .knowledge import match_run
+        match_run(base, m)
         # Lint and compile matched contracts before legacy scripts claim imported cases.
         if matched:
             lint = specs.lint(base, m, matched)
@@ -533,6 +538,7 @@ def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_m
                 'run_selection': '复用同一工作簿与环境的 run；用例子集已更新' if matches else '新建 run；当前环境和工作簿没有匹配的既有 run',
                 'checklist_message': memory_note, **checklist, 'spec_tasks': tasks, 'report': output, 'armed_watches': armed,
                 'next': {'action': 'classify_preconditions' if checklist['unclassified'] else 'complete_spec_tasks' if checklist['draft'] else 'answer_checklist' if checklist['question_count'] else 'continue_spec_tasks_or_review', 'unclassified': checklist['unclassified'], 'ai_tasks': checklist['ai_tasks'], 'mid_run_questions': 0,
+                         **({'process_issue': {'code': 're_explored_known_pages', 'count': sum(bool(x.get('re_explored')) for x in m.get('exploration', []))}} if any(x.get('re_explored') for x in m.get('exploration', [])) else {}),
                          **({'present_checklist': False, 'instruction': '清单仍是草稿：不要向人展示或提问；先分类全部前置条件并写完全部 case-spec（未知目标写 ?名称），再次运行 go 得到最终清单后一次性展示。'} if checklist['draft'] else {'present_checklist': bool(checklist['question_count'])})}}
 
 

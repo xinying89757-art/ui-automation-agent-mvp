@@ -62,6 +62,21 @@ class RemoteChecksTests(unittest.TestCase):
         self.assertTrue(remote.evaluate_condition('## FAQ\nQ1\nA1\nQ2\nA2\n',{'op':'ordered_pairs','section':'faq','value':[['Q1','A1'],['Q2','A2']]}))
         self.assertTrue(remote.evaluate_condition('### FAQ\n- **问：你好**\n答：世界\nQ: one A: two\n### Else\nignored',{'op':'ordered_pairs','section':'FAQ','value':[['你好','世界'],['one','two']]}))
 
+    def test_not_contains_length_truncation_and_faq_jsonld_are_exact(self):
+        self.assertTrue(remote.evaluate_condition('short text', {'op':'not_contains','value':'secret'}))
+        self.assertFalse(remote.evaluate_condition('short secret', {'op':'not_contains','value':'secret'}))
+        self.assertTrue(remote.evaluate_condition('12345', {'op':'max_length','value':5}))
+        self.assertFalse(remote.evaluate_condition('123456', {'op':'max_length','value':5}))
+        self.assertTrue(remote.evaluate_condition('12345', {'op':'truncated_at','value':5,'text':'123456'}))
+        self.assertFalse(remote.evaluate_condition('123456', {'op':'truncated_at','value':5,'text':'123456'}))
+        one={'@context':'https://schema.org','@type':'FAQPage','mainEntity':[{'@type':'Question','name':'Q1','acceptedAnswer':{'text':'A1'}}]}
+        two={'@type':'FAQPage','mainEntity':[{'@type':'Question','name':'Q2','acceptedAnswer':{'text':'A2'}}]}
+        body='<script type="application/ld+json">'+json.dumps({'@graph':[one,two]})+'</script>'
+        condition={'op':'faq_page','value':{'count':2,'objects':[{'pairs':[['Q1','A1']]},{'pairs':[['Q2','A2']]}]}}
+        self.assertTrue(remote.evaluate_condition(body,condition))
+        crossed={'op':'faq_page','value':{'count':2,'objects':[{'pairs':[['Q1','A1'],['Q2','A2']]},{'pairs':[]}]}}
+        self.assertFalse(remote.evaluate_condition(body,crossed))
+
     def test_save_not_persisted_suppresses_remote_verdict_and_success_reports_readback(self):
         self.assertEqual(remote.judge_watch({}, {}, common.now(), None, save_not_persisted=True),
                          ('save_not_persisted', 'unreachable', None, '前置保存未生效，公开检查不判定'))

@@ -1,0 +1,9 @@
+id: target.faq.title
+kind: component
+frame: '#faq'
+selector: '#msgTitle'
+alias_of: target.faq.title
+provenance:
+- source_run: GO-a0f244227ab4
+  verified_by: unverified
+created_at: '2026-10-23'

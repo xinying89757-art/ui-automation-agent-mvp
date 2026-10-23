@@ -96,6 +96,8 @@ Starting entry (reach this route before exploring the interaction): {entry_hint}
 Rules: call generator_setup_page with seedFile "tests/seed.spec.ts" first (the page is the authenticated backend area), then
 follow Starting entry's node/open_target and ordered steps FIRST. The seed already opens its node area;
 do not switch to another area. Entry clicks run outside frame_hint; use that frame only after reaching entry.
+Use the shared knowledge below before exploring. Known targets and their interaction patterns are authoritative; explore only gaps.
+Shared knowledge match: {knowledge_context}
 use browser_* tools to reach the node and its observable completion signal. {mutation_rule}
 do not type credentials, do not print cookies/storage. Do not edit files except writing the generated test via
 generator_write_test to tests/explore/{slug}.spec.ts if you get that far. Stop after at most {max_actions} browser actions.
@@ -192,9 +194,12 @@ def run_generator(base, m, purpose, plan, minutes=20, model=None, max_actions=40
     if draft:
         mutation = m['config'].get('mutation', {})
         require(mutation.get('allowed'), '--draft 需要运行配置允许变更（清单 B 块同意）')
+    from .knowledge import matched_context
+    knowledge_context = matched_context(base, m, purpose)
     prompt = GENERATOR_PROMPT.format(purpose=purpose, plan=plan, slug=slug, max_actions=max_actions,
                                      mutation_rule=DRAFT_RULE if draft else READ_ONLY_RULE,
-                                     entry_hint=json.dumps(hint, ensure_ascii=False) if hint else 'No entry supplied; cannot request a demo.')
+                                     entry_hint=json.dumps(hint, ensure_ascii=False) if hint else 'No entry supplied; cannot request a demo.',
+                                     knowledge_context=json.dumps(knowledge_context, ensure_ascii=False, sort_keys=True))
     model = model or 'gpt-6-luna'
     from .common import DEFAULTS
     requested_minutes = minutes
@@ -243,6 +248,8 @@ def run_generator(base, m, purpose, plan, minutes=20, model=None, max_actions=40
            'tokens': {k: usage.get(k) for k in ('input_tokens', 'cached_input_tokens', 'output_tokens') if k in usage},
            'budget_minutes': minutes, 'draft': bool(draft), 'requested_minutes': requested_minutes,
            'note': 'route' if reached else ('no route; exit ' + str(code))}
+    from .knowledge import known_page
+    row.update(known_page=known_page(purpose) or known_page(entry), re_explored=known_page(purpose) or known_page(entry))
     m.setdefault('exploration', []).append(row)
     advice = None
     if failure_class == 'timeout':

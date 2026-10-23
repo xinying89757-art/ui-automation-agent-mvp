@@ -1,0 +1,9 @@
+id: page.content-admin
+kind: page
+entry: 内容管理
+provenance:
+- source_run: GO-a0f244227ab4
+  verified_by:
+  - AUTO-5f470087ed
+  - AUTO-fd895aaf7f
+created_at: '2026-10-23'

@@ -54,6 +54,25 @@ test('ordered FAQ pairs reject missing extra reversed or single-line data',()=>{
  assert.ok(evaluate('## FAQ\nQ1\nA1\nQ2\nA2\n',condition));
  for(const text of ['Q1 A1\nQ2 A2','Q2\nA2\nQ1\nA1','Q1\nA1\nQ2\nA2\nQ3\nA3']) assert.equal(evaluate('## FAQ\n'+text,condition),false);
 });
+test('remote negative, length and exact truncation conditions',()=>{
+ assert.equal(evaluate('public text',{op:'not_contains',value:'private'}),true);
+ assert.equal(evaluate('public private text',{op:'not_contains',value:'private'}),false);
+ assert.equal(evaluate('12345',{op:'max_length',value:5}),true);
+ assert.equal(evaluate('123456',{op:'max_length',value:5}),false);
+ assert.equal(evaluate('你好世界',{op:'max_length',value:4}),true);
+ assert.equal(evaluate('12345',{op:'truncated_at',value:5,text:'123456'}),true);
+ assert.equal(evaluate('123456',{op:'truncated_at',value:5,text:'123456'}),false);
+});
+test('FAQPage JSON-LD assertions count each object and never cross-join question sets',()=>{
+ const q=(name,text)=>({ '@type':'Question',name,acceptedAnswer:{'@type':'Answer',text} });
+ const body='<script type="application/ld+json">'+JSON.stringify({'@graph':[
+  {'@type':'FAQPage',mainEntity:[q('Q1','A1')]},{'@type':'FAQPage',mainEntity:[q('Q2','A2')]}
+ ]})+'</script>';
+ const condition={op:'faq_page',value:{count:2,objects:[{pairs:[['Q1','A1']]},{pairs:[['Q2','A2']]}]}};
+ assert.equal(evaluate(body,condition),true);
+ assert.equal(evaluate(body,{op:'faq_page',value:{count:1,objects:[{pairs:[['Q1','A1']]}]}}),false);
+ assert.equal(evaluate(body,{op:'faq_page',value:{count:2,objects:[{pairs:[['Q1','A1'],['Q2','A2']]},{pairs:[]}]}}),false);
+});
 const faq = '## FAQ\n' +
   '- **Q: UIA FAQ uia-0b66f30241cd450fa08f93aafdb8746d-TC-0033 5**\nA: UIA answer 5\n' +
   '- **Q: UIA FAQ uia-0b66f30241cd450fa08f93aafdb8746d-TC-0033 4**\nA: UIA answer 4\n' +

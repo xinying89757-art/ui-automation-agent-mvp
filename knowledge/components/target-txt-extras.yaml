@@ -1,0 +1,10 @@
+id: target.txt.extras
+kind: component
+dialog: txt.dialog
+scope: '#backstage-dialog-customizeFile'
+selector: .llms-extra-item
+alias_of: target.txt.extras
+provenance:
+- source_run: GO-a0f244227ab4
+  verified_by: unverified
+created_at: '2026-10-23'

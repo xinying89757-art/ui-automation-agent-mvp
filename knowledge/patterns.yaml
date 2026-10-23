@@ -1,0 +1,13 @@
+schema_version: uia-patterns.v1
+patterns:
+  FRAME_JOIN:
+    description: Enter nested iframes in order, then locate the target in the innermost frame.
+    strategy: frame_chain
+  RERENDER_RELOCATE:
+    description: Wait for a stable visible target, resolve it again after redraw, and retry a bounded number of times.
+    strategy: stable_relocate
+    retries: 3
+  OCCLUDED_SCROLL_OR_COLLAPSE:
+    description: Scroll the target into view; if an overlay intercepts the click, collapse its expanded covering panel and retry.
+    strategy: scroll_collapse
+    retries: 2

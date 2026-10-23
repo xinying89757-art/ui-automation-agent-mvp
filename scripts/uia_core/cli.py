@@ -51,6 +51,21 @@ def parser():
     go.add_argument("--arm-watch", help="Comma-separated case IDs whose max-latency public assertion gets a pre-armed remote watch before the save")
     go.add_argument("--lead-minutes", type=int, default=20)
     go.add_argument("--watch-minutes", type=int, default=10)
+    knowledge = commands.add_parser("knowledge")
+    knowledge.add_argument("action", choices=["merge", "writeback", "validate", "prune"])
+    knowledge.add_argument("--from", dest="source_dir")
+    knowledge.add_argument("--run-id")
+    knowledge.add_argument("--run")
+    knowledge.add_argument("--older-than-days", type=int)
+    kb = commands.add_parser("kb")
+    kb.add_argument("action", choices=["query", "merge", "writeback", "validate", "prune"])
+    kb.add_argument("--case")
+    kb.add_argument("--run")
+    kb.add_argument("--from", dest="source_dir")
+    kb.add_argument("--run-id")
+    kb.add_argument("--max-tokens", type=int)
+    kb.add_argument("--stale-after-days", type=int, default=90)
+    kb.add_argument("--candidate-after-days", type=int, default=180)
     turn = commands.add_parser("session-turn")
     turn.add_argument("--run", required=True)
     turn.add_argument("--id", required=True)
@@ -190,6 +205,16 @@ def parser():
 def dispatch(args, path, m):
     base = path.parent
     cmd = args.command
+    if cmd == 'knowledge':
+        from . import knowledge
+        if args.action == 'merge':
+            require(args.source_dir and args.run_id, 'knowledge merge requires --from DIR --run-id RUN_ID')
+            return knowledge.merge(args.source_dir, args.run_id)
+        if args.action == 'validate': return knowledge.validate()
+        if args.action == 'prune':
+            stale_days = args.older_than_days or 90
+            return knowledge.prune(stale_days, max(180, stale_days))
+        return {'writeback': knowledge.writeback(base, m), 'report': reports.make_report(base, m)}
     if cmd == "hints":
         from .entries import add, confirm
         from .experience import sync_checklist
@@ -233,7 +258,11 @@ def dispatch(args, path, m):
         workflow.scaffold(base)
         return workflow.import_excel(base, m, args.excel, read_json(args.mapping) if args.mapping else None)
     if cmd == "next":
-        return workflow.next_task(base, m)
+        from .knowledge import match_run
+        match_run(base, m)
+        result = workflow.next_task(base, m)
+        count = sum(bool(x.get('re_explored')) for x in m.get('exploration', []))
+        return {**result, **({'process_issue': {'code': 're_explored_known_pages', 'count': count}} if count else {})}
     if cmd == "bind":
         return workflow.bind(m, args.cases, args.flows, args.fixtures, args.isolated)
     if cmd == "advance":
@@ -248,6 +277,8 @@ def dispatch(args, path, m):
         workflow.refresh(base, m)
         return runtime.preflight(base, m, args.evidence)
     if cmd == "question":
+        from .knowledge import match_run
+        match_run(base, m)
         from .exploration import index_unknown_nodes
         index_unknown_nodes(base, m)
         return workflow.question(m, args.kind, args.subject, args.prompt, args.cases, args.key, args.attempted, args.sheet,
@@ -262,6 +293,8 @@ def dispatch(args, path, m):
         require(args.question and args.file, "请提供中文一句话，或 --question 和 --file")
         return workflow.answer(m, args.question, read_json(args.file), base)
     if cmd == "explore":
+        from .knowledge import match_run
+        match_run(base, m)
         return workflow.explore(base, m, args.flow, args.gap, args.strategy, args.seconds, args.outcome, args.evidence)
     if cmd == "record-run":
         runtime.ensure_stopped(base, m.get("active_batch"))
@@ -345,6 +378,8 @@ def dispatch(args, path, m):
     if cmd == "agent-env":
         return profiles.agent_env(base, m)
     if cmd == "generator":
+        from .knowledge import match_run
+        match_run(base, m)
         from .exploration import run_generator
         return run_generator(base, m, args.purpose, args.plan, args.minutes, args.model, entry=args.entry, draft=args.draft)
     if cmd == "exploration-log":
@@ -380,6 +415,54 @@ def dispatch(args, path, m):
 
 
 def execute(args):
+    if args.command == 'kb':
+        from . import knowledge
+        if args.action == 'merge':
+            require(args.source_dir and args.run_id, 'kb merge requires --from DIR --run-id RUN_ID')
+            return knowledge.merge(args.source_dir, args.run_id)
+        if args.action == 'validate': return knowledge.validate()
+        if args.action == 'prune': return knowledge.prune(args.stale_after_days, args.candidate_after_days)
+        if args.action == 'writeback':
+            require(args.run, 'kb writeback requires --run RUN_ID')
+            with locked_run(args.run) as (path, manifest):
+                result = knowledge.writeback(path.parent, manifest); save(path, manifest); return result
+        require(args.case, 'kb query requires --case CASE_ID')
+        from .common import ROOT, read_yaml
+        if args.run:
+            run_path = ROOT / 'runs' / args.run / 'run.json'
+        else:
+            matches = []
+            for candidate in (ROOT / 'runs').glob('*/run.json'):
+                manifest = read_json(candidate)
+                if args.case in manifest.get('cases', {}): matches.append(candidate)
+            require(matches, 'Case not found; provide --run RUN_ID')
+            run_path = max(matches, key=lambda item: item.stat().st_mtime)
+        manifest = read_json(run_path)
+        require(args.case in manifest.get('cases', {}), 'Case not found in run')
+        case = manifest['cases'][args.case]
+        spec_path = run_path.parent / case.get('case_spec', '')
+        spec = read_yaml(spec_path) if spec_path.is_file() else {}
+        source = read_json(run_path.parent / case['source']) if case.get('source') and (run_path.parent / case['source']).is_file() else {}
+        from .retrieval import select, resolve_page
+        text = ' '.join(str(x or '') for x in (case.get('title'), case.get('module'), spec.get('intent'), source.get('title'), source.get('expected')))
+        page = spec.get('start_page') or resolve_page(text)
+        if not page: return {'selected': [], 'discarded': [], 'max_tokens': args.max_tokens, 'used_tokens': 0, 'truncated': False}
+        query = {'page': page, 'frame': spec.get('frame'), 'version': spec.get('version'), 'title': case.get('title'),
+                 'module': case.get('module'), 'intent': spec.get('intent'), 'text': text}
+        return select(query, budget=args.max_tokens)
+    if args.command == 'knowledge' and args.action == 'merge':
+        from .knowledge import merge
+        require(args.source_dir and args.run_id, 'knowledge merge requires --from DIR --run-id RUN_ID')
+        return merge(args.source_dir, args.run_id)
+    if args.command == 'knowledge' and args.action == 'validate':
+        from .knowledge import validate
+        return validate()
+    if args.command == 'knowledge' and args.action == 'prune':
+        from .knowledge import prune
+        stale_days = args.older_than_days or 90
+        return prune(stale_days, max(180, stale_days))
+    if args.command == 'knowledge' and args.action == 'writeback':
+        require(args.run, 'knowledge writeback requires --run RUN_ID')
     if args.command == "go":
         from .experience import go
         return go(args.excel, args.profile, args.cases, arm_watch=args.arm_watch, lead_minutes=args.lead_minutes, watch_minutes=args.watch_minutes, hints=args.hints)
@@ -445,6 +528,9 @@ def execute(args):
         if args.run:
             with locked_run(args.run) as (path, m):
                 import time as _time
+                from .knowledge import match_run, known_page
+                match_run(path.parent, m)
+                known_target = known_page(args.purpose) or known_page(args.entry)
                 entry_hint, entry_count = None, None
                 if args.entry:
                     from .entries import snapshot_route
@@ -478,7 +564,7 @@ def execute(args):
                                            frame_hint=entry_hint.get('frame'), failed_step=failed)
                     if entry_reached:
                         snapshot_result['confirm_command'] = confirmation(args.run, args.entry, entry_hint)
-                known = any(c.get("registration") for c in m["cases"].values())
+                known = bool(known_target)
                 # Exploration baseline: one row per snapshot (method/where/how long); no page content.
                 m.setdefault("exploration", []).append({"node": args.node, "known_page": known,
                                                          "re_explored": known, "at": now(), "started_at": started,
@@ -508,7 +594,11 @@ def execute(args):
         active = m["active_batch"]
         progress_file = inside(path.parent, active["report"]) if active else None
         progress = read_json(progress_file) if progress_file and progress_file.is_file() else None
+        from .knowledge import match_run
+        match_run(path.parent, m)
+        re_explored = sum(bool(x.get('re_explored')) for x in m.get('exploration', []))
         return {"run": str(path), "status": m["status"], "summary": summary(m),
+                **({'process_issue': {'code': 're_explored_known_pages', 'count': re_explored}} if re_explored else {}),
                 "active_batch": m["active_batch"],
                 "batch_progress": [{k: row.get(k) for k in ("case_id", "result", "duration_ms")}
                                    for row in progress.get("cases", [])] if progress else [],

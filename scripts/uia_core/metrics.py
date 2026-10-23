@@ -97,7 +97,20 @@ def calculate(base, m, final_report_at=None):
         file = Path(base) / relative
         if file.is_file() and assertion_signature(file) != original:
             assertion_changes += 1
-    explored_known = sum(1 for item in m.get("exploration", []) if item.get("known_page") or item.get("re_explored"))
+    explored_known = sum(1 for item in m.get("exploration", []) if item.get("re_explored"))
+    match_path = Path(base) / (m.get('knowledge_match') or {}).get('file', 'knowledge-match.json')
+    injected = []
+    if match_path.is_file():
+        try:
+            import json
+            matched = json.loads(match_path.read_text(encoding='utf-8'))
+            injected = [int(row.get('used_tokens', 0)) for row in matched.get('budgets', {}).values()]
+        except (OSError, ValueError, TypeError):
+            injected = []
+    def percentile(values, p):
+        if not values: return None
+        ordered = sorted(values); index = max(0, min(len(ordered)-1, int((len(ordered)-1)*p + .5)))
+        return ordered[index]
     first_lints = [c["spec_first_lint"] for c in cases if c.get("spec_first_lint") and c["spec_first_lint"].get("automatable") != "manual"]
     first_passed = sum(bool(row.get("passed")) for row in first_lints)
     return {
@@ -115,6 +128,7 @@ def calculate(base, m, final_report_at=None):
                             "ratio": len(executed) / len(eligible) if eligible else 0.0},
         "new_scripts_generated": len(new_scripts), "new_script_paths": new_scripts,
         "re_explored_known_pages": explored_known,
+        "knowledge_injected_tokens": {"count": len(injected), "p50": percentile(injected, .50), "p95": percentile(injected, .95)},
         "scope_violations": int(m.get("scope_violations", 0)),
         "leak_hits": len(m.get("leak_hits", [])),
         "unreviewed_assertion_changes": max(int(m.get("unreviewed_assertion_changes", 0)), assertion_changes),

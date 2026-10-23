@@ -8,6 +8,7 @@ import time
 import urllib.request
 import urllib.error
 import statistics
+import json
 from pathlib import Path
 from .common import ROOT, atomic_write, digest, event, file_hash, now, read_json, require
 from .secrets import scrub_text
@@ -19,7 +20,47 @@ def evaluate_condition(body_or_section, condition):
     """Python port of the credential-free checker evaluator (version 2)."""
     body = str(body_or_section); op = condition.get('op'); value = condition.get('value')
     if op == 'contains': return str(value) in body
+    if op == 'not_contains': return str(value) not in body
     if op == 'equals': return body == value
+    if op == 'max_length': return len(body) <= int(value)
+    if op == 'truncated_at':
+        limit = int(value)
+        expected = str(condition.get('text', ''))
+        return limit >= 0 and len(body) == limit and len(expected) > limit and body == expected[:limit]
+    if op == 'faq_page':
+        expected = value if isinstance(value, dict) else {}
+        faq_objects = []
+        def visit(node):
+            if isinstance(node, list):
+                for item in node: visit(item)
+            elif isinstance(node, dict):
+                types = node.get('@type', [])
+                if isinstance(types, str): types = [types]
+                if 'FAQPage' in types: faq_objects.append(node)
+                if isinstance(node.get('@graph'), (list, dict)): visit(node['@graph'])
+        for block in re.findall(r'<script\b[^>]*type=["\']application/ld\+json["\'][^>]*>([\s\S]*?)</script\s*>', body, re.I):
+            try: visit(json.loads(block))
+            except (ValueError, TypeError): continue
+        if len(faq_objects) != expected.get('count'): return False
+        wanted = expected.get('objects') or []
+        if len(wanted) != len(faq_objects): return False
+        def pairs(obj):
+            result = set()
+            items = obj.get('mainEntity', [])
+            if isinstance(items, dict): items = [items]
+            for item in items:
+                if isinstance(item, dict):
+                    question = item.get('name') or item.get('question')
+                    answer = item.get('acceptedAnswer', {}).get('text') if isinstance(item.get('acceptedAnswer'), dict) else item.get('answer')
+                    if question is not None and answer is not None: result.add((str(question), str(answer)))
+            return result
+        remaining = [pairs(obj) for obj in faq_objects]
+        for expected_obj in wanted:
+            required = {(str(pair[0]), str(pair[1])) for pair in expected_obj.get('pairs', []) if isinstance(pair, list) and len(pair) == 2}
+            match = next((i for i, actual in enumerate(remaining) if actual == required), None)
+            if match is None: return False
+            remaining.pop(match)
+        return not remaining
     if op != 'ordered_pairs': raise ValueError('Unsupported condition')
     lines = body.splitlines(); wanted = str(condition.get('section', '')).strip().lower()
     start = None; level = 0
@@ -142,8 +183,8 @@ def _watch_assertion(base, m, cid):
             serialized = __import__('json').dumps(condition, ensure_ascii=False)
             require('$fixture.' not in serialized and '${' not in serialized,
                     'Cannot arm watch: remote_file condition values must be static in case-spec')
-            require(isinstance(condition, dict) and condition.get('op') in {'contains', 'equals', 'ordered_pairs'} and
-                    isinstance(condition.get('value'), (str, list)), 'Cannot arm watch: invalid static remote_file condition')
+            require(isinstance(condition, dict) and condition.get('op') in {'contains', 'not_contains', 'equals', 'ordered_pairs', 'max_length', 'truncated_at', 'faq_page'} and
+                    isinstance(condition.get('value'), (str, list, int, dict)), 'Cannot arm watch: invalid static remote_file condition')
             conditions.append(condition)
         require(conditions, 'Cannot arm watch: no remote_file assertion conditions')
         target_resource = pages.get('targets', {}).get(target, {}).get('resource', {})
@@ -542,7 +583,8 @@ def ingest(base, m, file):
         if row['status'] == 'fail':
             require(checked >= timestamp(req['earliest_check_at']) or req.get('max_latency_seconds'), 'Mismatch inside cache window is still-cached')
             require(not (row['http_status'] is not None and 200 <= row['http_status'] < 300 and all(row['conditions'])), 'Failure contradicts observations')
-            if 'evidence' in row and (row['status'] == 'fail' or not all(row['conditions'])):
+            reevaluable = not any(c.get('op') in {'not_contains', 'max_length', 'truncated_at', 'faq_page'} for c in req.get('conditions', []))
+            if reevaluable and 'evidence' in row and (row['status'] == 'fail' or not all(row['conditions'])):
                 outcomes = [evaluate_condition(ev['excerpt'], cond) for ev, cond in zip(row['evidence'], req['conditions'])]
                 row['local_reevaluation'] = {'conditions': outcomes, 'all_conditions': all(outcomes), 'evaluator_version': '2'}
     receipt = digest(payload)

@@ -78,6 +78,11 @@ def schema_errors(spec, source, env, data, pages):
             fail((kind == 'integer' and type(value) is int and value >= 0) or (kind == 'boolean' and type(value) is bool) or
                  (kind == 'string' and isinstance(value, str)) or (kind == 'array' and isinstance(value, list)), 'wrong data-prep type: ' + key)
     fail(spec['start_page'] in pages['pages'], 'unknown start_page')
+    entry_doc = read_yaml(ROOT / 'knowledge/entries.yaml') or {}
+    entry_routes = entry_doc.get('entries', {})
+    if spec.get('entry_route'):
+        fail(spec['entry_route'] in entry_routes and bool(entry_routes.get(spec['entry_route'], {}).get('confirmed')),
+             'entry_route must reference a confirmed knowledge entry route')
     def target(value):
         if isinstance(value, str) and re.fullmatch(r'\?[\w.\-\u4e00-\u9fff]+', value):
             unknown.add(value)
@@ -92,7 +97,8 @@ def schema_errors(spec, source, env, data, pages):
         fail(isinstance(sid, str) and bool(re.fullmatch(r'S[1-9]\d*', sid)) and sid not in step_ids, 'unique S-number required')
         step_ids.add(str(sid))
         fail(step.get('verb') in VERBS, 'step verb is not supported')
-        target(step.get('target'))
+        if not (step.get('verb') == 'open' and step.get('target') in entry_routes and entry_routes[step.get('target')].get('confirmed')):
+            target(step.get('target'))
         entry = pages['targets'].get(step.get('target'), {})
         if entry.get('mutation') and step.get('verb') in {'click', 'double_click', 'attempt_click', 'fill', 'select', 'check', 'uncheck', 'press', 'upload'}:
             fail(entry['mutation'] in spec['mutation_scope'], 'step mutation scope must be declared: ' + str(sid))
@@ -422,6 +428,9 @@ def generate(base, m, cid):
              "import { performWithPatterns } from '../../support/interaction-patterns.mjs';",
              "import { deferPublic, trackSave, verifyPersisted, readFieldValue, assertSaveBusinessOk } from '../../support/remote-checks.mjs';", '',
              'test(' + json.dumps('[' + cid + '] ' + spec['intent'], ensure_ascii=False) + ', async ({ page, caseContext }) => {', '  const networks: Record<string, any> = {};', '  const observations: Record<string, any> = {};', '  try {']
+    if spec.get('entry_route') and not any(step.get('verb') == 'open' and step.get('target') == spec['entry_route']
+                                            for step in spec['steps']):
+        lines.append('  page = await openTarget(page, ' + json.dumps(spec['entry_route']) + ');')
     tracked_rules = set()
     for name in dict.fromkeys(s['target'] for s in spec['steps'] if s['verb'] == 'defer_public'):
         resource = pages['targets'].get(name, {}).get('resource', {})

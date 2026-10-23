@@ -282,8 +282,8 @@ def run_generator(base, m, purpose, plan, minutes=20, model=None, max_actions=40
            'tokens': {k: usage.get(k) for k in ('input_tokens', 'cached_input_tokens', 'output_tokens') if k in usage},
            'budget_minutes': minutes, 'draft': bool(draft), 'requested_minutes': requested_minutes,
            'note': 'route' if reached else ('no route; exit ' + str(code))}
-    from .knowledge import known_page
-    row.update(known_page=known_page(purpose) or known_page(entry), re_explored=known_page(purpose) or known_page(entry))
+    from .knowledge import exploration_knowledge
+    row.update(exploration_knowledge(purpose, entry))
     m.setdefault('exploration', []).append(row)
     advice = None
     if failure_class == 'timeout':

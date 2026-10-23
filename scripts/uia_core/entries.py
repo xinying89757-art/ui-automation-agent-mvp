@@ -27,11 +27,29 @@ def knowledge_path(name):
 def save_catalog(name, data):
     """Single write path: the runner (legacy) catalog, the shared knowledge/ catalog that spec gen and
     retrieval read, and the split index are updated together so no reader sees a stale copy."""
+    validate_match_counts(name, data)
     atomic_write(knowledge_path(name), data, as_yaml=True)
     from . import knowledge
     if knowledge._root().is_dir():
         atomic_write(knowledge._root() / name, data, as_yaml=True)
         knowledge.sync_layout(**({'pages': data} if name == 'page-map.yaml' else {'entries': data}))
+
+
+def validate_match_counts(name, data):
+    """Reject locator/route evidence already known to be ambiguous at every catalog write."""
+    if name == 'page-map.yaml':
+        rows = (data.get('targets') or {}).items()
+        for ident, row in rows:
+            count = row.get('match_count') if isinstance(row, dict) else None
+            require(count is None or count == 1,
+                    f'UIA_LOCATOR_AMBIGUOUS: {ident} evidence matched {count} elements; use a scoped or exact locator')
+    elif name == 'entries.yaml':
+        for ident, row in (data.get('entries') or {}).items():
+            counts = row.get('step_match_counts') if isinstance(row, dict) else None
+            if isinstance(counts, dict):
+                for step, count in counts.items():
+                    require(count is None or count == 1,
+                            f'UIA_LOCATOR_AMBIGUOUS: {ident} route step {step} evidence matched {count} elements; use a scoped or exact locator')
 
 
 def load():
@@ -142,6 +160,7 @@ def confirm(m, page, steps, frame=None):
     steps = literal_route({'steps': steps})['steps']
     require(steps, '入口路线不能以需要输入的步骤开头')
     return store(m, [{'label': page, 'path_text': hint['path_text'], 'steps': steps,
+                      'step_match_counts': {str(i + 1): 1 for i, step in enumerate(steps) if step.startswith(('click:', 'hover:'))},
                       **({'frame': frame or hint.get('frame')} if frame or hint.get('frame') else {})}], 'explored', True)
 
 
@@ -313,6 +332,8 @@ def locator_target(text):
     """Generator locator (structured object, Playwright call text, or 'frame >> ... css') -> page-map target row."""
     if isinstance(text, dict):
         frames = _frames_of(text.get('frames') or text.get('frame') or [])
+        match_count = next((text[k] for k in ('match_count', 'matched_count', 'locator_count', 'count')
+                            if type(text.get(k)) is int), None)
         if text.get('role'):
             row = {'role': str(text['role']), **({'name': str(text['name'])} if text.get('name') else {})}
         elif text.get('text'):
@@ -321,6 +342,8 @@ def locator_target(text):
             css = text.get('css') or text.get('selector')
             require(isinstance(css, str) and css.strip(), 'target object needs css, role or text')
             row = {'selector': css.strip()}
+        if match_count is not None:
+            row['match_count'] = match_count
         return _with_frames(row, frames)
     text = text.strip()
     call = re.match(r"^(?:page\.)?getBy(Role|Text|Label|Placeholder)\(\s*(['\"])(.*?)\2\s*(?:,\s*\{(.*?)\})?\s*\)\s*(?:scoped to|in|inside|within)?\s*(.*)$", text, re.S)
@@ -374,17 +397,31 @@ def promote(base, m, report, prefix=None, page=None, overwrite=False):
     added, skipped = [], []
     source = 'generator:' + path.stem.replace('generator-', '')
 
-    def put(name, row):
+    def put(name, row, evidence_count=None):
+        if evidence_count is not None and 'match_count' not in row:
+            row['match_count'] = evidence_count
+        count = row.get('match_count') if isinstance(row, dict) else None
+        require(count is None or count == 1,
+                f'UIA_LOCATOR_AMBIGUOUS: {name} evidence matched {count} elements; use a scoped or exact locator')
         if name in targets and not overwrite:
             skipped.append(name)
             return
         twin = same_locator(targets, row, name)
         targets[name] = dict(row, source=source, confirmed=False, **({'alias_of': twin} if twin else {}))
         added.append(name)
+    target_counts = route.get('target_match_counts') or route.get('locator_counts') or {}
     for name, locator in (route.get('targets') or {}).items():
-        put(prefix + '.' + slug(name), locator_target(locator))
+        count = locator.get('match_count', locator.get('count')) if isinstance(locator, dict) else None
+        if type(count) is not int and isinstance(target_counts, dict):
+            count = target_counts.get(name)
+        put(prefix + '.' + slug(name), locator_target(locator), count if type(count) is int else None)
     steps = []
+    counts = route.get('step_match_counts') or route.get('match_counts') or {}
     for index, step in enumerate(route.get('route') or [], 1):
+        count = (step.get('match_count', step.get('count')) if isinstance(step, dict) else None)
+        count = count if type(count) is int else counts.get(str(index), counts.get(index)) if isinstance(counts, dict) else None
+        require(count is None or count == 1,
+                f'UIA_LOCATOR_AMBIGUOUS: route step {index} evidence matched {count} elements; use a scoped or exact locator')
         if isinstance(step, dict):
             verb, target, value = step.get('verb'), step.get('target'), step.get('value')
             require(verb in {'goto', 'click', 'hover', 'fill', 'type', 'press', 'wait'} and target, 'unsupported route step: ' + json.dumps(step, ensure_ascii=False))
@@ -441,6 +478,18 @@ def add_target(base, m, name, locator, evidence, overwrite=False, resource=None,
         except ValueError:
             value = locator
         row = locator_target(value)
+        evidence_doc = None
+        try:
+            evidence_doc = json.loads(path.read_text(encoding='utf-8'))
+        except (ValueError, OSError):
+            pass
+        if isinstance(evidence_doc, dict):
+            evidence_count = evidence_doc.get('match_count', evidence_doc.get('matched_count'))
+            if type(evidence_count) is int and 'match_count' not in row:
+                row['match_count'] = evidence_count
+        count = row.get('match_count')
+        require(count is None or count == 1,
+                f'UIA_LOCATOR_AMBIGUOUS: {name} evidence matched {count} elements; use a scoped or exact locator')
     map_path = knowledge_path('page-map.yaml')
     catalog = read_yaml(map_path) if map_path.is_file() else {'schema_version': 'page-map.v1', 'pages': {}, 'targets': {}}
     targets = catalog.setdefault('targets', {})

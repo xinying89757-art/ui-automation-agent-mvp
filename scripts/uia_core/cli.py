@@ -265,8 +265,12 @@ def dispatch(args, path, m):
         from .knowledge import match_run
         match_run(base, m)
         result = workflow.next_task(base, m)
-        count = sum(bool(x.get('re_explored')) for x in m.get('exploration', []))
-        return {**result, **({'process_issue': {'code': 're_explored_known_pages', 'count': count}} if count else {})}
+        from .metrics import exploration_counts
+        counts = exploration_counts(m)
+        return {**result,
+                **({'process_issue': {'code': 're_explored_known_pages', 'count': counts['re_explored_known_pages']}}
+                   if counts['re_explored_known_pages'] else {}),
+                'exploration_for_missing_controls': counts['exploration_for_missing_controls']}
     if cmd == "bind":
         return workflow.bind(m, args.cases, args.flows, args.fixtures, args.isolated)
     if cmd == "advance":
@@ -534,9 +538,9 @@ def execute(args):
         if args.run:
             with locked_run(args.run) as (path, m):
                 import time as _time
-                from .knowledge import match_run, known_page
+                from .knowledge import match_run, exploration_knowledge
                 match_run(path.parent, m)
-                known_target = known_page(args.purpose) or known_page(args.entry)
+                exploration_state = exploration_knowledge(args.purpose, args.entry)
                 entry_hint, entry_count = None, None
                 if args.entry:
                     from .entries import snapshot_route
@@ -557,13 +561,15 @@ def execute(args):
                                                               **({'entry_steps': entry_count} if args.entry else {}))
                 except UiaError as error:
                     from .secrets import scrub_text
+                    from .knowledge import exploration_knowledge
+                    exploration_state = exploration_knowledge(args.purpose, args.entry)
                     evidence_result = {'entry': args.entry, 'entry_reached': False, 'result': 'failed',
                                        'error': scrub_text(str(error), m['config'])[:500]}
                     if args.evidence:
                         from .exploration import save_snapshot_evidence
                         save_snapshot_evidence(path.parent, args.evidence, args, evidence_result, m['config'])
                     m.setdefault('exploration', []).append({'at': now(), 'method': 'snapshot', 'purpose': scrub_text(args.purpose, m['config']),
-                                                          'entry': args.entry, 'entry_reached': False, 'result': 'failed'})
+                                                          'entry': args.entry, 'entry_reached': False, 'result': 'failed', **exploration_state})
                     save(path, m)
                     raise
                 failed = snapshot_result.get('structure', {}).get('failed_step')
@@ -583,7 +589,7 @@ def execute(args):
                 if args.entry and entry_reached:
                     from .entries import confirmation
                     snapshot_result['confirm_command'] = confirmation(args.run, args.entry, entry_hint)
-                known = bool(known_target)
+                known = exploration_state['known_page']
                 # Exploration baseline: one row per snapshot (method/where/how long); no page content.
                 m.setdefault("exploration", []).append({"node": args.node, "known_page": known,
                                                          "re_explored": known, "at": now(), "started_at": started,
@@ -593,6 +599,10 @@ def execute(args):
                                                          "hover": bool(args.hover), "goto": urlsplit(args.goto or "").path or None,
                                                          "steps_count": len(args.step), "purpose": redact(args.purpose, m["config"]),
                                                          "entry": args.entry, "entry_reached": entry_reached,
+                                                         "requested_targets": exploration_state['requested_targets'],
+                                                         "missing_targets": exploration_state['missing_targets'],
+                                                         "exploration_for_missing_controls": exploration_state['exploration_for_missing_controls'],
+                                                         "re_explored": exploration_state['re_explored'],
                                                          "failed_step": snapshot_result.get("structure", {}).get("failed_step")})
                 if args.save_as:
                     from .exploration import save_route
@@ -615,9 +625,12 @@ def execute(args):
         progress = read_json(progress_file) if progress_file and progress_file.is_file() else None
         from .knowledge import match_run
         match_run(path.parent, m)
-        re_explored = sum(bool(x.get('re_explored')) for x in m.get('exploration', []))
+        from .metrics import exploration_counts
+        exploration_metric = exploration_counts(m)
+        re_explored = exploration_metric['re_explored_known_pages']
         return {"run": str(path), "status": m["status"], "summary": summary(m),
                 **({'process_issue': {'code': 're_explored_known_pages', 'count': re_explored}} if re_explored else {}),
+                'exploration_for_missing_controls': exploration_metric['exploration_for_missing_controls'],
                 "active_batch": m["active_batch"],
                 "batch_progress": [{k: row.get(k) for k in ("case_id", "result", "duration_ms")}
                                    for row in progress.get("cases", [])] if progress else [],

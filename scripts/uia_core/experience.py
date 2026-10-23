@@ -424,7 +424,8 @@ def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_m
         if m.get('active_batch'):
             if hints:
                 save(manifest, m)
-            repeat_count = sum(bool(x.get('re_explored')) for x in m.get('exploration', []))
+            from .metrics import exploration_counts
+            repeat_count = exploration_counts(m)['re_explored_known_pages']
             return {'run_id': m['run_id'], 'run_reused': bool(matches),
                     'run_selection': '复用同一工作簿与环境的 run；继续已有活动批次' if matches else '使用当前匹配 run；继续已有活动批次',
                     'question_count': 0, 'entry_question_count': 0, 'next': {**workflow.next_task(base, m),
@@ -541,11 +542,14 @@ def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_m
         output = reports.make_report(manifest.parent, m)
         save(manifest, m)
         memory_note = checklist_notice(checklist)
+        from .metrics import exploration_counts
+        exploration_metric = exploration_counts(m)
         return {'run_id': m['run_id'], 'run_reused': bool(matches),
                 'run_selection': '复用同一工作簿与环境的 run；用例子集已更新' if matches else '新建 run；当前环境和工作簿没有匹配的既有 run',
                 'checklist_message': memory_note, **checklist, 'spec_tasks': tasks, 'report': output, 'armed_watches': armed,
                 'next': {'action': 'classify_preconditions' if checklist['unclassified'] else 'complete_spec_tasks' if checklist['draft'] else 'answer_checklist' if checklist['question_count'] else 'continue_spec_tasks_or_review', 'unclassified': checklist['unclassified'], 'ai_tasks': checklist['ai_tasks'], 'mid_run_questions': 0,
-                         **({'process_issue': {'code': 're_explored_known_pages', 'count': sum(bool(x.get('re_explored')) for x in m.get('exploration', []))}} if any(x.get('re_explored') for x in m.get('exploration', [])) else {}),
+                         **({'process_issue': {'code': 're_explored_known_pages', 'count': exploration_metric['re_explored_known_pages']}} if exploration_metric['re_explored_known_pages'] else {}),
+                         'exploration_for_missing_controls': exploration_metric['exploration_for_missing_controls'],
                          **({'present_checklist': False, 'instruction': '清单仍是草稿：不要向人展示或提问；先分类全部前置条件并写完全部 case-spec（未知目标写 ?名称），再次运行 go 得到最终清单后一次性展示。'} if checklist['draft'] else {'present_checklist': bool(checklist['question_count'])})}}
 
 

@@ -47,6 +47,31 @@ class CaseSpecTests(unittest.TestCase):
         self.assertEqual(unknown, ['?new_entry'])
         self.assertIsNone(specs.locator_expression('?new_entry', self.pages))
 
+    def test_confirmed_entry_route_is_valid_as_spec_route_and_emitted_via_open_target(self):
+        route_id = 'article-editor-markdown-import'
+        self.spec['entry_route'] = route_id
+        self.assertEqual(self.errors(), [])
+        self.spec['steps'] = [{'id': 'S1', 'verb': 'open', 'target': route_id}]
+        self.spec['assertions'] = [{'id': 'A1', 'after': 'S1', 'excel': self.source['expected'][0],
+                                   'checks': [{'target': 'txt.dialog', 'op': 'visible'}]}]
+        with tempfile.TemporaryDirectory() as temp:
+            base = Path(temp); folder = base / 'cases/T1'; folder.mkdir(parents=True)
+            shutil.copytree(Path(__file__).resolve().parents[1] / 'assets/playwright-runner', base / 'runner',
+                            ignore=shutil.ignore_patterns('node_modules', 'results'))
+            (base / 'runner/tests/generated').mkdir(parents=True, exist_ok=True)
+            common.atomic_write(folder / 'source.json', self.source)
+            common.atomic_write(folder / 'case-spec.yaml', self.spec, as_yaml=True)
+            manifest = {'cases': {'T1': {'case_id': 'T1', 'source': 'cases/T1/source.json',
+                'case_spec': 'cases/T1/case-spec.yaml', 'source_hash': 'hash',
+                'intent': 'cases/T1/source.json', 'reuse_plan': 'cases/T1/source.json',
+                'fixture_ids': [], 'flow_ids': [], 'attempts': []}},
+                'config': {'mutation': {'allowed': False, 'scope': []},
+                           'execution': {'workers': 1, 'timeout_ms': 60000}},
+                'questions': {}, 'history': []}
+            generated = specs.generate(base, manifest, 'T1')
+            body = (base / generated['script']).read_text()
+            self.assertEqual(body.count('page = await openTarget(page, "article-editor-markdown-import")'), 1)
+
     def test_menu_option_clicks_get_keyboard_pattern_automatically(self):
         self.assertIn('MENU_KEYBOARD', specs.interaction_patterns_for_target({'role':'option'}, 'click'))
         self.assertIn('MENU_KEYBOARD', specs.interaction_patterns_for_target({'selector':'[role="menuitem"]'}, 'click'))

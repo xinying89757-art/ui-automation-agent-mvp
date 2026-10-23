@@ -74,6 +74,20 @@ class PromoteTests(unittest.TestCase):
         with self.assertRaises(common.UiaError):
             entries.promote(self.base, self.m, 'exploration/generator-x.json')
 
+    def test_promote_rejects_locator_with_non_unique_evidence_count(self):
+        report = dict(REPORT, route=dict(REPORT['route'], targets={
+            'article_menu': {'text': '文章', 'match_count': 12}}))
+        (self.base / 'exploration/generator-ambiguous.json').write_text(json.dumps(report, ensure_ascii=False), encoding='utf-8')
+        with self.assertRaisesRegex(common.UiaError, 'UIA_LOCATOR_AMBIGUOUS.*12'):
+            entries.promote(self.base, self.m, 'exploration/generator-ambiguous.json')
+
+    def test_promote_rejects_ambiguous_route_step_count(self):
+        route = dict(REPORT['route'], route=['click:text=文章'], step_match_counts={'1': 12}, targets={})
+        report = dict(REPORT, route=route)
+        (self.base / 'exploration/generator-route-ambiguous.json').write_text(json.dumps(report, ensure_ascii=False), encoding='utf-8')
+        with self.assertRaisesRegex(common.UiaError, 'UIA_LOCATOR_AMBIGUOUS.*12'):
+            entries.promote(self.base, self.m, 'exploration/generator-route-ambiguous.json')
+
 
 if __name__ == '__main__':
     unittest.main()
@@ -113,6 +127,13 @@ class AddTargetTests(PromoteTests):
             entries.add_target(self.base, self.m, 'faq-editor.add', '{"css": ".x"}', 'exploration/generator-faq-editor.entry.json')
         with self.assertRaises(common.UiaError):
             entries.add_target(self.base, self.m, 'faq-editor.other', '{"css": ".x"}', 'exploration/missing.json')
+
+    def test_add_target_rejects_evidence_count_other_than_one(self):
+        evidence = self.base / 'exploration/ambiguous.json'
+        evidence.write_text(json.dumps({'match_count': 2}), encoding='utf-8')
+        with self.assertRaisesRegex(common.UiaError, 'UIA_LOCATOR_AMBIGUOUS.*2'):
+            entries.add_target(self.base, self.m, 'faq-editor.ambiguous', '{"css": ".article"}',
+                               'exploration/ambiguous.json')
 
 
 class SingleCatalogTests(PromoteTests):

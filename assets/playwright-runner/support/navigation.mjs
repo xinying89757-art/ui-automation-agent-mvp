@@ -8,6 +8,10 @@ import { openLlms, openSettings } from '../flows/llms-txt.mjs';
 const require = createRequire(import.meta.url);
 const { yaml } = require(path.join(path.dirname(require.resolve('playwright-core/package.json')), 'lib/utilsBundle.js'));
 export const pageMap = () => yaml.parse(fs.readFileSync(path.join(runtimeRoot, 'knowledge/page-map.yaml'), 'utf8'));
+const entryCatalog = () => {
+  const file = path.join(runtimeRoot, 'knowledge/entries.yaml');
+  return fs.existsSync(file) ? (yaml.parse(fs.readFileSync(file, 'utf8'))?.entries ?? {}) : {};
+};
 export const urlPath = value => { try { return new URL(value, 'https://snapshot.invalid').pathname; } catch { return null; } };
 export function allowedURL(value, cfg) {
   const env = cfg.environment ?? {};
@@ -32,6 +36,66 @@ export function targetLocator(page, target, { frame, scope, map = pageMap() } = 
   return root.locator(target).filter({ visible: true }).first();
 }
 
+const NAV_ANCESTORS = 'nav,[role="navigation"],[role="menu"],[role="menubar"],[role="tablist"],aside,header,[class*="sidebar" i],[class*="menu" i]';
+
+async function resolveNavigationText(page, text, options = {}) {
+  const declaredFrame = options.frame ?? options.map?.targets?.[options.target]?.frame;
+  const roots = declaredFrame ? [{ root: page.frameLocator(declaredFrame), frame: { selector: declaredFrame } }] :
+    [{ root: page, frame: null }];
+  if (!declaredFrame) {
+    async function visit(parent) {
+      for (const frame of parent.childFrames()) {
+        try {
+          if (frame.isDetached() || !await frame.evaluate(() => { void window.top.document; return true; })) continue;
+          if (!await (await frame.frameElement()).isVisible()) continue;
+          roots.push({ root: frame, frame });
+          await visit(frame);
+        } catch { /* Detached and cross-origin frames are not searchable. */ }
+      }
+    }
+    if (page.mainFrame) await visit(page.mainFrame());
+  }
+  const groups = ['link', 'menuitem', 'tab', 'button'].map(role =>
+    ({ root: item => item.root.getByRole(role, { name: text, exact: true }), itemRole: role }));
+  const semantic = [];
+  for (const item of roots) for (const group of groups) {
+    const locators = group.root(item);
+    for (let i = 0; i < await locators.count(); i++) semantic.push({ item, locator: locators.nth(i), role: group.itemRole });
+  }
+  const matches = semantic.length ? semantic : [];
+  if (!matches.length) for (const item of roots) {
+    const locators = item.root.getByText(text, { exact: true });
+    for (let i = 0; i < await locators.count(); i++) matches.push({ item, locator: locators.nth(i), role: null });
+  }
+  const candidates = [];
+  for (const match of matches) {
+    const locator = match.locator;
+    if (!await locator.isVisible().catch(() => false) ||
+        locator.isEnabled && !await locator.isEnabled().catch(() => false)) continue;
+    const info = await locator.evaluate(el => {
+      const action = el.closest('a,button,[role="link"],[role="menuitem"],[role="tab"],[role="button"]') || el;
+      const href = action.getAttribute('href') || action.getAttribute('data-href') || action.getAttribute('data-url') ||
+        action.getAttribute('data-route') || action.getAttribute('aria-controls') || '';
+      return { navigation: Boolean(action.closest('nav,[role="navigation"],[role="menu"],[role="menubar"],[role="tablist"],aside,header,[class*="sidebar" i],[class*="menu" i]')),
+        destination: href, enabled: !action.matches(':disabled,[aria-disabled="true"]') };
+    }).catch(() => ({ navigation: false, destination: '', enabled: true }));
+    if (info.enabled === false) continue;
+    candidates.push({ ...match, info });
+  }
+  if (!candidates.length) return null;
+  const navCandidates = candidates.filter(candidate => candidate.info.navigation);
+  const preferred = navCandidates.length ? navCandidates : candidates;
+  if (preferred.length > 1) {
+    const destinations = preferred.map(candidate => candidate.info.destination).filter(Boolean);
+    if (destinations.length !== preferred.length || new Set(destinations).size !== 1) {
+      throw new Error(`UIA_LOCATOR_AMBIGUOUS: ${preferred.length} visible enabled exact navigation matches for ${JSON.stringify(text)}`);
+    }
+  }
+  const chosen = preferred[0];
+  return { locator: chosen.locator, frame: chosen.item.frame ?
+    (chosen.item.frame.selector ? chosen.item.frame : await frameDetails(chosen.item.frame)) : null };
+}
+
 async function frameDetails(frame) {
   const selector = await (await frame.frameElement()).evaluate(el => el.id ? '#' + CSS.escape(el.id) :
     el.name ? 'iframe[name=' + JSON.stringify(el.name) + ']' : 'iframe').catch(() => 'iframe');
@@ -41,6 +105,8 @@ async function frameDetails(frame) {
 /** Semantic actions search the top document, then attached same-origin frames in DOM order. */
 export async function resolveActionTarget(page, target, options = {}) {
   const role = /^role=([^\[]+)(?:\[name=(.*)\])?$/u.exec(target);
+  if (options.navigation && target.startsWith('text='))
+    return resolveNavigationText(page, target.slice(5), { ...options, target });
   if (options.frame || options.map?.targets?.[target] || !(target.startsWith('text=') || role))
     return { locator: targetLocator(page, target, options), frame: options.frame ? { selector: options.frame } : null };
   const text = role ? role[2] : target.slice(5);
@@ -92,7 +158,7 @@ export async function openTarget(page, target, options = {}, seen = new Set()) {
   if (target === 'settings') { await openSettings(page); return page; }
   if (target === 'llms') { await openLlms(page); return page; }
   const map = options.map ?? pageMap();
-  const entry = map.targets?.[target] ?? map.pages?.[target];
+  const entry = map.targets?.[target] ?? map.pages?.[target] ?? entryCatalog()[target];
   if (!entry) throw new Error('UIA_EXPLORATION_REQUIRED: unknown named target');
   const cfg = options.cfg ?? loadConfig();
   if (entry.entry) {
@@ -104,8 +170,14 @@ export async function openTarget(page, target, options = {}, seen = new Set()) {
     return page;
   }
   if (entry.route) {
-    const reached = await navigateSnapshot(page, cfg, { ...options, steps: entry.route });
+    const reached = await navigateSnapshot(page, cfg, { ...options, steps: entry.route, routeReplay: true });
     if (reached.failed_step) throw new Error('Named route action failed');
+    return reached.page;
+  }
+  if (entry.steps) {
+    const reached = await navigateSnapshot(page, cfg, { ...options, map, steps: entry.steps,
+      entrySteps: entry.steps.length, routeReplay: true });
+    if (reached.failed_step) throw new Error('Named entry route failed: ' + reached.failed_step.reason);
     return reached.page;
   }
   if (entry.open && entry.open !== target) return openTarget(page, entry.open, options, seen);
@@ -203,7 +275,8 @@ export async function navigateSnapshot(page, cfg, { goto, openTarget: named, ste
               let matched = kind === 'legacy' ? { locator: page.locator(step.target), frame: null } : null;
               const deadline = Date.now() + 8000;
               while (!matched) {
-                matched = await resolveActionTarget(page, step.target, actionOptions);
+                matched = await resolveActionTarget(page, step.target, { ...actionOptions,
+                  navigation: Boolean(options.routeReplay || index < entrySteps) });
                 if (!matched && Date.now() >= deadline) throw new Error('No visible target');
                 if (!matched) await new Promise(resolve => setTimeout(resolve, 150));
               }
@@ -233,7 +306,7 @@ export async function navigateSnapshot(page, cfg, { goto, openTarget: named, ste
       }
       // Do not echo Playwright call logs, which may contain filled values or URLs.
       failed_step = { index: index + 1, action: kind === 'step' && action.startsWith('fill:') ? 'fill:[REDACTED]' : kind === 'goto' ? 'goto:' + urlPath(action) : action,
-        reason: /origin|wait must|requires|Expected|Cyclic|unknown named/u.test(error.message) ? error.message :
+        reason: /origin|wait must|requires|Expected|Cyclic|unknown named|UIA_LOCATOR_AMBIGUOUS/u.test(error.message) ? error.message :
           /intercepts pointer events/u.test(error.message) ? 'Target is covered by another element' :
           /not enabled/u.test(error.message) ? 'Target is disabled' : `Navigation/action failed or exceeded ${budget} ms` };
     } finally {

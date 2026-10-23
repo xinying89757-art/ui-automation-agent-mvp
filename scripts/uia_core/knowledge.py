@@ -425,6 +425,26 @@ def known_page(page):
     return False
 
 
+def exploration_knowledge(purpose=None, entry=None):
+    """Classify exploration against exact KB targets/routes as they exist before the attempt."""
+    def norm(value):
+        return re.sub(r'[^\w\u4e00-\u9fff]+', '', str(value or '')).casefold()
+    requested = str(purpose or '').strip()
+    exact_names = set()
+    page_doc = catalog('page-map.yaml')
+    for section in ('pages', 'targets'):
+        for name, row in (page_doc.get(section) or {}).items():
+            exact_names.update(norm(item) for item in [name, row.get('label'), row.get('name'), *(row.get('aliases') or [])] if item)
+    entry_doc = catalog('entries.yaml')
+    for name, row in (entry_doc.get('entries') or {}).items():
+        exact_names.update(norm(item) for item in [name, row.get('label'), *(row.get('aliases') or [])] if item)
+    missing = [requested] if requested and norm(requested) not in exact_names else []
+    page_known = known_page(entry or purpose)
+    return {'known_page': bool(page_known), 'requested_targets': [requested] if requested else [],
+            'missing_targets': missing, 're_explored': bool(page_known and not missing),
+            'exploration_for_missing_controls': bool(missing)}
+
+
 def writeback(base, m):
     """Persist only entries backed by successful execution and repeated use."""
     pages = catalog('page-map.yaml') or {'schema_version': 'page-map.v1', 'pages': {}, 'targets': {}}

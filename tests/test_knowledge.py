@@ -167,6 +167,24 @@ class KnowledgeTests(unittest.TestCase):
         args=cli.parser().parse_args(['kb','query','--case','C1'])
         self.assertIsNone(args.max_tokens)
 
+    def test_missing_control_exploration_is_not_counted_as_known_page_reexploration(self):
+        pages={'schema_version':'page-map.v1','pages':{'content-admin':{'entry':'内容管理'}},
+               'targets':{'content-admin.article-list':{'label':'文章列表'}}}
+        entries={'schema_version':'entry-hints.v1','entries':{}}
+        common.atomic_write(knowledge.ROOT/'page-map.yaml',pages,as_yaml=True)
+        common.atomic_write(knowledge.ROOT/'entries.yaml',entries,as_yaml=True)
+        knowledge.sync_layout(pages=pages,entries=entries)
+        missing=knowledge.exploration_knowledge('markdown-slash-menu','content-admin')
+        known=knowledge.exploration_knowledge('content-admin.article-list','content-admin')
+        self.assertTrue(missing['exploration_for_missing_controls'])
+        self.assertFalse(missing['re_explored'])
+        self.assertFalse(known['exploration_for_missing_controls'])
+        self.assertTrue(known['re_explored'])
+        base=self.root/'runs/METRIC'; base.mkdir(parents=True)
+        result=metrics.calculate(base,{'cases':{},'exploration':[missing,known]})
+        self.assertEqual(result['re_explored_known_pages'],1)
+        self.assertEqual(result['exploration_for_missing_controls'],1)
+
     def test_writeback_requires_repeated_verified_execution_and_records_freshness(self):
         pages={'schema_version':'page-map.v1','pages':{'faq':{'entry':'FAQ'}},'targets':{'faq.answer':{'selector':'.answer'}}}
         common.atomic_write(knowledge.ROOT/'page-map.yaml',pages,as_yaml=True)

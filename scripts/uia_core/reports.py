@@ -46,6 +46,8 @@ def opening(m, metrics, review):
                     f"越权 {metrics['scope_violations']}，泄露 {metrics['leak_hits']}，未审核断言变更 {metrics['unreviewed_assertion_changes']}。")
     if metrics.get('re_explored_known_pages', 0):
         metrics_text += f"流程问题：已知页面重复探索 {metrics['re_explored_known_pages']} 次（re_explored_known_pages）。"
+    if metrics.get('exploration_for_missing_controls', 0):
+        metrics_text += f"缺控件探索 {metrics['exploration_for_missing_controls']} 次（exploration_for_missing_controls）。"
     if metrics.get('knowledge_injected_tokens', {}).get('count'):
         kb = metrics['knowledge_injected_tokens']
         metrics_text += f"知识注入 token p50/p95：{kb['p50']}/{kb['p95']}（{kb['count']} 条用例）。"

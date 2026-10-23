@@ -32,7 +32,10 @@ read_back:
 `automatable.status` 为 yes/needs-env/manual 并附 reason。required_env 只引用根目录
 preconditions.yaml。data_prep 引用 runner/knowledge/data-prep.yaml，例如 `faq.count: 5`；
 没有 handler 的条目保持 TODO，不能伪造准备成功。mutation_scope 为已授权的功能名列表。
-start_page 来自 page-map 的 pages；所有 target 必须是命名目标或 `?未知名字`，不接受选择器。
+start_page 来自 page-map 的 pages；所有普通 target 必须是命名目标或 `?未知名字`，不接受选择器。
+可选 `entry_route` 引用 `knowledge/entries.yaml` 中已确认的路线；生成器会用 `openTarget`/导航回放执行它。
+当用例对应已知路线（如 `article-editor-markdown-import`）时，优先将其作为 `entry_route` 或 `open` 步骤，
+不要把路线里的裸文本导航项复制成新 page-map targets。
 
 步骤固定 12 个动词：open/click/fill/hover/select/check/uncheck/press/upload/wait/close/assert。
 输入动词必须显式 value（允许空字符串）。S 编号唯一。每条断言含唯一 A 编号、after、

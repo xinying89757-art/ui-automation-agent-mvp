@@ -72,6 +72,11 @@
       "type": "string",
       "minLength": 1
     },
+    "entry_route": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Optional confirmed route id from knowledge/entries.yaml, replayed through openTarget."
+    },
     "steps": {
       "type": "array",
       "items": {

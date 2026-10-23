@@ -127,7 +127,7 @@ def handoff(m, file_or_text):
 def confirm(m, page, steps, frame=None):
     hint = resolve(page)
     require(hint, '页面入口未知：请先 hints add')
-    require(steps and all(re.match(r'^(goto|click|hover|fill|press|wait):.+', x) for x in steps), '请提供具体 --step 动作')
+    require(steps and all(re.match(r'^(goto|click|hover|fill|type|press|wait):.+', x) for x in steps), '请提供具体 --step 动作')
     require(all(not x.startswith('goto:') for x in steps[1:]), 'goto 仅允许作为首个入口步骤')
     steps = literal_route({'steps': steps})['steps']
     require(steps, '入口路线不能以需要输入的步骤开头')
@@ -377,21 +377,21 @@ def promote(base, m, report, prefix=None, page=None, overwrite=False):
     for index, step in enumerate(route.get('route') or [], 1):
         if isinstance(step, dict):
             verb, target, value = step.get('verb'), step.get('target'), step.get('value')
-            require(verb in {'goto', 'click', 'hover', 'fill', 'press', 'wait'} and target, 'unsupported route step: ' + json.dumps(step, ensure_ascii=False))
+            require(verb in {'goto', 'click', 'hover', 'fill', 'type', 'press', 'wait'} and target, 'unsupported route step: ' + json.dumps(step, ensure_ascii=False))
             if isinstance(target, str) and (verb in {'goto', 'press', 'wait'} or target in targets or re.match(r'^(text|role)=', target)):
-                steps.append(verb + ':' + target + ('=' + str(value) if verb == 'fill' and value is not None else ''))
+                steps.append(verb + ':' + target + ('=' + str(value) if verb in {'fill', 'type'} and value is not None else ''))
                 continue
             name = prefix + '.route.' + str(index)
             put(name, locator_target(target))
-            steps.append(verb + ':' + name + ('=' + (str(value) if value is not None else '${INPUT}') if verb == 'fill' else ''))
+            steps.append(verb + ':' + name + ('=' + (str(value) if value is not None else '${INPUT}') if verb in {'fill', 'type'} else ''))
             continue
         verb, _, rest = step.partition(':')
-        require(verb in {'goto', 'click', 'hover', 'fill', 'press', 'wait'} and rest, 'unsupported route step: ' + step)
+        require(verb in {'goto', 'click', 'hover', 'fill', 'type', 'press', 'wait'} and rest, 'unsupported route step: ' + step)
         rest = rest.strip()
         if verb in {'goto', 'press', 'wait'} or re.match(r'^(text|role)=', rest) and '>>' not in rest or rest in targets:
             steps.append(verb + ':' + re.sub(r'\s*\([^()]*\)\s*$', '', rest))
             continue
-        if verb == 'fill':
+        if verb in {'fill', 'type'}:
             split = re.match(r'^(.*?)=([^=\]\)"\']*)$', rest)
             target, value = (split.group(1), '=' + split.group(2)) if split else (rest, '=${INPUT}')
         else:

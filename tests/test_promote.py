@@ -61,6 +61,13 @@ class PromoteTests(unittest.TestCase):
         self.assertEqual(hint['frame'], entries.FRAME_JOIN.join(REPORT['route']['frames']))
         self.assertEqual(result['entry_confirmed'], '新版内容编辑器')
 
+    def test_type_route_step_is_promoted(self):
+        rep = dict(REPORT, route=dict(REPORT['route'], route=['click:text=产品',
+            {'verb': 'type', 'target': 'iframe#prod >> #tiptap-iframe >> iframe.tiptap-iframe .ProseMirror', 'value': '/'}]))
+        (self.base / 'exploration/generator-t.json').write_text(json.dumps(rep, ensure_ascii=False), encoding='utf-8')
+        result = entries.promote(self.base, self.m, 'exploration/generator-t.json')
+        self.assertEqual(result['route_steps'][-1], 'type:faq-editor.entry.route.2=/')
+
     def test_unreached_report_is_refused(self):
         bad = dict(REPORT, route={'reached': False, 'reached_entry': False})
         (self.base / 'exploration/generator-x.json').write_text(json.dumps(bad), encoding='utf-8')

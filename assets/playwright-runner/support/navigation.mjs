@@ -113,11 +113,11 @@ export async function openTarget(page, target, options = {}, seen = new Set()) {
   return page;
 }
 export function parseStep(action) {
-  const match = /^(click|hover|fill|press|wait):(.*)$/su.exec(action);
-  if (!match) throw new Error('Expected click/hover/fill/press/wait step');
+  const match = /^(click|hover|fill|type|press|wait):(.*)$/su.exec(action);
+  if (!match) throw new Error('Expected click/hover/fill/type/press/wait step');
   const [, verb, value] = match;
   if (verb === 'wait' && (!/^\d+$/u.test(value) || Number(value) > 10000)) throw new Error('wait must be 0..10000 ms');
-  if (verb === 'fill') {
+  if (verb === 'fill' || verb === 'type') {
     let split = -1, depth = 0, quote = null;
     for (let i = /^(text|role)=/u.test(value) ? 5 : 0; i < value.length; i++) {
       const char = value[i];
@@ -136,7 +136,7 @@ async function alreadyThere(page, actions, index, entrySteps, options, waitMs = 
   const [kind, action] = actions[index] ?? [];
   const [nextKind, nextAction] = actions[index + 1] ?? [];
   if (kind !== 'step' || index >= entrySteps || !/^(click|hover):/u.test(action ?? '')) return false;
-  if (nextKind !== 'step' || !/^(click|hover|fill):/u.test(nextAction ?? '')) return false;
+  if (nextKind !== 'step' || !/^(click|hover|fill|type):/u.test(nextAction ?? '')) return false;
   try {
     const next = parseStep(nextAction);
     const nextOptions = index + 1 < entrySteps ? { ...options, frame: undefined, scope: undefined } : options;
@@ -190,7 +190,9 @@ export async function navigateSnapshot(page, cfg, { goto, openTarget: named, ste
                 if (!matched && Date.now() >= deadline) throw new Error('No visible target');
                 if (!matched) await new Promise(resolve => setTimeout(resolve, 150));
               }
-              await matched.locator[step.verb](...(step.verb === 'fill' ? [step.value] : []), { timeout: 10000 });
+              // type = focus the element then send real keystrokes (contenteditable editors ignore fill, e.g. a '/' slash menu).
+              if (step.verb === 'type') { await matched.locator.click({ timeout: 10000 }); await page.keyboard.type(step.value); }
+              else await matched.locator[step.verb](...(step.verb === 'fill' ? [step.value] : []), { timeout: 10000 });
               results.push({ index: index + 1, frame: matched.frame });
             }
           }

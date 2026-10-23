@@ -37,6 +37,7 @@ test('goto permits only configured origins and excludes userinfo and unsafe sche
   assert.equal(allowedURL('https://other.test/new', cfg), 'https://other.test/new');
   for (const value of ['https://outside.test/new', '//outside.test/new', 'javascript:alert(1)', 'https://user:pass@backend.test/new', 'http://backend.test/new'])
     assert.throws(() => allowedURL(value, cfg), /origin/u);
+  assert.deepEqual(parseStep('type:editor.body=/'), { verb: 'type', target: 'editor.body', value: '/' });
   assert.throws(() => parseStep('wait:10001'), /10000/u);
   assert.throws(() => parseStep('wait:-1'), /10000/u);
   assert.throws(() => parseStep('fill:broken'), /requires/u);

@@ -11,7 +11,11 @@ from . import common
 from .common import atomic_write, now, read_json, read_yaml, require
 from .secrets import scrub_text
 
-ROOT = common.ROOT / 'knowledge'
+ROOT = None  # test override; otherwise follows common.ROOT
+
+
+def _root():
+    return ROOT if ROOT is not None else common.ROOT / 'knowledge'
 PATTERNS = {
     'FRAME_JOIN': {'description': 'Enter each iframe in order; use frameLocator for every frame in the chain.'},
     'RERENDER_RELOCATE': {'description': 'Wait for stable UI, re-resolve the locator, retry a bounded number of times.'},
@@ -20,7 +24,7 @@ PATTERNS = {
 
 
 def catalog(name):
-    path = ROOT / name
+    path = _root() / name
     return read_yaml(path) if path.is_file() else {}
 
 
@@ -41,7 +45,7 @@ def sync_layout(pages=None, entries=None, patterns=None, experience=None):
     def put(ident, kind, page, value, labels, route='', frame=None):
         old_index = previous.get(ident, {})
         filename = kind + 's/' + _slug(ident.replace('.', '-')) + '.yaml'
-        old_path = ROOT / old_index.get('path', filename)
+        old_path = _root() / old_index.get('path', filename)
         old_body = read_yaml(old_path) if old_path.is_file() else {}
         verified = []
         provenance = value.get('provenance') if isinstance(value, dict) else None
@@ -89,20 +93,20 @@ def sync_layout(pages=None, entries=None, patterns=None, experience=None):
     for name, row in experience.get('entries', {}).items():
         put('experience.' + name, 'flow', row.get('page') or '*', row, [name, row.get('summary')], row.get('route'), row.get('frame'))
     for relative, payload in files:
-        atomic_write(ROOT / relative, payload, as_yaml=True)
-    atomic_write(ROOT / 'index.yaml', {'schema_version': 'uia-knowledge-index.v2', 'entries': rows}, as_yaml=True)
+        atomic_write(_root() / relative, payload, as_yaml=True)
+    atomic_write(_root() / 'index.yaml', {'schema_version': 'uia-knowledge-index.v2', 'entries': rows}, as_yaml=True)
     return rows
 
 
 def load_index():
-    path = ROOT / 'index.yaml'
+    path = _root() / 'index.yaml'
     if not path.is_file():
         sync_layout()
     return catalog('index.yaml').get('entries', [])
 
 
 def load_item(item):
-    path = ROOT / item.get('path', item.get('file', ''))
+    path = _root() / item.get('path', item.get('file', ''))
     return read_yaml(path) if path.is_file() else None
 
 
@@ -231,8 +235,8 @@ def merge(source_dir, run_id):
         else:
             canonical[key] = name
     safe_tree(dest_entries); safe_tree(dest_pages)
-    atomic_write(ROOT / 'entries.yaml', dest_entries, as_yaml=True)
-    atomic_write(ROOT / 'page-map.yaml', dest_pages, as_yaml=True)
+    atomic_write(_root() / 'entries.yaml', dest_entries, as_yaml=True)
+    atomic_write(_root() / 'page-map.yaml', dest_pages, as_yaml=True)
     # Keep the legacy runner catalog in sync while callers migrate to the root catalog.
     legacy = common.ROOT / 'assets/playwright-runner/knowledge'
     atomic_write(legacy / 'entries.yaml', dest_entries, as_yaml=True)
@@ -288,7 +292,7 @@ def validate():
         if item['id'] in seen_ids: errors.append('duplicate knowledge id: ' + item['id'])
         if item['path'] in seen_paths: errors.append('duplicate knowledge path: ' + item['path'])
         seen_ids.add(item['id']); seen_paths.add(item['path'])
-        path = ROOT / item['path']
+        path = _root() / item['path']
         if not path.is_file(): errors.append('knowledge index file missing: ' + item['id']); continue
         if path.stat().st_size > 48 * 1024: errors.append('knowledge entry exceeds 48 KiB: ' + item['id'])
         record = read_yaml(path) or {}
@@ -307,11 +311,11 @@ def validate():
             if record.get('alias_of') and record['alias_of'] not in seen_ids and not any(x.get('id') == record['alias_of'] for x in index.get('entries', [])):
                 errors.append('alias_of target missing: ' + item['id'])
     if len(index.get('entries', [])) > 5000: errors.append('knowledge index exceeds 5000 entries')
-    index_path = ROOT / 'index.yaml'
+    index_path = _root() / 'index.yaml'
     if index_path.exists() and index_path.stat().st_size > 2 * 1024 * 1024: errors.append('knowledge index exceeds 2 MiB')
     for kind in ('pages','components','flows','patterns'):
-        for file in (ROOT / kind).glob('*.yaml') if (ROOT / kind).is_dir() else []:
-            if file.relative_to(ROOT).as_posix() not in seen_paths: errors.append('unindexed knowledge file: ' + file.name)
+        for file in (_root() / kind).glob('*.yaml') if (_root() / kind).is_dir() else []:
+            if file.relative_to(_root()).as_posix() not in seen_paths: errors.append('unindexed knowledge file: ' + file.name)
     require(not errors, 'Knowledge validation failed', errors)
     return {'valid': True, 'patterns': len(patterns.get('patterns', {})), 'errors': []}
 
@@ -336,11 +340,11 @@ def prune(stale_after_days=90, candidate_after_days=180):
         except ValueError: last_hit = None
         if verified and verified < stale_cutoff and item.get('status') not in {'stale', 'deprecated'}:
             item['status'] = 'stale'; record['status'] = 'stale'
-            atomic_write(ROOT / item['path'], record, as_yaml=True); changed.append(item['id'])
+            atomic_write(_root() / item['path'], record, as_yaml=True); changed.append(item['id'])
         hit_recentness = last_hit or verified or created
         if hit_recentness and hit_recentness < candidate_cutoff:
             candidates.append(item['id'])
-    atomic_write(ROOT / 'index.yaml', {'schema_version':'uia-knowledge-index.v2','entries':index}, as_yaml=True)
+    atomic_write(_root() / 'index.yaml', {'schema_version':'uia-knowledge-index.v2','entries':index}, as_yaml=True)
     return {'stale_marked': changed, 'stale_count': len(changed), 'deletion_candidates': candidates,
             'candidate_count': len(candidates), 'stale_after_days': stale_after_days,
             'candidate_after_days': candidate_after_days, 'deleted': []}
@@ -438,7 +442,7 @@ def writeback(base, m):
             provenance.append(record); row['provenance'] = provenance
             changes.append({'kind': 'target', 'name': name, 'case_ids': ids, 'verification_count': sum(case_passes.values())})
     # Aggregate evidence by stable target and independent execution batches.
-    index = load_index() if (ROOT / 'index.yaml').is_file() else []
+    index = load_index() if (_root() / 'index.yaml').is_file() else []
     match_path = base / (m.get('knowledge_match') or {}).get('file', 'knowledge-match.json')
     matched = read_json(match_path).get('matched', {}) if match_path.is_file() else {}
     for item in index:
@@ -471,7 +475,7 @@ def writeback(base, m):
             item['last_verified'] = now()[:10]
             if item['status'] in {'stale', 'unverified'}: item['status'] = 'stable'
     if index:
-        atomic_write(ROOT / 'index.yaml', {'schema_version':'uia-knowledge-index.v2','entries':index}, as_yaml=True)
+        atomic_write(_root() / 'index.yaml', {'schema_version':'uia-knowledge-index.v2','entries':index}, as_yaml=True)
     # Persist only a repair strategy inferred from a successful locator/wait-only diff.
     from .metrics import locator_wait_only
     repair_patterns = {}
@@ -501,9 +505,9 @@ def writeback(base, m):
                 'provenance': {'source_run': m['run_id'], 'verified_by': sorted(case_ids)}}
         existing = experience['entries'].get(key)
         if existing != item: experience['entries'][key] = item; changes.append({'kind': 'experience', 'name': key, 'case_ids': sorted(case_ids)})
-    atomic_write(ROOT / 'page-map.yaml', pages, as_yaml=True)
+    atomic_write(_root() / 'page-map.yaml', pages, as_yaml=True)
     atomic_write(common.ROOT / 'assets/playwright-runner/knowledge/page-map.yaml', pages, as_yaml=True)
-    atomic_write(ROOT / 'experience.yaml', experience, as_yaml=True)
+    atomic_write(_root() / 'experience.yaml', experience, as_yaml=True)
     sync_layout(pages=pages, experience=experience)
     result = {'added_or_updated': changes, 'count': len(changes), 'at': now()}
     m['knowledge_writeback'] = result

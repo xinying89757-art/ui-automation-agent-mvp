@@ -10,6 +10,7 @@ import re
 import yaml
 from pathlib import Path
 
+from .actions import keyboard_step
 from .common import ROOT, UiaError, digest, event, file_hash, inside, read_json, read_yaml, require, reset_case
 
 SCHEMA = read_json(Path(__file__).resolve().parents[2] / 'schemas/case-spec.schema.json')
@@ -528,12 +529,26 @@ def generate(base, m, cid):
         todos.append(label)
         lines.append('  // TODO explore: ' + label)
         lines.append('  throw new Error(' + json.dumps('UIA_EXPLORATION_REQUIRED: ' + label) + ');')
-    for step in spec['steps']:
+    source_steps = []
+    source_file = base / case.get('source', '') if case.get('source') else None
+    if source_file and source_file.is_file():
+        try:
+            raw_steps = read_json(source_file).get('steps') or []
+        except (OSError, ValueError, TypeError):
+            raw_steps = []
+        source_steps = raw_steps if isinstance(raw_steps, list) else [raw_steps]
+    for index, step in enumerate(spec['steps']):
         sid, verb, name = step['id'], step['verb'], step['target']
         lines.append('  await test.step(' + json.dumps('uia-step:' + sid) + ', async () => {')
         lines.append('  // @step ' + sid)
+        source_text = source_steps[index] if index < len(source_steps) else ''
+        if not isinstance(source_text, str):
+            source_text = ' '.join(str(part) for part in source_text) if isinstance(source_text, list) else str(source_text or '')
+        press_enter = bool(keyboard_step(source_text) or keyboard_step(str(name or '')) or keyboard_step(str(step.get('value') or '')))
         loc = locator_expression(name, pages)
-        if sid in replayed_route_steps:
+        if press_enter:
+            lines.append('  await page.keyboard.press("Enter");')
+        elif sid in replayed_route_steps:
             lines.append('  // Navigation replayed by openTarget(' + json.dumps(route_id) + ').')
         elif verb == 'observe':
             lines.append('  observations[' + json.dumps(name) + '] = await observeOccurrences(page, ' + json.dumps(pages['targets'][name]['observe_text'], ensure_ascii=False) + ');')

@@ -5,6 +5,7 @@ import shlex
 from pathlib import Path
 
 from . import common
+from .actions import CATALOG_NAME, keyboard_step, normalize_route_step
 from .common import atomic_write, now, read_yaml, require
 from .preconditions import normalize
 from .secrets import scrub_text
@@ -260,7 +261,7 @@ def navigation_hint(hint):
         if not known or not known.get('open_target'):
             return hint
         hint['open_target'] = known['open_target']
-    hint['steps'] = ['click:text=' + label(p) for p in parts[1:] if label(p)]
+    hint['steps'] = [keyboard_step(label(p)) or 'click:text=' + label(p) for p in parts[1:] if label(p)]
     hint['route_source'] = 'path_text'
     return hint
 
@@ -495,7 +496,7 @@ def promote(base, m, report, prefix=None, page=None, overwrite=False, for_placeh
                                                    item.get('placeholder'), item.get('target'))
         require(cid in m.get('cases', {}) and isinstance(step_id, str) and step_id and
                 isinstance(placeholder, str) and placeholder and
-                re.fullmatch(r'[a-z0-9][a-z0-9.-]*', target_name or ''),
+                CATALOG_NAME.fullmatch(target_name or ''),
                 'Invalid generator case/step/placeholder/catalog target mapping')
         require(placeholder.startswith(('?', '？')) or target_name == placeholder,
                 'Concrete missing spec targets must keep their catalog name')
@@ -559,6 +560,7 @@ def promote(base, m, report, prefix=None, page=None, overwrite=False, for_placeh
     steps = []
     counts = route.get('step_match_counts') or route.get('match_counts') or {}
     for index, step in enumerate(route.get('route') or [], 1):
+        step = normalize_route_step(step)
         count = (step.get('match_count', step.get('count')) if isinstance(step, dict) else None)
         count = count if type(count) is int else counts.get(str(index), counts.get(index)) if isinstance(counts, dict) else None
         require(count is None or count == 1,
@@ -622,7 +624,7 @@ def promote(base, m, report, prefix=None, page=None, overwrite=False, for_placeh
 
 def add_target(base, m, name, locator, evidence, overwrite=False, resource=None, saved_by=None, for_placeholders=None):
     """Register one observed target (from a snapshot/generator artifact) without fabricating a report."""
-    require(re.fullmatch(r'[a-z0-9][a-z0-9.-]*', name or ''), 'target name: lowercase dotted, e.g. faq-editor.add')
+    require(CATALOG_NAME.fullmatch(name or ''), 'target name: lowercase dotted, underscores allowed, e.g. faq_editor.add')
     path = base / evidence
     require(evidence and path.is_file() and base.resolve() in path.resolve().parents, '--evidence must be an existing artifact inside the run (exploration/... or evidence/...)')
     if resource:

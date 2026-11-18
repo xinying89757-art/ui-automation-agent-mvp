@@ -44,6 +44,7 @@ python3 scripts/uia.py setup --profile my-gray --environment gray --site en.exam
 ## 登录和运行
 
 ```bash
+python3 scripts/uia.py preflight --profile my-gray
 python3 scripts/uia.py login --profile my-gray --check-only
 python3 scripts/uia.py login --profile my-gray
 python3 scripts/uia.py init --run-id REQ-001 --profile my-gray

@@ -195,7 +195,7 @@ def network_fingerprint(cfg):
     return hashlib.sha256(json.dumps(values, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
 
 
-def invoke_login(cfg, runner=None, check_only=False, force=False, evidence=None, manual=False):
+def invoke_login(cfg, runner=None, check_only=False, force=False, evidence=None, manual=False, open_editor=False):
     runner = Path(runner or runtime_root()).resolve()
     require((runner / "node_modules/@playwright/test").is_dir(),
             "Install Node dependencies first: npm --prefix " + str(runner) + " ci")
@@ -215,6 +215,10 @@ def invoke_login(cfg, runner=None, check_only=False, force=False, evidence=None,
         if manual:
             command.append("--manual")
             print("将打开浏览器；请使用当前配置的账号完成登录/验证码，最多等待 10 分钟。", file=sys.stderr, flush=True)
+        if open_editor:
+            from .environment_gate import assert_private_credentials
+            assert_private_credentials(cfg)
+            command.append("--open-editor")
         if evidence:
             command.extend(["--output", str(evidence)])
         result = subprocess.run(command, cwd=runner, capture_output=True, text=True)

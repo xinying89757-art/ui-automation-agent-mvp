@@ -1,0 +1,658 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="color-scheme" content="light dark" />
+<link rel="icon" href="data:," />
+<title>v1 审阅页</title>
+<style>
+  :root{
+    --bg:#f4f5f7; --surface:#ffffff; --surface-2:#eef1f4; --ink:#182230; --ink-2:#46536a; --ink-3:#7a8699;
+    --line:#dde2ea; --line-strong:#c6cedb;
+    --pass:#0e7a5f; --pass-bg:#e6f4ef;
+    --issue:#b42318; --issue-bg:#fdf0ee;
+    --pending:#9a6a00; --pending-bg:#fdf6e0;
+    --accent:#175cd3; --accent-bg:#eaf1fe;
+    --radius:14px;
+    --shadow:0 1px 2px rgba(16,24,40,.05),0 1px 3px rgba(16,24,40,.06);
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#11151c; --surface:#1a2029; --surface-2:#232b37; --ink:#eef1f6; --ink-2:#b9c2d0; --ink-3:#8a96a8;
+      --line:#2e3847; --line-strong:#3d4a5e;
+      --pass:#3ecfae; --pass-bg:#12332c;
+      --issue:#ff8a7a; --issue-bg:#3d1f1b;
+      --pending:#f2c14e; --pending-bg:#38300f;
+      --accent:#7db1ff; --accent-bg:#1d2f4d;
+      --shadow:0 1px 2px rgba(0,0,0,.3);
+    }
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  @media (prefers-reduced-motion: reduce){ html{scroll-behavior:auto} *{transition:none!important} }
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,-apple-system,"Segoe UI",sans-serif;
+    font-size:15px;line-height:1.65;-webkit-font-smoothing:antialiased}
+  button{font:inherit;cursor:pointer}
+  .mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+
+  /* ---------- sticky top ---------- */
+  .topbar{position:sticky;top:0;z-index:50;background:var(--surface);border-bottom:1px solid var(--line);box-shadow:var(--shadow)}
+  .topbar-in{max-width:980px;margin:0 auto;padding:12px 16px 10px}
+  .top-row{display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap}
+  .top-title{flex:1 1 260px;min-width:220px}
+  .top-title h1{font-size:17px;line-height:1.35;margin:0 0 2px;font-weight:700;letter-spacing:.01em}
+  .top-title p{margin:0;font-size:12.5px;color:var(--ink-2)}
+  .counts{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+  .chip{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;font-weight:600;
+    padding:3px 10px;border-radius:999px;border:1px solid var(--line);background:var(--surface-2);color:var(--ink-2);min-height:26px}
+  .chip b{font-size:13px;color:var(--ink)}
+  .chip.pass{background:var(--pass-bg);border-color:transparent}.chip.pass b{color:var(--pass)}
+  .chip.issue{background:var(--issue-bg);border-color:transparent}.chip.issue b{color:var(--issue)}
+  .chip.pending{background:var(--pending-bg);border-color:transparent}.chip.pending b{color:var(--pending)}
+  .progress{height:8px;border-radius:99px;background:var(--surface-2);overflow:hidden;display:flex;margin-top:10px}
+  .progress i{display:block;height:100%;width:0;transition:width .25s ease}
+  .progress .seg-pass{background:var(--pass)} .progress .seg-issue{background:var(--issue)} .progress .seg-pending{background:var(--pending)}
+  .progress-label{font-size:12px;color:var(--ink-3);margin-top:5px}
+  .top-actions{display:flex;gap:8px;flex-wrap:wrap}
+  .btn{min-height:40px;padding:8px 16px;border-radius:10px;border:1px solid var(--line-strong);
+    background:var(--surface);color:var(--ink);font-weight:600;font-size:14px}
+  .btn:hover{border-color:var(--ink-3)}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  @media (prefers-color-scheme: dark){ .btn.primary{color:#0b1526} }
+  .btn.small{min-height:36px;padding:6px 12px;font-size:13px}
+  .filters{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+  .fbtn{min-height:36px;padding:6px 14px;border-radius:999px;border:1px solid var(--line);background:transparent;color:var(--ink-2);font-size:13px;font-weight:600}
+  .fbtn[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+  .save-note{font-size:12px;color:var(--ink-3);margin-top:8px}
+
+  main{max-width:980px;margin:0 auto;padding:20px 16px 40px}
+  .intro{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow)}
+  .intro h2{font-size:15px;margin:0 0 6px}
+  .intro p{margin:0 0 8px;color:var(--ink-2);font-size:14px}
+  .intro p:last-child{margin-bottom:0}
+  .intro .src{font-size:12.5px;color:var(--ink-3)}
+  details.precond{margin-top:12px;border-top:1px dashed var(--line);padding-top:10px}
+  details.precond summary{min-height:36px;display:flex;align-items:center;font-weight:600;font-size:14px;cursor:pointer;color:var(--accent)}
+  details.precond ul{margin:6px 0 4px;padding-left:20px;color:var(--ink-2);font-size:14px}
+  details.precond li{margin-bottom:5px}
+
+  .section-head{display:flex;align-items:baseline;gap:10px;margin:28px 2px 12px;flex-wrap:wrap}
+  .section-head h2{font-size:19px;margin:0;font-weight:750}
+  .section-head span{font-size:13px;color:var(--ink-3)}
+
+  /* ---------- case cards ---------- */
+  .case{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);margin-bottom:16px;overflow:hidden}
+  .case-head{padding:14px 18px 10px;border-bottom:1px solid var(--line);display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap}
+  .case-id{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-weight:700;font-size:13px;
+    background:var(--accent-bg);color:var(--accent);border-radius:7px;padding:3px 9px;white-space:nowrap;margin-top:2px}
+  .case-head h3{font-size:16px;margin:0;line-height:1.45;flex:1 1 300px}
+  .case-status{font-size:12.5px;font-weight:700;padding:3px 10px;border-radius:999px;background:var(--pass-bg);color:var(--pass);white-space:nowrap}
+  .case-meta{padding:10px 18px 2px;font-size:13.5px;color:var(--ink-2)}
+  .case-meta .lbl{font-weight:700;color:var(--ink);margin-right:6px}
+  .cleanup{margin:10px 18px 14px;font-size:13.5px;color:var(--ink-2);background:var(--surface-2);border-radius:9px;padding:8px 12px}
+  .cleanup .lbl{font-weight:700;color:var(--ink);margin-right:6px}
+
+  .step{padding:14px 18px;border-top:1px solid var(--line)}
+  .step:first-of-type{border-top:none}
+  .step-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+  .step-no{font-weight:750;font-size:14px}
+  .badge{font-size:12px;font-weight:700;padding:2px 9px;border-radius:999px;border:1px solid var(--line-strong);color:var(--ink-3)}
+  .badge.st-pass{background:var(--pass-bg);color:var(--pass);border-color:transparent}
+  .badge.st-issue{background:var(--issue-bg);color:var(--issue);border-color:transparent}
+  .badge.st-pending{background:var(--pending-bg);color:var(--pending);border-color:transparent}
+  .conf{margin-left:auto;font-size:12.5px;color:var(--ink-3)}
+  .conf b{color:var(--ink-2)}
+  .kv{margin:0 0 6px;font-size:14.5px}
+  .kv .k{font-weight:700;color:var(--ink-2);font-size:13px;margin-right:8px;letter-spacing:.02em}
+  .kv.expect{background:var(--surface-2);border-radius:9px;padding:8px 12px}
+  .note-line{font-size:13.5px;color:var(--ink-2);margin:0 0 6px}
+  .note-line .k{font-weight:700;font-size:13px;margin-right:8px;color:var(--pending)}
+  .note-line.loc .k{color:var(--accent)}
+
+  .markrow{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:stretch}
+  .markbtn{flex:1 1 96px;min-height:44px;border-radius:10px;border:1.5px solid var(--line-strong);background:var(--surface);
+    font-weight:700;font-size:14px;color:var(--ink-2);display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:8px 6px}
+  .markbtn .dot{width:9px;height:9px;border-radius:50%;background:currentColor;opacity:.45}
+  .markbtn[data-val="pass"][aria-pressed="true"]{background:var(--pass-bg);border-color:var(--pass);color:var(--pass)}
+  .markbtn[data-val="issue"][aria-pressed="true"]{background:var(--issue-bg);border-color:var(--issue);color:var(--issue)}
+  .markbtn[data-val="pending"][aria-pressed="true"]{background:var(--pending-bg);border-color:var(--pending);color:var(--pending)}
+  .step[data-status="pass"]{background:linear-gradient(var(--pass-bg),var(--pass-bg)) , var(--surface);background-blend-mode:normal}
+  .step[data-status="pass"]{box-shadow:inset 0 0 0 999px color-mix(in srgb, var(--pass-bg) 45%, transparent)}
+  .step[data-status="issue"]{box-shadow:inset 0 0 0 999px color-mix(in srgb, var(--issue-bg) 55%, transparent)}
+  .step[data-status="pending"]{box-shadow:inset 0 0 0 999px color-mix(in srgb, var(--pending-bg) 55%, transparent)}
+  .notebox{display:none;margin-top:10px}
+  .step[data-status="issue"] .notebox,.step[data-status="pending"] .notebox{display:block}
+  .notebox label{font-size:13px;font-weight:600;color:var(--ink-2);display:block;margin-bottom:5px}
+  .notebox textarea{width:100%;min-height:64px;border:1px solid var(--line-strong);border-radius:9px;padding:9px 11px;
+    font:inherit;font-size:14px;background:var(--surface);color:var(--ink);resize:vertical}
+  .notebox textarea:focus{outline:2px solid var(--accent);outline-offset:1px;border-color:transparent}
+
+  /* ---------- doubts ---------- */
+  .doubt{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);margin-bottom:12px;overflow:hidden}
+  .doubt .step{border-top:none}
+  .q-id{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-weight:700;font-size:13px;
+    background:var(--pending-bg);color:var(--pending);border-radius:7px;padding:3px 9px;white-space:nowrap}
+  .doubt h3{display:inline;font-size:15px;margin:0 0 0 4px}
+  .q-state{font-size:12px;font-weight:700;padding:2px 9px;border-radius:999px;background:var(--pass-bg);color:var(--pass);white-space:nowrap}
+
+  .empty{display:none;text-align:center;color:var(--ink-3);padding:34px 16px;font-size:14px;
+    border:1.5px dashed var(--line-strong);border-radius:var(--radius);margin-bottom:16px}
+
+  /* ---------- export ---------- */
+  .export-panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:16px 18px;margin-top:28px}
+  .export-panel h2{font-size:16px;margin:0 0 6px}
+  .export-panel p{margin:0 0 12px;font-size:13.5px;color:var(--ink-2)}
+  #exportText{width:100%;min-height:180px;border:1px solid var(--line-strong);border-radius:10px;padding:11px 12px;
+    font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-size:12.5px;line-height:1.6;background:var(--surface-2);color:var(--ink);resize:vertical}
+  .export-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(16px);opacity:0;pointer-events:none;
+    background:var(--ink);color:var(--bg);font-size:14px;font-weight:600;padding:10px 18px;border-radius:999px;transition:all .22s ease;z-index:99;max-width:90vw;text-align:center}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  footer{max-width:980px;margin:0 auto;padding:0 16px 34px;font-size:12.5px;color:var(--ink-3)}
+  .hidden{display:none!important}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-in">
+    <div class="top-row">
+      <div class="top-title">
+        <h1>llms.txt 功能开关链路 · 人审版 v1 审阅</h1>
+        <p>逐条看步骤和预期对不对、有没有漏。每条点一个标记；点「有问题 / 待定」可以写一句备注。</p>
+        <div class="counts" aria-live="polite">
+          <span class="chip">共 <b id="cTotal">21</b> 条</span>
+          <span class="chip">已审 <b id="cDone">0</b></span>
+          <span class="chip pass">通过 <b id="cPass">0</b></span>
+          <span class="chip issue">有问题 <b id="cIssue">0</b></span>
+          <span class="chip pending">待定 <b id="cPending">0</b></span>
+          <span class="chip">未审 <b id="cTodo">21</b></span>
+        </div>
+        <div class="progress" role="progressbar" aria-label="审阅进度" aria-valuemin="0" aria-valuemax="21" aria-valuenow="0" id="progressBar">
+          <i class="seg-pass" id="segPass"></i><i class="seg-issue" id="segIssue"></i><i class="seg-pending" id="segPending"></i>
+        </div>
+        <div class="progress-label" id="progressLabel">还没开始审，从 TC-0008 第一步往下看就行。</div>
+      </div>
+      <div class="top-actions">
+        <button class="btn primary" id="btnExportTop" type="button">导出审阅结果</button>
+        <button class="btn" id="btnReset" type="button">清空标记</button>
+      </div>
+    </div>
+    <div class="filters" role="group" aria-label="筛选">
+      <button class="fbtn" type="button" data-filter="all" aria-pressed="true">全部</button>
+      <button class="fbtn" type="button" data-filter="todo" aria-pressed="false">只看未审</button>
+      <button class="fbtn" type="button" data-filter="issue" aria-pressed="false">只看有问题</button>
+      <button class="fbtn" type="button" data-filter="pending" aria-pressed="false">只看待定</button>
+      <button class="fbtn" type="button" data-filter="pass" aria-pressed="false">只看通过</button>
+    </div>
+    <div class="save-note">标记只在本次打开期间保留，审完点「导出审阅结果」复制发回即可。</div>
+  </div>
+</header>
+
+<main>
+  <section class="intro" aria-label="审阅说明">
+    <h2>审什么</h2>
+    <p>审的是 4 条用例的逻辑：步骤写得对不对、预期全不全、有没有漏的。存疑清单是附录，只列「用例没说清楚的地方」，不用逐条审——顺手扫一眼，能补答案的在标记里写一句就行。</p>
+    <p>本版为提测前 v1：依据测试用例 Excel 与原型编写，未读项目代码。用例来源：llms.txt 测试用例 Excel「测试用例」工作表，TC-0008～TC-0011（功能开关，均为 P0）。<strong>置信度封顶「中」</strong>：本版没有任何一条断言标「高」，每条断言的置信度只针对该条具体内容。状态：<strong>可执行</strong>——存疑全部已解答或已约定。</p>
+    <p class="src">页面内容与人审版 v1（SPEC-human-v1.md）及存疑清单 v1（DOUBTS-v1.md）原文一致，只改呈现方式。</p>
+    <details class="precond">
+      <summary>公共前置条件（4 条用例共用，点开看）</summary>
+      <ul>
+        <li>已登录测试站点后台，进入 3.0 编辑器。登录账号与测试站点由执行方提供（本次对照沿用 llms.txt trial 同一套）。</li>
+        <li>原型已读：入口、内容来源、保存按钮位置以原型所见为准；原型与真实页面不一致的地方见 Q-v1-1 与 Q-v1-10。</li>
+        <li>执行前需准备好每条用例各自要求的基线数据（见各用例前置条件）。基线内容随便填测试数据（boss 已确认），跑前记录所填的值。</li>
+        <li>视觉类预期（图标颜色、开关内文案）按用例与设计稿验收，执行时截图留存，不只凭文字记录判定。</li>
+        <li>用例表格中「自动化测试情况」一列写的是历史执行状态，仅作参考，不作为本次的证据。</li>
+      </ul>
+    </details>
+  </section>
+
+  <div class="section-head"><h2>用例审阅</h2><span>TC-0008 ～ TC-0011 · 共 11 个步骤，逐步标记</span></div>
+  <div class="empty" id="emptyCases">当前筛选下没有步骤。换个筛选看看。</div>
+
+  <!-- ============ TC-0008 ============ -->
+  <article class="case" data-case="TC-0008">
+    <div class="case-head">
+      <span class="case-id">TC-0008</span>
+      <h3>新站点首次打开 llms.txt 页签显示默认开启状态</h3>
+      <span class="case-status">可执行</span>
+    </div>
+    <p class="case-meta"><span class="lbl">前置条件</span>准备一个尚未修改过 llms.txt 配置的新站点（本次对照默认 boss 给的测试域名就是新的）。</p>
+
+    <div class="step" data-item id="TC-0008-S1" data-label="TC-0008 步骤 1">
+      <div class="step-top"><span class="step-no">步骤 1</span><span class="badge" data-badge>未审</span><span class="conf">置信度：<b>中</b>（用例原文，入口为 boss 确认）</span></div>
+      <p class="kv"><span class="k">操作</span>进入 3.0 编辑器，在左侧边栏「设置」菜单里找到「管理txt文件」并点击。</p>
+      <p class="note-line loc"><span class="k">定位依据</span>boss 已确认入口。</p>
+      <p class="kv expect"><span class="k">预期</span>弹窗默认停留在「llms.txt」页签。</p>
+      <div class="markrow" data-markrow></div>
+      <div class="notebox"><label for="note-TC-0008-S1">备注（这条哪里不对 / 缺什么）</label><textarea id="note-TC-0008-S1" data-note placeholder="例如：这句看不懂 / 这里缺一步 / 预期少了一项…"></textarea></div>
+    </div>
+
+    <div class="step" data-item id="TC-0008-S2" data-label="TC-0008 步骤 2">
+      <div class="step-top"><span class="step-no">步骤 2</span><span class="badge" data-badge>未审</span><span class="conf">置信度：<b>中</b>（用例原文，设计稿佐证「开启」与「内容来源」；内容来源的两种选项与下方分区为原型所见）</span></div>
+      <p class="kv"><span class="k">操作</span>查看功能横幅和下方区域。</p>
+      <p class="kv expect"><span class="k">预期</span>横幅显示蓝色闭锁图标和开关内「开启」，下方显示内容来源及配置区。内容来源有两个选项，「系统自动生成」（默认选中）与「自定义内容」；下方是网站概述与扩展字段区。</p>
+      <p class="note-line"><span class="k">注意</span>开关形态按用例来，不跟原型走（boss 已裁决）。</p>
+      <div class="markrow" data-markrow></div>
+      <div class="notebox"><label for="note-TC-0008-S2">备注（这条哪里不对 / 缺什么）</label><textarea id="note-TC-0008-S2" data-note placeholder="例如：这句看不懂 / 这里缺一步 / 预期少了一项…"></textarea></div>
+    </div>
+    <p class="cleanup"><span class="lbl">清理</span>本用例只查看、不改动，无需恢复。</p>
+  </article>
+
+  <!-- ============ TC-0009 ============ -->
+  <article class="case" data-case="TC-0009">
+    <div class="case-head">
+      <span class="case-id">TC-0009</span>
+      <h3>关闭开关即时隐藏配置但未保存前不改变公开文件</h3>
+      <span class="case-status">可执行</span>
+    </div>
+    <p class="case-meta"><span class="lbl">前置条件</span>功能已开启并已保存，公开地址可查看 llms.txt（基线内容见 Q-v1-4）。</p>
+
+    <div class="step" data-item id="TC-0009-S1" data-label="TC-0009 步骤 1">
+      <div class="step-top"><span class="step-no">步骤 1</span><span class="badge" data-badge>未审</span><span class="conf">置信度：<b>中</b>（用例原文，设计稿佐证「关闭」；「页签不再显示」为原型所见）</span></div>
+      <p class="kv"><span class="k">操作</span>打开「llms.txt」页签，点击功能开关。</p>
+      <p class="kv expect"><span class="k">预期</span>横幅切换为灰色闭锁图标和开关内「关闭」，下方配置区隐藏，页签也不再显示。</p>
+      <p class="note-line"><span class="k">注意</span>开关形态按用例来，不跟原型走（boss 已裁决）。</p>
+      <div class="markrow" data-markrow></div>
+      <div class="notebox"><label for="note-TC-0009-S1">备注（这条哪里不对 / 缺什么）</label><textarea id="note-TC-0009-S1" data-note placeholder="例如：这句看不懂 / 这里缺一步 / 预期少了一项…"></textarea></div>
+    </div>
+
+    <div class="step" data-item id="TC-0009-S2" data-label="TC-0009 步骤 2">
+      <div class="step-top"><span class="step-no">步骤 2</span><span class="badge" data-badge>未审</span><span class="conf">置信度：<b>中</b>（用例原文，需求佐证「开关状态属于配置的一部分，点击开关后须再点保存才写入」）</span></div>
+      <p class="kv"><span class="k">操作</span>不点击保存，另行打开站点的 llms.txt 公开地址。</p>
+      <p class="note-line loc"><span class="k">定位依据</span>公开地址就是测试站域名加 /llms.txt（boss 已确认）。</p>
+      <p class="kv expect"><span class="k">预期</span>公开地址仍显示切换前已保存的文件内容。</p>
+      <div class="markrow" data-markrow></div>
+      <div class="notebox"><label for="note-TC-0009-S2">备注（这条哪里不对 / 缺什么）</label><textarea id="note-TC-0009-S2" data-note placeholder="例如：这句看不懂 / 这里缺一步 / 预期少了一项…"></textarea></div>
+    </div>
+    <p class="cleanup"><span class="lbl">清理</span>本用例未点保存，未产生写入，无需恢复。</p>
+  </article>
+
+  <!-- ============ TC-0010 ============ -->
+  <article class="case" data-case="TC-0010">
+    <div class="case-head">
+      <span class="case-id">TC-0010</span>
+      <h3>关闭并保存后移除文件且保留原配置</h3>
+      <span class="case-status">可执行</span>
+    </div>
+    <p class="case-meta"><span class="lbl">前置条件</span>功能已开启并保存了网站概述、扩展字段或自定义内容（基线内容见 Q-v1-4）。</p>
+
+    <div class="step" data-item id="TC-0010-S1" data-label="TC-0010 步骤 1">
+      <div class="step-top"><span class="step-no">步骤 1</span><span class="badge" data-badge>未审</span><span class="conf">置信度：<b>中</b>（用例原文；保存按钮位置为原型所见）</span></div>
+      <p class="kv"><span class="k">操作</span>打开「llms.txt」页签，将功能切换为关闭，点击「保存」。保存按钮在弹窗底部右侧（不是编辑器顶部的保存）。</p>
+      <p class="kv expect"><span class="k">预期</span>保存过程中不出现二次确认。</p>
+      <div class="markrow" data-markrow></div>
+      <div class="notebox"><label for="note-TC-0010-S1">备注（这条哪里不对 / 缺什么）</label><textarea id="note-TC-0010-S1" data-note placeholder="例如：这句看不懂 / 这里缺一步 / 预期少了一项…"></textarea></div>
+    </div>
+
+    <div class="step" data-item id="TC-0010-S2" data-label="TC-0010 步骤 2">
+      <div class="step-top"><span class="step-no">步骤 2</span><span class="badge" data-badge>未审</span><span class="conf">置信度：<b>中</b>（用例原文，需求佐证提示文案与「自动关闭弹窗」）；等多久见 Q-v1-7</span></div>
+      <p class="kv"><span class="k">操作</span>查看页面提示，等待弹窗关闭。</p>
+      <p class="kv expect"><span class="k">预期</span>页面显示「已关闭 llms.txt 功能，该文件已从网站根目录移除」，弹窗关闭。</p>
+      <div class="markrow" data-markrow></div>
+      <div class="notebox"><label for="note-TC-0010-S2">备注（这条哪里不对 / 缺什么）</label><textarea id="note-TC-0010-S2" data-note placeholder="例如：这句看不懂 / 这里缺一步 / 预期少了一项…"></textarea></div>
+    </div>
+
+    <div class="step" data-item id="TC-0010-S3" data-label="TC-0010 步骤 3">
+      <div class="step-top"><span class="step-no">步骤 3</span><span class="badge" data-badge>未审</span><span class="conf">置信度：<b>中</b>（用例原文，需求佐证「被移除」与「404」）</span></div>
+      <p class="kv"><span class="k">操作</span>访问站点的 llms.txt 公开地址（测试站域名加 /llms.txt）。</p>
+      <p class="kv expect"><span class="k">预期</span>公开地址显示 404 或找不到文件。</p>
+      <div class="markrow" data-markrow></div>
+      <div class="notebox"><label for="note-TC-0010-S3">备注（这条哪里不对 / 缺什么）</label><textarea id="note-TC-0010-S3" data-note placeholder="例如：这句看不懂 / 这里缺一步 / 预期少了一项…"></textarea></div>
+    </div>
+
+    <div class="step" data-item id="TC-0010-S4" data-label="TC-0010 步骤 4">
+      <div class="step-top"><span class="step-no">步骤 4</span><span class="badge" data-badge>未审</span><span class="conf">置信度：<b>中</b>（用例原文，需求佐证「保留不清空」；切换后要点保存，boss 已确认）</span></div>
+      <p class="kv"><span class="k">操作</span>重新打开「管理txt文件」，将功能切换为开启，点击「保存」。</p>
+      <p class="kv expect"><span class="k">预期</span>先前填写的网站概述、扩展字段或自定义内容仍保留。</p>
+      <div class="markrow" data-markrow></div>
+      <div class="notebox"><label for="note-TC-0010-S4">备注（这条哪里不对 / 缺什么）</label><textarea id="note-TC-0010-S4" data-note placeholder="例如：这句看不懂 / 这里缺一步 / 预期少了一项…"></textarea></div>
+    </div>
+    <p class="cleanup"><span class="lbl">清理</span>本用例改了配置与公开文件，跑完需恢复原状；恢复到什么值、按什么步骤恢复，用例没说，见 Q-v1-8。</p>
+  </article>
+
+  <!-- ============ TC-0011 ============ -->
+  <article class="case" data-case="TC-0011">
+    <div class="case-head">
+      <span class="case-id">TC-0011</span>
+      <h3>重新开启并保存后按关闭前配置恢复文件</h3>
+      <span class="case-status">可执行</span>
+    </div>
+    <p class="case-meta"><span class="lbl">前置条件</span>功能已关闭，页面中保留关闭前的有效配置，根目录不存在其他 llms.txt。</p>
+
+    <div class="step" data-item id="TC-0011-S1" data-label="TC-0011 步骤 1">
+      <div class="step-top"><span class="step-no">步骤 1</span><span class="badge" data-badge>未审</span><span class="conf">置信度：<b>中</b>（用例原文）</span></div>
+      <p class="kv"><span class="k">操作</span>打开「llms.txt」页签，切换为开启。</p>
+      <p class="kv expect"><span class="k">预期</span>开关显示「开启」，原配置仍在对应区域显示。</p>
+      <div class="markrow" data-markrow></div>
+      <div class="notebox"><label for="note-TC-0011-S1">备注（这条哪里不对 / 缺什么）</label><textarea id="note-TC-0011-S1" data-note placeholder="例如：这句看不懂 / 这里缺一步 / 预期少了一项…"></textarea></div>
+    </div>
+
+    <div class="step" data-item id="TC-0011-S2" data-label="TC-0011 步骤 2">
+      <div class="step-top"><span class="step-no">步骤 2</span><span class="badge" data-badge>未审</span><span class="conf">置信度：<b>中</b>（用例原文，需求佐证提示文案与「自动关闭弹窗」；保存按钮位置为原型所见）；等多久见 Q-v1-7</span></div>
+      <p class="kv"><span class="k">操作</span>点击「保存」。保存按钮在弹窗底部右侧（不是编辑器顶部的保存）。</p>
+      <p class="kv expect"><span class="k">预期</span>页面显示「llms.txt 配置已保存」并关闭弹窗。</p>
+      <p class="note-line"><span class="k">注意</span>「不校验」按需求描述来，不扩展、不推测（boss 已确认，见 Q-v1-9）。</p>
+      <div class="markrow" data-markrow></div>
+      <div class="notebox"><label for="note-TC-0011-S2">备注（这条哪里不对 / 缺什么）</label><textarea id="note-TC-0011-S2" data-note placeholder="例如：这句看不懂 / 这里缺一步 / 预期少了一项…"></textarea></div>
+    </div>
+
+    <div class="step" data-item id="TC-0011-S3" data-label="TC-0011 步骤 3">
+      <div class="step-top"><span class="step-no">步骤 3</span><span class="badge" data-badge>未审</span><span class="conf">置信度：<b>中</b>（用例原文，需求佐证「重新开启并保存后按原配置恢复生成」与「校验通过，正常保存并生成文件」）</span></div>
+      <p class="kv"><span class="k">操作</span>访问站点的 llms.txt 公开地址（测试站域名加 /llms.txt）。</p>
+      <p class="kv expect"><span class="k">预期</span>公开地址重新显示按关闭前配置生成的内容。</p>
+      <div class="markrow" data-markrow></div>
+      <div class="notebox"><label for="note-TC-0011-S3">备注（这条哪里不对 / 缺什么）</label><textarea id="note-TC-0011-S3" data-note placeholder="例如：这句看不懂 / 这里缺一步 / 预期少了一项…"></textarea></div>
+    </div>
+    <p class="cleanup"><span class="lbl">清理</span>本用例改了配置与公开文件，跑完需恢复原状，见 Q-v1-8。</p>
+  </article>
+
+  <div class="section-head"><h2>存疑清单</h2><span>Q-v1-1 ～ Q-v1-10 · 全部已解答或已约定，扫一眼即可，能补答案的写在备注里</span></div>
+  <div class="empty" id="emptyDoubts">当前筛选下没有存疑条目。换个筛选看看。</div>
+
+  <article class="doubt"><div class="step" data-item id="Q-v1-1" data-label="Q-v1-1 入口路径">
+    <div class="step-top"><span class="q-id">Q-v1-1</span><h3>入口路径</h3><span class="q-state">已解答</span><span class="badge" data-badge>未审</span></div>
+    <p class="kv"><span class="k">答案</span>左侧边栏「设置」菜单里点「管理txt文件」（boss 确认）。</p>
+    <p class="kv"><span class="k">影响</span>TC-0008～TC-0011 全部步骤 1 已可执行。</p>
+    <div class="markrow" data-markrow></div>
+    <div class="notebox"><label for="note-Q-v1-1">备注 / 你能补的答案</label><textarea id="note-Q-v1-1" data-note placeholder="例如：入口实际不是这里 / 补充说明…"></textarea></div>
+  </div></article>
+
+  <article class="doubt"><div class="step" data-item id="Q-v1-2" data-label="Q-v1-2 公开地址的形式">
+    <div class="step-top"><span class="q-id">Q-v1-2</span><h3>公开地址的形式</h3><span class="q-state">已解答</span><span class="badge" data-badge>未审</span></div>
+    <p class="kv"><span class="k">答案</span>公开地址就是测试站域名加 /llms.txt（boss 确认）。</p>
+    <p class="kv"><span class="k">影响</span>TC-0009 步骤 2、TC-0010 步骤 3、TC-0011 步骤 3 已可执行。</p>
+    <div class="markrow" data-markrow></div>
+    <div class="notebox"><label for="note-Q-v1-2">备注 / 你能补的答案</label><textarea id="note-Q-v1-2" data-note placeholder="例如：地址还有别的拼法 / 补充说明…"></textarea></div>
+  </div></article>
+
+  <article class="doubt"><div class="step" data-item id="Q-v1-3" data-label="Q-v1-3 「新站点」怎么来">
+    <div class="step-top"><span class="q-id">Q-v1-3</span><h3>「新站点」怎么来</h3><span class="q-state">已解答</span><span class="badge" data-badge>未审</span></div>
+    <p class="kv"><span class="k">答案</span>默认 boss 给的测试域名就是新的（boss 确认）。</p>
+    <p class="kv"><span class="k">影响</span>TC-0008 前置条件已满足。</p>
+    <div class="markrow" data-markrow></div>
+    <div class="notebox"><label for="note-Q-v1-3">备注 / 你能补的答案</label><textarea id="note-Q-v1-3" data-note placeholder="补充说明…"></textarea></div>
+  </div></article>
+
+  <article class="doubt"><div class="step" data-item id="Q-v1-4" data-label="Q-v1-4 基线内容填什么">
+    <div class="step-top"><span class="q-id">Q-v1-4</span><h3>基线内容填什么</h3><span class="q-state">已解答</span><span class="badge" data-badge>未审</span></div>
+    <p class="kv"><span class="k">答案</span>概述和扩展字段随便填测试数据（boss 确认）。形式见原型：网站概述是一个可编辑文本框（带字数上限提示），扩展字段初始为空，点「添加字段」新增一行（字段名称+内容+删除）；原型给出的常见字段名有认证资质、定制服务、最小起订量、交货周期、主要出口市场。</p>
+    <p class="kv"><span class="k">影响</span>TC-0009/0010/0011 的「仍显示/仍保留」断言已可执行；执行时跑前记录所填的基线值。</p>
+    <div class="markrow" data-markrow></div>
+    <div class="notebox"><label for="note-Q-v1-4">备注 / 你能补的答案</label><textarea id="note-Q-v1-4" data-note placeholder="补充说明…"></textarea></div>
+  </div></article>
+
+  <article class="doubt"><div class="step" data-item id="Q-v1-5" data-label="Q-v1-5 「内容来源」是什么">
+    <div class="step-top"><span class="q-id">Q-v1-5</span><h3>「内容来源」是什么</h3><span class="q-state">已由原型解答</span><span class="badge" data-badge>未审</span></div>
+    <p class="kv"><span class="k">答案</span>内容来源有两个选项，「系统自动生成」（默认选中）与「自定义内容」。选「系统自动生成」时，下方显示网站概述与扩展字段区，并有一行说明，列出自动生成的模块；选「自定义内容」时，上述区域消失，变成一个大文本框，提示自定义内容会完全替代系统自动生成的内容。点「查看生成规则」会浮现一张卡片，列出 9 个生成模块：网站标题、网站概述、扩展内容字段、Contact Us、Social Media、Website Language Versions、Website Navigation、Product Category、FAQ。</p>
+    <p class="kv"><span class="k">影响</span>TC-0008 预期 2 已可验证，不再存疑。</p>
+    <div class="markrow" data-markrow></div>
+    <div class="notebox"><label for="note-Q-v1-5">备注 / 你能补的答案</label><textarea id="note-Q-v1-5" data-note placeholder="补充说明…"></textarea></div>
+  </div></article>
+
+  <article class="doubt"><div class="step" data-item id="Q-v1-6" data-label="Q-v1-6 TC-0010 步骤 4 切换回开启后要不要保存">
+    <div class="step-top"><span class="q-id">Q-v1-6</span><h3>TC-0010 步骤 4 切换回开启后要不要保存</h3><span class="q-state">已解答</span><span class="badge" data-badge>未审</span></div>
+    <p class="kv"><span class="k">答案</span>要点击保存（boss 确认）。</p>
+    <p class="kv"><span class="k">影响</span>TC-0010 预期 4 已可执行。</p>
+    <div class="markrow" data-markrow></div>
+    <div class="notebox"><label for="note-Q-v1-6">备注 / 你能补的答案</label><textarea id="note-Q-v1-6" data-note placeholder="补充说明…"></textarea></div>
+  </div></article>
+
+  <article class="doubt"><div class="step" data-item id="Q-v1-7" data-label="Q-v1-7 等待与超时">
+    <div class="step-top"><span class="q-id">Q-v1-7</span><h3>等待与超时</h3><span class="q-state">已约定</span><span class="badge" data-badge>未审</span></div>
+    <p class="kv"><span class="k">约定</span>弹窗关闭等待最多 10 秒，每 500 毫秒查一次；公开地址读取每次加防缓存参数、最多重试 6 次（执行方约定，沿用 trial 第四轮）。</p>
+    <p class="kv"><span class="k">影响</span>TC-0010 步骤 2、TC-0011 步骤 2 已可执行。</p>
+    <div class="markrow" data-markrow></div>
+    <div class="notebox"><label for="note-Q-v1-7">备注 / 你能补的答案</label><textarea id="note-Q-v1-7" data-note placeholder="补充说明…"></textarea></div>
+  </div></article>
+
+  <article class="doubt"><div class="step" data-item id="Q-v1-8" data-label="Q-v1-8 恢复路径">
+    <div class="step-top"><span class="q-id">Q-v1-8</span><h3>恢复路径</h3><span class="q-state">已约定</span><span class="badge" data-badge>未审</span></div>
+    <p class="kv"><span class="k">约定</span>执行前记录原始基线（配置内容与公开正文），跑完按记录恢复并验证与原始一致（执行方约定，沿用 trial 第四轮）。</p>
+    <p class="kv"><span class="k">影响</span>TC-0010/TC-0011 的清理已可执行。</p>
+    <div class="markrow" data-markrow></div>
+    <div class="notebox"><label for="note-Q-v1-8">备注 / 你能补的答案</label><textarea id="note-Q-v1-8" data-note placeholder="补充说明…"></textarea></div>
+  </div></article>
+
+  <article class="doubt"><div class="step" data-item id="Q-v1-9" data-label="Q-v1-9 「不校验」按需求描述来">
+    <div class="step-top"><span class="q-id">Q-v1-9</span><h3>「不校验」按需求描述来</h3><span class="q-state">已解答</span><span class="badge" data-badge>未审</span></div>
+    <p class="kv"><span class="k">答案</span>按需求描述来，不扩展、不推测（boss 确认）。</p>
+    <p class="kv"><span class="k">影响</span>TC-0011 预期 2、预期 3 按字面断言（保存成功、弹窗关闭、公开地址恢复内容）。</p>
+    <div class="markrow" data-markrow></div>
+    <div class="notebox"><label for="note-Q-v1-9">备注 / 你能补的答案</label><textarea id="note-Q-v1-9" data-note placeholder="补充说明…"></textarea></div>
+  </div></article>
+
+  <article class="doubt"><div class="step" data-item id="Q-v1-10" data-label="Q-v1-10 开关形态按用例来">
+    <div class="step-top"><span class="q-id">Q-v1-10</span><h3>开关形态按用例来</h3><span class="q-state">已裁决</span><span class="badge" data-badge>未审</span></div>
+    <p class="kv"><span class="k">裁决</span>按用例来，样式不跟原型走（boss 裁决）。即横幅显示蓝色闭锁图标、开关内显示「开启」/「关闭」，以用例描述为准。</p>
+    <p class="kv"><span class="k">背景</span>原型里没有拨动开关——开启态是浅蓝横幅配蓝色圆形字母 i 图标、状态标签「已开启」、右侧白色「关闭」按钮；关闭态是浅蓝灰横幅配灰色锁形图标、状态标签「已关闭」、右侧绿色「开启」按钮。</p>
+    <p class="kv"><span class="k">影响</span>TC-0008 预期 2、TC-0009 步骤 1 按用例断言。</p>
+    <div class="markrow" data-markrow></div>
+    <div class="notebox"><label for="note-Q-v1-10">备注 / 你能补的答案</label><textarea id="note-Q-v1-10" data-note placeholder="补充说明…"></textarea></div>
+  </div></article>
+
+  <section class="export-panel" id="exportPanel" aria-label="导出审阅结果">
+    <h2>导出审阅结果</h2>
+    <p>下面这份清单会随你的标记实时更新。审完点「复制结果」，粘贴发回聊天里，就能按清单改 v1。</p>
+    <textarea id="exportText" readonly aria-label="审阅结果清单"></textarea>
+    <div class="export-actions">
+      <button class="btn primary" id="btnCopy" type="button">复制结果</button>
+      <button class="btn" id="btnDownload" type="button">下载为 .md 文件</button>
+    </div>
+  </section>
+</main>
+
+<footer>内容来源：人审版 v1（SPEC-human-v1.md）与存疑清单 v1（DOUBTS-v1.md），原文呈现，未改动逻辑。本版未生成 agent 执行版，待 v2 代码补证后另出。</footer>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+(function(){
+  "use strict";
+  var STATUS = {
+    pass:   { label: "通过",   cls: "st-pass" },
+    issue:  { label: "有问题", cls: "st-issue" },
+    pending:{ label: "待定",   cls: "st-pending" }
+  };
+  var items = Array.prototype.slice.call(document.querySelectorAll("[data-item]"));
+  var state = {}; // id -> {status:"", note:""}
+  items.forEach(function(el){ state[el.id] = { status:"", note:"" }; });
+
+  // Build mark buttons for every item
+  items.forEach(function(el){
+    var row = el.querySelector("[data-markrow]");
+    if(!row) return;
+    ["pass","issue","pending"].forEach(function(val){
+      var b = document.createElement("button");
+      b.type = "button";
+      b.className = "markbtn";
+      b.setAttribute("data-val", val);
+      b.setAttribute("aria-pressed", "false");
+      b.setAttribute("aria-label", "标记 " + el.getAttribute("data-label") + " 为" + STATUS[val].label);
+      b.innerHTML = '<span class="dot" aria-hidden="true"></span>' + STATUS[val].label;
+      b.addEventListener("click", function(){
+        var cur = state[el.id].status;
+        state[el.id].status = (cur === val) ? "" : val; // click again to undo
+        syncItem(el);
+        refresh();
+        if(state[el.id].status === "issue" || state[el.id].status === "pending"){
+          var ta = el.querySelector("[data-note]");
+          if(ta){ setTimeout(function(){ ta.focus({preventScroll:true}); }, 60); }
+        }
+      });
+      row.appendChild(b);
+    });
+    var ta = el.querySelector("[data-note]");
+    if(ta){
+      ta.addEventListener("input", function(){
+        state[el.id].note = ta.value;
+        refreshExport();
+      });
+    }
+  });
+
+  function syncItem(el){
+    var s = state[el.id].status;
+    el.setAttribute("data-status", s);
+    var badge = el.querySelector("[data-badge]");
+    if(badge){
+      badge.textContent = s ? STATUS[s].label : "未审";
+      badge.className = "badge" + (s ? " " + STATUS[s].cls : "");
+    }
+    el.querySelectorAll(".markbtn").forEach(function(b){
+      b.setAttribute("aria-pressed", b.getAttribute("data-val") === s ? "true" : "false");
+    });
+  }
+
+  function counts(){
+    var c = { total: items.length, pass:0, issue:0, pending:0, done:0 };
+    items.forEach(function(el){
+      var s = state[el.id].status;
+      if(s){ c.done++; c[s]++; }
+    });
+    c.todo = c.total - c.done;
+    return c;
+  }
+
+  var filter = "all";
+  function applyFilter(){
+    var visibleCases = 0, visibleDoubts = 0;
+    items.forEach(function(el){
+      var s = state[el.id].status;
+      var show = filter === "all" ? true :
+                 filter === "todo" ? !s :
+                 s === filter;
+      // steps live inside .case / .doubt wrappers
+      var wrap = el.closest(".case") || el.closest(".doubt");
+      if(el.closest(".doubt")){ el.closest(".doubt").style.display = show ? "" : "none"; if(show) visibleDoubts++; }
+      else { el.style.display = show ? "" : "none"; if(show) visibleCases++; }
+      void wrap;
+    });
+    // hide case cards with no visible steps; hide/show their meta & cleanup with the card
+    document.querySelectorAll(".case").forEach(function(card){
+      var any = Array.prototype.some.call(card.querySelectorAll("[data-item]"), function(s){ return s.style.display !== "none"; });
+      card.style.display = any ? "" : "none";
+    });
+    document.getElementById("emptyCases").style.display = visibleCases === 0 ? "block" : "none";
+    document.getElementById("emptyDoubts").style.display = visibleDoubts === 0 ? "block" : "none";
+  }
+
+  function refresh(){
+    var c = counts();
+    document.getElementById("cTotal").textContent = c.total;
+    document.getElementById("cDone").textContent = c.done;
+    document.getElementById("cPass").textContent = c.pass;
+    document.getElementById("cIssue").textContent = c.issue;
+    document.getElementById("cPending").textContent = c.pending;
+    document.getElementById("cTodo").textContent = c.todo;
+    var pct = function(n){ return (c.total ? (n / c.total * 100) : 0) + "%"; };
+    document.getElementById("segPass").style.width = pct(c.pass);
+    document.getElementById("segIssue").style.width = pct(c.issue);
+    document.getElementById("segPending").style.width = pct(c.pending);
+    var bar = document.getElementById("progressBar");
+    bar.setAttribute("aria-valuenow", c.done); bar.setAttribute("aria-valuemax", c.total);
+    var lbl = document.getElementById("progressLabel");
+    if(c.done === 0) lbl.textContent = "还没开始审，从 TC-0008 第一步往下看就行。";
+    else if(c.todo === 0) lbl.textContent = "全部审完了，去底部导出结果发回即可。";
+    else lbl.textContent = "已审 " + c.done + " / " + c.total + "，还剩 " + c.todo + " 条未审。";
+    applyFilter();
+    refreshExport();
+  }
+
+  function buildExport(){
+    var c = counts();
+    var lines = [];
+    lines.push("# v1 审阅结果");
+    lines.push("");
+    lines.push("进度：" + c.done + "/" + c.total + " 已审（通过 " + c.pass + " · 有问题 " + c.issue + " · 待定 " + c.pending + " · 未审 " + c.todo + "）");
+    function section(title, val){
+      var list = items.filter(function(el){ return state[el.id].status === val; });
+      lines.push("");
+      lines.push("## " + title + "（" + list.length + "）");
+      if(!list.length){ lines.push("- （无）"); return; }
+      list.forEach(function(el){
+        var note = (state[el.id].note || "").trim();
+        lines.push("- " + el.getAttribute("data-label") + (note ? "：备注：" + note.replace(/\n/g, " ") : "：（无备注）"));
+      });
+    }
+    section("有问题", "issue");
+    section("待定", "pending");
+    section("通过", "pass");
+    var todo = items.filter(function(el){ return !state[el.id].status; });
+    lines.push("");
+    lines.push("## 未审（" + todo.length + "）");
+    if(!todo.length) lines.push("- （无）");
+    todo.forEach(function(el){ lines.push("- " + el.getAttribute("data-label")); });
+    return lines.join("\n");
+  }
+  function refreshExport(){
+    document.getElementById("exportText").value = buildExport();
+  }
+
+  // Filters
+  document.querySelectorAll(".fbtn").forEach(function(b){
+    b.addEventListener("click", function(){
+      filter = b.getAttribute("data-filter");
+      document.querySelectorAll(".fbtn").forEach(function(x){ x.setAttribute("aria-pressed", x === b ? "true" : "false"); });
+      applyFilter();
+    });
+  });
+
+  // Toast
+  var toastTimer = null;
+  function toast(msg){
+    var t = document.getElementById("toast");
+    t.textContent = msg; t.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ t.classList.remove("show"); }, 2400);
+  }
+
+  // Copy
+  function copyExport(){
+    var text = buildExport();
+    var ta = document.getElementById("exportText");
+    function fallback(){
+      ta.removeAttribute("readonly"); ta.select();
+      try { document.execCommand("copy"); toast("已复制，粘贴发回聊天里就行"); }
+      catch(e){ toast("复制没成功，请长按文本框手动复制"); }
+      ta.setAttribute("readonly","");
+    }
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(function(){ toast("已复制，粘贴发回聊天里就行"); }, fallback);
+    } else fallback();
+  }
+  document.getElementById("btnCopy").addEventListener("click", copyExport);
+  document.getElementById("btnExportTop").addEventListener("click", function(){
+    document.getElementById("exportPanel").scrollIntoView({behavior:"smooth", block:"start"});
+    setTimeout(copyExport, 450);
+  });
+
+  // Download
+  document.getElementById("btnDownload").addEventListener("click", function(){
+    var blob = new Blob([buildExport()], {type:"text/markdown;charset=utf-8"});
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url; a.download = "v1-review-result.md";
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 800);
+    toast("已下载 v1-review-result.md");
+  });
+
+  // Reset
+  document.getElementById("btnReset").addEventListener("click", function(){
+    items.forEach(function(el){
+      state[el.id] = { status:"", note:"" };
+      var ta = el.querySelector("[data-note]"); if(ta) ta.value = "";
+      syncItem(el);
+    });
+    refresh();
+    toast("标记已清空");
+  });
+
+  items.forEach(syncItem);
+  refresh();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,227 @@
+{
+  "time": "2026-10-29T08:18:55.194294+00:00",
+  "status": "通过",
+  "node": "v24.22.1",
+  "checks": [
+    "fixtures 路由组合/HTTP 方法/视图常量/注释排除/行号/元素/成功信号",
+    "真实正常与错误视图分支、开关定位、保存端点、helper 状态、JS success/toast 关联",
+    "两目录冷建、暖缓存与三表真实磁盘 JSON 读取",
+    "mtime-only、内容修改、新增删除、缺表重建、根路径切换、坏缓存回退",
+    "动态 Java/JS 路径不伪造及参数错误退出码",
+    "真实 inlineStr 四用例及两工作表 A:I 一致性",
+    "自造 XLSX sharedStrings/inlineStr 富文本/普通字符串/公式缓存",
+    "规格显式文件引用行号范围校验（不代替语义复核）"
+  ],
+  "citedExplicitLocations": 53,
+  "commands": [
+    {
+      "command": [
+        "node",
+        "--check",
+        "/home/hatch/workspace/goals/web-ui-automation-testing/custom-skills/spec-pathfinder/scripts/build-index.mjs"
+      ],
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "node",
+        "/home/hatch/workspace/goals/web-ui-automation-testing/custom-skills/spec-pathfinder/scripts/build-index.mjs",
+        "/home/hatch/workspace/goals/web-ui-automation-testing/custom-skills/spec-pathfinder/trial/fixtures",
+        "--out",
+        "/home/hatch/workspace/goals/web-ui-automation-testing/custom-skills/spec-pathfinder/trial/fixtures/index",
+        "--force"
+      ],
+      "exit": 0,
+      "stdout": "{\"output\":\"/home/hatch/workspace/goals/web-ui-automation-testing/custom-skills/spec-pathfinder/trial/fixtures/index\",\"routes\":6,\"elements\":6,\"actions\":4,\"scanned\":3,\"parsed\":3,\"reused\":0,\"removed\":0,\"forced\":true,\"warnings\":0}",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "node",
+        "/home/hatch/workspace/goals/web-ui-automation-testing/custom-skills/spec-pathfinder/scripts/build-index.mjs",
+        "/home/hatch/workspace/goals/web-ui-automation-testing/custom-skills/spec-pathfinder/trial/fixtures",
+        "--out",
+        "/home/hatch/workspace/goals/web-ui-automation-testing/custom-skills/spec-pathfinder/trial/fixtures/index"
+      ],
+      "exit": 0,
+      "stdout": "{\"output\":\"/home/hatch/workspace/goals/web-ui-automation-testing/custom-skills/spec-pathfinder/trial/fixtures/index\",\"routes\":6,\"elements\":6,\"actions\":4,\"scanned\":3,\"parsed\":0,\"reused\":3,\"removed\":0,\"forced\":false,\"warnings\":0}",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "node",
+        "/home/hatch/workspace/goals/web-ui-automation-testing/custom-skills/spec-pathfinder/scripts/build-index.mjs",
+        "/home/hatch/workspace/goals/web-ui-automation-testing/files/phoenix-llms-evidence",
+        "--out",
+        "/home/hatch/workspace/goals/web-ui-automation-testing/custom-skills/spec-pathfinder/trial/real/index",
+        "--force"
+      ],
+      "exit": 0,
+      "stdout": "{\"output\":\"/home/hatch/workspace/goals/web-ui-automation-testing/custom-skills/spec-pathfinder/trial/real/index\",\"routes\":8,\"elements\":74,\"actions\":8,\"scanned\":4,\"parsed\":4,\"reused\":0,\"removed\":0,\"forced\":true,\"warnings\":0}",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "node",
+        "/home/hatch/workspace/goals/web-ui-automation-testing/custom-skills/spec-pathfinder/scripts/build-index.mjs",
+        "/home/hatch/workspace/goals/web-ui-automation-testing/files/phoenix-llms-evidence",
+        "--out",
+        "/home/hatch/workspace/goals/web-ui-automation-testing/custom-skills/spec-pathfinder/trial/real/index"
+      ],
+      "exit": 0,
+      "stdout": "{\"output\":\"/home/hatch/workspace/goals/web-ui-automation-testing/custom-skills/spec-pathfinder/trial/real/index\",\"routes\":8,\"elements\":74,\"actions\":8,\"scanned\":4,\"parsed\":0,\"reused\":4,\"removed\":0,\"forced\":false,\"warnings\":0}",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "node",
+        "/home/hatch/workspace/goals/web-ui-automation-testing/custom-skills/spec-pathfinder/scripts/build-index.mjs",
+        "/tmp/spec-pathfinder-4z2qbqk_/root",
+        "--out",
+        "/tmp/spec-pathfinder-4z2qbqk_/index"
+      ],
+      "exit": 0,
+      "stdout": "{\"output\":\"/tmp/spec-pathfinder-4z2qbqk_/index\",\"routes\":6,\"elements\":6,\"actions\":4,\"scanned\":3,\"parsed\":3,\"reused\":0,\"removed\":0,\"forced\":false,\"warnings\":0}",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "node",
+        "/home/hatch/workspace/goals/web-ui-automation-testing/custom-skills/spec-pathfinder/scripts/build-index.mjs",
+        "/tmp/spec-pathfinder-4z2qbqk_/root",
+        "--out",
+        "/tmp/spec-pathfinder-4z2qbqk_/index"
+      ],
+      "exit": 0,
+      "stdout": "{\"output\":\"/tmp/spec-pathfinder-4z2qbqk_/index\",\"routes\":6,\"elements\":6,\"actions\":4,\"scanned\":3,\"parsed\":1,\"reused\":2,\"removed\":0,\"forced\":false,\"warnings\":0}",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "node",
+        "/home/hatch/workspace/goals/web-ui-automation-testing/custom-skills/spec-pathfinder/scripts/build-index.mjs",
+        "/tmp/spec-pathfinder-4z2qbqk_/root",
+        "--out",
+        "/tmp/spec-pathfinder-4z2qbqk_/index"
+      ],
+      "exit": 0,
+      "stdout": "{\"output\":\"/tmp/spec-pathfinder-4z2qbqk_/index\",\"routes\":8,\"elements\":6,\"actions\":4,\"scanned\":3,\"parsed\":1,\"reused\":2,\"removed\":0,\"forced\":false,\"warnings\":0}",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "node",
+        "/home/hatch/workspace/goals/web-ui-automation-testing/custom-skills/spec-pathfinder/scripts/build-index.mjs",
+        "/tmp/spec-pathfinder-4z2qbqk_/root",
+        "--out",
+        "/tmp/spec-pathfinder-4z2qbqk_/index"
+      ],
+      "exit": 0,
+      "stdout": "{\"output\":\"/tmp/spec-pathfinder-4z2qbqk_/index\",\"routes\":9,\"elements\":6,\"actions\":4,\"scanned\":4,\"parsed\":1,\"reused\":3,\"removed\":0,\"forced\":false,\"warnings\":0}",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "node",
+        "/home/hatch/workspace/goals/web-ui-automation-testing/custom-skills/spec-pathfinder/scripts/build-index.mjs",
+        "/tmp/spec-pathfinder-4z2qbqk_/root",
+        "--out",
+        "/tmp/spec-pathfinder-4z2qbqk_/index"
+      ],
+      "exit": 0,
+      "stdout": "{\"output\":\"/tmp/spec-pathfinder-4z2qbqk_/index\",\"routes\":8,\"elements\":6,\"actions\":4,\"scanned\":3,\"parsed\":0,\"reused\":3,\"removed\":1,\"forced\":false,\"warnings\":0}",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "node",
+        "/home/hatch/workspace/goals/web-ui-automation-testing/custom-skills/spec-pathfinder/scripts/build-index.mjs",
+        "/tmp/spec-pathfinder-4z2qbqk_/root",
+        "--out",
+        "/tmp/spec-pathfinder-4z2qbqk_/index"
+      ],
+      "exit": 0,
+      "stdout": "{\"output\":\"/tmp/spec-pathfinder-4z2qbqk_/index\",\"routes\":8,\"elements\":6,\"actions\":4,\"scanned\":3,\"parsed\":0,\"reused\":3,\"removed\":0,\"forced\":false,\"warnings\":0}",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "node",
+        "/home/hatch/workspace/goals/web-ui-automation-testing/custom-skills/spec-pathfinder/scripts/build-index.mjs",
+        "/tmp/spec-pathfinder-4z2qbqk_/other-root",
+        "--out",
+        "/tmp/spec-pathfinder-4z2qbqk_/index"
+      ],
+      "exit": 0,
+      "stdout": "{\"output\":\"/tmp/spec-pathfinder-4z2qbqk_/index\",\"routes\":8,\"elements\":6,\"actions\":4,\"scanned\":3,\"parsed\":3,\"reused\":0,\"removed\":0,\"forced\":false,\"warnings\":0}",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "node",
+        "/home/hatch/workspace/goals/web-ui-automation-testing/custom-skills/spec-pathfinder/scripts/build-index.mjs",
+        "/tmp/spec-pathfinder-4z2qbqk_/other-root",
+        "--out",
+        "/tmp/spec-pathfinder-4z2qbqk_/index"
+      ],
+      "exit": 0,
+      "stdout": "{\"output\":\"/tmp/spec-pathfinder-4z2qbqk_/index\",\"routes\":8,\"elements\":6,\"actions\":4,\"scanned\":3,\"parsed\":3,\"reused\":0,\"removed\":0,\"forced\":false,\"warnings\":0}",
+      "stderr": "缓存不可用，完整重建：Unexpected token 'b', \"bad json\" is not valid JSON"
+    },
+    {
+      "command": [
+        "node",
+        "/home/hatch/workspace/goals/web-ui-automation-testing/custom-skills/spec-pathfinder/scripts/build-index.mjs",
+        "/tmp/spec-pathfinder-4z2qbqk_/root",
+        "--out",
+        "/tmp/spec-pathfinder-4z2qbqk_/index"
+      ],
+      "exit": 0,
+      "stdout": "{\"output\":\"/tmp/spec-pathfinder-4z2qbqk_/index\",\"routes\":11,\"elements\":6,\"actions\":6,\"scanned\":5,\"parsed\":5,\"reused\":0,\"removed\":0,\"forced\":false,\"warnings\":6}",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "node",
+        "/home/hatch/workspace/goals/web-ui-automation-testing/custom-skills/spec-pathfinder/scripts/build-index.mjs",
+        "/tmp/spec-pathfinder-4z2qbqk_/missing",
+        "--out",
+        "/tmp/spec-pathfinder-4z2qbqk_/index"
+      ],
+      "exit": 1,
+      "stdout": "",
+      "stderr": "建索引失败：ENOENT: no such file or directory, realpath '/tmp/spec-pathfinder-4z2qbqk_/missing'"
+    },
+    {
+      "command": [
+        "node",
+        "/home/hatch/workspace/goals/web-ui-automation-testing/custom-skills/spec-pathfinder/scripts/build-index.mjs"
+      ],
+      "exit": 1,
+      "stdout": "",
+      "stderr": "建索引失败：必须传入代码根路径；运行 --help 查看用法"
+    },
+    {
+      "command": [
+        "node",
+        "/home/hatch/workspace/goals/web-ui-automation-testing/custom-skills/spec-pathfinder/scripts/build-index.mjs",
+        "/tmp/spec-pathfinder-4z2qbqk_/root",
+        "--out"
+      ],
+      "exit": 1,
+      "stdout": "",
+      "stderr": "建索引失败：--out 缺少目录"
+    },
+    {
+      "command": [
+        "node",
+        "--version"
+      ],
+      "exit": 0,
+      "stdout": "v24.22.1",
+      "stderr": ""
+    }
+  ]
+}

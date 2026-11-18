@@ -194,6 +194,11 @@ def checklist_text(q):
             label = row['label'] + (' 大概在哪里进入？（例：内容管理 → 产品 → 编辑）' if block == 'D' else '')
             lines += ['- ' + block + str(row.get('number', 1)) + '. ' + label + '（' + '、'.join(row['cases']) + '）：' + ' / '.join(row['options']) + '。状态：' + str(status)]
         lines += ['']
+    missing = q.get('missing_controls') or []
+    if missing:
+        lines += ['## 待补控件', '']
+        lines += ['- 待补控件 ' + str(row.get('case_id', '')) + ' ' + str(row.get('target', '')) for row in missing]
+        lines += ['']
     lines += ['回答格式：A 除 TC-xxxx 缺少外其余可用，B 同意，C 无歧义，D 页面=大概路径（多项用 D1、D2 或分号分隔）。', '']
     return '\n'.join(lines)
 

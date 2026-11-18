@@ -60,7 +60,7 @@ def daily_case_errors(base, case, cfg, execution=False):
 
 def case_errors(base, case, cfg, execution=False):
     if (case.get("registration") or {}).get("case_spec"):
-        from .specs import catalogs, spec_path, schema_errors, locator_errors, coverage
+        from .specs import catalogs, spec_path, schema_errors, locator_errors, assembled_raw_action_errors, coverage
         env, data, pages = catalogs()
         path = spec_path(base, case)
         if not path.is_file():
@@ -77,6 +77,7 @@ def case_errors(base, case, cfg, execution=False):
         if execution and script.is_file():
             body = script.read_text()
             errors.extend(locator_errors(body, pages))
+            errors.extend(assembled_raw_action_errors(body))
             if "TODO explore:" in body:
                 errors.append("Exploration TODO prevents execution")
             refs = coverage(body, str(script.relative_to((base / "runner").resolve())))

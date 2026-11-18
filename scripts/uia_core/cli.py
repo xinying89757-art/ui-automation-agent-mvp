@@ -15,6 +15,17 @@ class JsonParser(argparse.ArgumentParser):
     def error(self, message):
         raise UiaError(message)
 
+    def parse_args(self, args=None, namespace=None):
+        # Subparsers drop an optional positional that follows flags (hints add TEXT).
+        argv = sys.argv[1:] if args is None else list(args)
+        namespace, extras = super().parse_known_args(argv, namespace)
+        if extras and getattr(namespace, "command", None) == "hints" and not getattr(namespace, "text", None):
+            namespace.text = " ".join(extras)
+            extras = []
+        if extras:
+            self.error("unrecognized arguments: " + " ".join(extras))
+        return namespace
+
 
 def parser():
     p = JsonParser(description="Local UI automation workflow; commands emit JSON")
@@ -45,10 +56,10 @@ def parser():
     hints.add_argument("--prefix")
     hints.add_argument("--overwrite", action="store_true")
     hints.add_argument("--run", required=True)
-    hints.add_argument("text", nargs="?")
     hints.add_argument("--page")
     hints.add_argument("--step", action="append", default=[])
     hints.add_argument("--frame")
+    hints.add_argument("text", nargs="?")
     go.add_argument("--arm-watch", help="Comma-separated case IDs whose max-latency public assertion gets a pre-armed remote watch before the save")
     go.add_argument("--lead-minutes", type=int, default=20)
     go.add_argument("--watch-minutes", type=int, default=10)
@@ -67,6 +78,14 @@ def parser():
     kb.add_argument("--max-tokens", type=int)
     kb.add_argument("--stale-after-days", type=int, default=90)
     kb.add_argument("--candidate-after-days", type=int, default=180)
+    editor_explore = commands.add_parser("editor-explore")
+    editor_explore.add_argument("--fixture")
+    editor_explore.add_argument("--profile")
+    editor_explore.add_argument("--run")
+    editor_explore.add_argument("--out")
+    editor_smoke = commands.add_parser("editor-smoke")
+    editor_smoke.add_argument("--profile", required=True)
+    editor_smoke.add_argument("--out")
     turn = commands.add_parser("session-turn")
     turn.add_argument("--run", required=True)
     turn.add_argument("--id", required=True)
@@ -434,6 +453,11 @@ def dispatch(args, path, m):
 
 
 def execute(args):
+    if args.command in {'editor-explore', 'editor-smoke'}:
+        from .editor_explore import run_explore, run_smoke
+        if args.command == 'editor-smoke':
+            return run_smoke(args.profile, args.out)
+        return run_explore(args.fixture, args.profile, args.out, args.run or 'editor-explore')
     if args.command == 'kb':
         from . import knowledge
         if args.action == 'merge':

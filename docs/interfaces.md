@@ -251,3 +251,14 @@ review.json 包含复现、原始期望、实际失败、证据和受限脱敏�
 ```
 
 [完整协议及 schema](remote-checks.md)。限定用例的 go 正常完成后台保存、FAQ 准备和时序检查；公开前台不可达不挂起 defer_public 用例。交接文件为 `runs/<id>/remote-checks/{request.json,check.mjs}`，外部只需 Node 18+。回执保留 pass/fail/still-cached/unreachable 四类，严格绑定请求文件字节哈希、批次和版本；远程通过仍需本机恢复成功。等待远程的准备快照不发送到外部；最终回执会自动恢复，到期/取消可显式 restore，或通过 go 续跑处理到期恢复。
+
+## 内容编辑器骨架与 Midscene
+
+生成脚本只调用 `support/editor-skeleton.mjs` 与已验证的 `openTarget`。未知控件写入 `待补控件`，不发明定位器。实时冒烟和一次性控件探索见 [editor-skeleton.md](editor-skeleton.md)。
+
+```bash
+python3 scripts/uia.py login --profile prod-test --check-only
+python3 scripts/uia.py editor-smoke --profile prod-test
+python3 scripts/uia.py editor-explore --fixture assets/playwright-runner/fixtures/editor-nested/index.html --out /tmp/editor-candidates
+python3 scripts/uia.py editor-explore --profile prod-test --run GO-id
+```

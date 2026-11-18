@@ -14,8 +14,9 @@ Excel 导入接受常见中英文表头别名并跳过无用例内容的行；�
 
 | 阶段 | 输入与动作 | 完成门 | 下一步 |
 |---|---|---|---|
-| Excel 导入 | CLI 保留原文，bind-specs 索引并优先执行现有脚本 | 来源与绑定可追溯 | spec |
-| case-spec | uia-case-spec 编写；spec lint 校验 Excel 原文、词表、目标和去重 | 独立目标；未知聚合 | gen |
+| Excel 导入 | CLI 保留原文，bind-specs 索引并优先执行现有脚本 | 来源与绑定可追溯 | spec-pathfinder |
+| spec-pathfinder | `go` 按需求编译人审版 v1 与存疑清单 v1；`--code` 时索引项目代码并写执行版。产物只在 run 目录 | 稳定用例/步骤/主张编号；存疑并入一次清单 | 确认稿投影为 case-spec |
+| case-spec | 已有 pathfinder 确认稿时不再从 Excel 重推入口、步骤和预期；lint 仍校验原文、词表和去重 | 独立目标；未知聚合 | gen |
 | 预检/生成 | 环境、会话、数据预检；spec gen 按模板生成单用例文件 | 统一 fixture；标记自动推出覆盖 | execution |
 | 探索 | `next` 对缺失知识目标返回 `explore`；按入口做限定快照/生成器探索 | 成功知识回写；失败须有有界尝试证据 | spec gen / execution |
 | 运行 | run-batch/wait 保留尝试；环境→会话→数据→定位/时序→业务分诊 | 每日 1 次，夜间 2 批同版本成功 | feedback |
@@ -24,6 +25,14 @@ Excel 导入接受常见中英文表头别名并跳过无用例内容的行；�
 运行总状态为 active、waiting_human、delivery_pending 或 completed。每条用例的
 阶段和工作状态分别保存；`result` 与 `stability` 分开，避免把代码已生成或一次成功
 当成稳定完成。部分结果可随时报告，但不能将尚有未知工作表或未完成用例的运行标为完成。
+
+## spec-pathfinder
+
+`uia go` 在绑定已有脚本之后、生成新脚本之前运行 spec-pathfinder。每个需求（模块，否则工作表）写一份中文人审版和存疑清单，编号在同一次编译内稳定。没有 `--code` 时置信度最高为中。`--code 代码根` 会运行 `skills/spec-pathfinder/scripts/build-index.mjs`，把索引和 agent 执行版写到 `runs/<id>/spec-pathfinder/`，不写进 skill 目录。
+
+存疑清单并进同一次执行前清单：知识库定位不到的页面在 D 块，预期看不清或只存在于前端的控件在 E 块。D 的路径写入 `entries.yaml`；E 的结论写入 `knowledge/pathfinder-resolutions.yaml`。同一主题再次出现时不再询问。富文本这类后端索引里没有的控件标记为一次性引导探索，人工把看到的现象写进 E 块后作为知识种子。
+
+生成器只读取这份确认稿里的入口、步骤和预期。确认稿会投影成 case-spec；尚未定位的起点可以是 `?名称`。已绑定的旧脚本不因这份清单重写。
 
 ## 调度和速度
 

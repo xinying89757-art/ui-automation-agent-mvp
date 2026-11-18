@@ -68,6 +68,8 @@ python3 scripts/uia.py profile set --profile my-prod --mutation-allowed --scope 
 旧 `init --config` 接口继续兼容。配置格式仍为 `uia-config.v1`，新增 `environment`、`network`、`site` 及 `auth.provider/credentials_file/identity`。
 
 ```bash
+python3 scripts/uia.py go /path/to/cases.xlsx --profile my-prod
+python3 scripts/uia.py go /path/to/cases.xlsx --profile my-prod --code /path/to/project
 python3 scripts/uia.py init --run-id REQ-001 --config config/uia.local.yaml
 python3 scripts/uia.py import --run REQ-001 --excel /path/to/cases.xlsx
 python3 scripts/uia.py bind-specs --run REQ-001
@@ -75,6 +77,8 @@ python3 scripts/uia.py status --run REQ-001
 python3 scripts/uia.py next --run REQ-001
 python3 scripts/uia.py bind --run REQ-001 --cases TC-01 TC-02 --flows product-create --fixtures products
 ```
+
+`go` 在导入和 bind-specs 之后运行 spec-pathfinder。默认只做无代码 v1，写出 `runs/<id>/spec-pathfinder/<需求>/SPEC-human-v1.md` 与 `DOUBTS-v1.md`。`--code` 额外运行索引器并写出执行版、证据附录和 v1→v2 升级记录；索引 JSON 只留在该 run 目录。存疑并入同一次 `checklist.md`（D 为未知入口，E 为路径/预期/前端控件）。答复写入知识库后不再询问。随后的 `spec gen` 消费确认稿中的入口、步骤和预期。
 
 导入响应会提示先运行 `bind-specs`，索引 `tests/*.spec.ts` 并优先回放已有脚本。页面探索使用
 `python3 scripts/uia.py snapshot --run REQ-001 --node page|content-admin|editor`：登录、打开目标页面、

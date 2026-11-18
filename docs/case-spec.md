@@ -32,7 +32,8 @@ read_back:
 `automatable.status` 为 yes/needs-env/manual 并附 reason。required_env 只引用根目录
 preconditions.yaml。data_prep 引用 runner/knowledge/data-prep.yaml，例如 `faq.count: 5`；
 没有 handler 的条目保持 TODO，不能伪造准备成功。mutation_scope 为已授权的功能名列表。
-start_page 来自 page-map 的 pages；所有普通 target 必须是命名目标或 `?未知名字`，不接受选择器。
+start_page 来自 page-map 的 pages，或在 spec-pathfinder 尚未确认入口时写成 `?名称`。所有普通 target 必须是命名目标或 `?未知名字`，不接受选择器。
+`uia go` 会把 spec-pathfinder 确认稿投影为 case-spec。`spec gen` 在 `spec_origin: pathfinder` 时只接受与确认稿一致的步骤编号和 Excel 预期原文，不会再从原始表格另推一套操作。
 可选 `entry_route` 引用 `knowledge/entries.yaml` 中已确认的路线；生成器会用 `openTarget`/导航回放执行它。
 当用例对应已知路线（如 `article-editor-markdown-import`）时，优先将其作为 `entry_route` 或 `open` 步骤，
 不要把路线里的裸文本导航项复制成新 page-map targets。

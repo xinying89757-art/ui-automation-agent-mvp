@@ -15,6 +15,28 @@ class JsonParser(argparse.ArgumentParser):
     def error(self, message):
         raise UiaError(message)
 
+    def parse_args(self, args=None, namespace=None):
+        # Python 3.12 drops a trailing positional that follows an option (nargs='?').
+        namespace, extras = super().parse_known_args(args, namespace)
+        if not extras:
+            return namespace
+        if any(str(item).startswith('-') for item in extras):
+            self.error('unrecognized arguments: ' + ' '.join(extras))
+        subparsers = next(action for action in self._actions if isinstance(action, argparse._SubParsersAction))
+        sub = subparsers.choices.get(getattr(namespace, 'command', None))
+        target = None
+        if sub is not None:
+            for action in sub._actions:
+                if action.option_strings or action.nargs not in ('?', '*'):
+                    continue
+                if getattr(namespace, action.dest, None) in (None, []):
+                    target = action
+                    break
+        if target is None or (target.nargs == '?' and len(extras) != 1):
+            self.error('unrecognized arguments: ' + ' '.join(extras))
+        setattr(namespace, target.dest, extras[0] if target.nargs == '?' else extras)
+        return namespace
+
 
 def parser():
     p = JsonParser(description="Local UI automation workflow; commands emit JSON")
@@ -33,6 +55,7 @@ def parser():
     go.add_argument("--profile")
     go.add_argument("--cases", help="Comma-separated case IDs")
     go.add_argument("--hints", help="Optional page=rough path lines or a UTF-8 file")
+    go.add_argument("--code", help="Optional project source root. Runs spec-pathfinder v2 and writes the agent spec under the run directory")
     hints = commands.add_parser("hints")
     hints.add_argument("action", choices=["add", "confirm", "promote", "target"])
     hints.add_argument("--name")
@@ -484,7 +507,7 @@ def execute(args):
         require(args.run, 'knowledge writeback requires --run RUN_ID')
     if args.command == "go":
         from .experience import go
-        return go(args.excel, args.profile, args.cases, arm_watch=args.arm_watch, lead_minutes=args.lead_minutes, watch_minutes=args.watch_minutes, hints=args.hints)
+        return go(args.excel, args.profile, args.cases, arm_watch=args.arm_watch, lead_minutes=args.lead_minutes, watch_minutes=args.watch_minutes, hints=args.hints, code_root=args.code)
     if args.command == "env":
         return {"environments": profiles.presets()}
     if args.command == "setup":

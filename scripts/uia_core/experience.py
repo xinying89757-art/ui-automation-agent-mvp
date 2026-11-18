@@ -68,12 +68,13 @@ def rows(base, m):
     from .preconditions import normalize
     for marker in m.get('missing_controls') or []:
         target = str(marker.get('target') or '').strip()
+        control = re.sub(r'^[A-Za-z]\d+\s+', '', target)
         case_id = str(marker.get('case_id') or '').strip()
         if not target:
             continue
         existing = next((row for row in result if row.get('block') == 'E' and
-                         (normalize(target) == normalize(row.get('subject', '')) or
-                          normalize(target) in normalize(row.get('label', '')))), None)
+                         (normalize(control) == normalize(row.get('subject', '')) or
+                          normalize(control) in normalize(row.get('label', '')))), None)
         if existing:
             existing['cases'] = sorted(set(existing.get('cases', [])) | ({case_id} if case_id else set()))
             existing.setdefault('missing_controls', []).append(marker)
@@ -81,7 +82,7 @@ def rows(base, m):
         result.append({'key': 'missing-control:' + digest([case_id, target]), 'block': 'E',
                        'label': '待补控件：' + target, 'subject': target,
                        'cases': [case_id] if case_id else [],
-                       'options': ['已记录探索结论', '挂起'], 'kind': 'missing_control',
+                       'options': ['按原文可观察', '挂起'], 'kind': 'missing_control',
                        'missing_controls': [marker]})
     guided = [row.get('subject', '') for row in result if row.get('kind') == 'guided_exploration']
     result = [row for row in result if row.get('block') != 'D' or not any(

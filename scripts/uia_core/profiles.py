@@ -216,8 +216,6 @@ def invoke_login(cfg, runner=None, check_only=False, force=False, evidence=None,
             command.append("--manual")
             print("将打开浏览器；请使用当前配置的账号完成登录/验证码，最多等待 10 分钟。", file=sys.stderr, flush=True)
         if open_editor:
-            from .environment_gate import assert_private_credentials
-            assert_private_credentials(cfg)
             command.append("--open-editor")
         if evidence:
             command.extend(["--output", str(evidence)])

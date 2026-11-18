@@ -225,7 +225,6 @@ def calculate(base, m, final_report_at=None):
         "human_interventions_per_case": (interventions / len(cases)) if cases else None,
         "kb_hit_rate": hit,
         "knowledge_injected_tokens": {"count": len(injected), "p50": percentile(injected, .50), "p95": percentile(injected, .95)},
-        "rescued_by_midscene": rescued_count,
         "scope_violations": int(m.get("scope_violations", 0)),
         "leak_hits": len(m.get("leak_hits", [])),
         "unreviewed_assertion_changes": max(int(m.get("unreviewed_assertion_changes", 0)), assertion_changes),

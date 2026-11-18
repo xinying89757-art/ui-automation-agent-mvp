@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
-from uia_core import specs
+from uia_core import experience, specs
 from uia_core.editor_explore import validate_candidates, write_candidates
 from uia_core.metrics import calculate
 
@@ -25,8 +25,25 @@ class EditorSkeletonTests(unittest.TestCase):
             specs.note_missing_control(base, manifest, 'T1', 'S1 ?slash.card')
             text = (base / 'missing-controls.md').read_text(encoding='utf-8')
             self.assertIn('待补控件 T1 S1 ?slash.card', text)
-            self.assertIn('## 待补控件', (base / 'checklist.md').read_text(encoding='utf-8'))
+            self.assertNotIn('## 待补控件', (base / 'checklist.md').read_text(encoding='utf-8'))
             self.assertEqual(manifest['cases']['T1']['missing_controls'], ['S1 ?slash.card'])
+
+    def test_missing_control_merges_into_pathfinder_e_checklist(self):
+        from unittest.mock import patch
+        marker = {'case_id': 'T1', 'target': 'S1 保存按钮', 'marker': '待补控件'}
+        manifest = {'cases': {'T1': {}}, 'questions': {}, 'config': {},
+                    'missing_controls': [marker]}
+        pathfinder_row = {'key': 'pathfinder-save', 'block': 'E', 'label': '请确认保存按钮是否可见',
+                          'subject': '保存按钮', 'cases': ['T1'], 'options': ['按原文可观察', '挂起'],
+                          'kind': 'expected'}
+        with patch('uia_core.preconditions.triage', return_value=[]), \
+             patch('uia_core.entries.page_rows', return_value=[]), \
+             patch('uia_core.pathfinder.checklist_rows', return_value=[pathfinder_row]):
+            rows = experience.rows(Path('/tmp/nonexistent-uia-run'), manifest)
+        e_rows = [row for row in rows if row['block'] == 'E']
+        self.assertEqual(len(e_rows), 1)
+        self.assertEqual(e_rows[0]['key'], 'pathfinder-save')
+        self.assertEqual(e_rows[0]['missing_controls'], [marker])
 
     def test_exploration_candidates_stay_needs_review(self):
         with tempfile.TemporaryDirectory() as temp:

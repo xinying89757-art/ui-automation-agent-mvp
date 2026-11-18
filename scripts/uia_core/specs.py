@@ -411,15 +411,6 @@ def note_missing_control(base, m, cid, label):
     lines = ['# 待补控件', '']
     lines.extend('- 待补控件 ' + row['case_id'] + ' ' + row['target'] for row in bucket)
     (Path(base) / 'missing-controls.md').write_text('\n'.join(lines) + '\n', encoding='utf-8')
-    checklist = Path(base) / 'checklist.md'
-    if checklist.is_file():
-        section = '\n## 待补控件\n\n' + '\n'.join('- 待补控件 ' + row['case_id'] + ' ' + row['target'] for row in bucket) + '\n'
-        body = checklist.read_text(encoding='utf-8')
-        if '## 待补控件' in body:
-            body = body.split('## 待补控件', 1)[0].rstrip() + section
-        else:
-            body = body.rstrip() + section
-        checklist.write_text(body, encoding='utf-8')
 
 
 def _control_label(entry, name):

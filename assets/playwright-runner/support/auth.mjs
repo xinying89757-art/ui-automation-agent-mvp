@@ -222,6 +222,24 @@ export async function openSiteArea(page, cfg, area) {
   const label = selected.kind === 'card' || area === '内容管理' ? area : '网页编辑';
   const action = root.getByText(label, { exact: true }).first();
   if (!(await visible(action))) fail('SITE_PERMISSION_DENIED', '当前账号没有所需站点管理入口', ['切换有权限账号', '暂停相关用例']);
+  // The cloud shell can leave several fixed account/browser/network notices over the
+  // site card. They intercept clicks even though the underlying entry reports visible.
+  // Dismiss only those explicitly dismissible notices before opening the requested area.
+  const notices = page.locator('.member-warning-box');
+  for (let index = await notices.count() - 1; index >= 0; index -= 1) {
+    const notice = notices.nth(index);
+    const close = notice.locator('.member-warning-close').first();
+    if (await visible(notice) && await visible(close)) {
+      await close.click({ timeout: 2000 }).catch(() => {});
+      await notice.waitFor({ state: 'hidden', timeout: 1200 }).catch(() => {});
+    }
+  }
+  if (selected.kind === 'card') {
+    // Site cards reveal their administration links on hover in the current cloud shell.
+    await root.hover().catch(() => {});
+    await action.scrollIntoViewIfNeeded().catch(() => {});
+    await action.waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
+  }
   if (selected.kind === 'platform') {
     const popupPromise = page.context().waitForEvent('page', { timeout: 30000 });
     await action.click();

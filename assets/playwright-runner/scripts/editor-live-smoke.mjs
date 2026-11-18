@@ -40,15 +40,17 @@ try {
   else await page.screenshot({ path: shot });
   const marker = 'uia-smoke';
   const shared = { rescues: [], keyboardFallbacks: 0, lastReadBack: null };
-  await stage('type-text', () => typeText(page, marker, { session: shared }));
   let inserted = false;
   try {
-    await stage('insert-component', () => insertComponent(page, 'FAQ', { session: shared }));
+    await stage('insert-component-card-click', () => insertComponent(page, 'Markdown', {
+      session: shared, allowKeyboardFallback: false,
+    }));
     inserted = true;
   } catch (error) {
     if (error?.code !== 'CONTROL_MISSING') throw error;
     steps.push({ name: 'insert-component-absent', ok: true, ms: 0, code: 'CONTROL_MISSING' });
   }
+  await stage('type-text', () => typeText(page, marker, { session: shared }));
   await stage('save', () => saveEditor(page));
   await stage('read-back', () => readBack(page, { value: marker }));
   const after = path.join(outDir, '02-after-save.png');

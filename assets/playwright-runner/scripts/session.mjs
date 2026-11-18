@@ -40,10 +40,14 @@ export async function runPreflight(cfg, browser, { force = false, manual = false
   const started = Date.now();
   // Use the editor skeleton's shared session-first login, site selection, and editor entry.
   // authenticatedSession loads saved storage state first and allows one password fallback.
-  const session = await openSkeletonSession(browser, { cfg, force, manual });
-  const authenticatedMs = Date.now() - started;
-  const editorStarted = Date.now();
+  let session;
+  let authenticatedMs = null;
+  let editorStarted = null;
+  const authPath = () => session?.reused ? 'session' : session?.refreshed ? 'password' : null;
   try {
+    session = await openSkeletonSession(browser, { cfg, force, manual });
+    authenticatedMs = Date.now() - started;
+    editorStarted = Date.now();
     const editor = createContentEditor(session.page, { cfg });
     const selected = await editor.enterSite();
     await editor.openContentEditor();
@@ -56,7 +60,14 @@ export async function runPreflight(cfg, browser, { force = false, manual = false
       editor: { opened: true, area: '编辑网站' },
       reused: session.reused, refreshed: session.refreshed,
       timings: { authenticated_ms: authenticatedMs, editor_ms: editorMs, total_ms: Date.now() - started } };
-  } finally { await session.context.close(); }
+  } catch (error) {
+    error.preflight = {
+      auth_path: authPath(),
+      timings: { ...(authenticatedMs !== null ? { authenticated_ms: authenticatedMs } : {}),
+        ...(editorStarted !== null ? { editor_ms: Date.now() - editorStarted } : {}), total_ms: Date.now() - started },
+    };
+    throw error;
+  } finally { await session?.context?.close(); }
 }
 
 export async function runSession(cfg, browser, { checkOnly = false, force = false, manual = false } = {}) {
@@ -99,7 +110,8 @@ export async function main(args = process.argv.slice(2)) {
   } catch (error) {
     const known = error instanceof WorkflowError;
     console.log(JSON.stringify({ ok: false, code: known ? error.code : 'BROWSER_OPERATION_FAILED',
-      error: safeError(error, cfg), choices: known ? error.choices : ['检查运行依赖', '重新执行预检', '暂停相关用例'] }));
+      error: safeError(error, cfg), choices: known ? error.choices : ['检查运行依赖', '重新执行预检', '暂停相关用例'],
+      ...(error.preflight ? { auth_path: error.preflight.auth_path, timings: error.preflight.timings } : {}) }));
     process.exitCode = 2;
   } finally { await browser?.close(); }
 }

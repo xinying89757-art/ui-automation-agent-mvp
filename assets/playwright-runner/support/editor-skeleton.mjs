@@ -318,7 +318,7 @@ export async function insertComponent(page, name, options = {}) {
   } catch {
     const rescued = await rescueClick(page, `slash card ${name}`, session, options);
     if (!rescued) {
-      const typed = await keyboardFallback(page, name, session);
+      const typed = options.allowKeyboardFallback === false ? false : await keyboardFallback(page, name, session);
       if (!typed) throw new SkeletonError('CONTROL_MISSING', '未找到可点击的组件卡片');
     }
   }

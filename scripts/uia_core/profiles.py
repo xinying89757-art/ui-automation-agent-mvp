@@ -227,8 +227,14 @@ def invoke_login(cfg, runner=None, check_only=False, force=False, evidence=None,
             diagnostic = scrub_text(result.stderr or "no stdout/stderr", cfg).strip()[:240]
             require(False, "Login helper did not produce JSON; check Node/browser installation",
                     {"exit_code": result.returncode, "diagnostic": diagnostic})
-        require(result.returncode == 0 and payload.get("ok"), payload.get("error", "Login failed"),
-                {"code": payload.get("code"), "choices": payload.get("choices", [])})
+        safe_details = {"code": payload.get("code"), "choices": payload.get("choices", [])}
+        if isinstance(payload.get("timings"), dict):
+            safe_details["timings"] = {key: int(value) for key, value in payload["timings"].items()
+                                        if key in {"authenticated_ms", "editor_ms", "total_ms"}
+                                        and isinstance(value, (int, float)) and not isinstance(value, bool)}
+        if payload.get("auth_path") in {"session", "password"}:
+            safe_details["auth_path"] = payload["auth_path"]
+        require(result.returncode == 0 and payload.get("ok"), payload.get("error", "Login failed"), safe_details)
         return {k: v for k, v in payload.items() if k != "ok"}
     finally:
         Path(temp).unlink(missing_ok=True)

@@ -362,6 +362,11 @@ def consume_batch(base, m, exit_code=None):
             row.setdefault("errors", []).append("Source/dependency changed during execution")
         if result == "passed" and (not prepared or not (clean or cleanup_pending) or lifecycle.get("batch_id") != batch["id"] or row.get("retry") != 0):
             result = "automation_failure"
+        from .failure_class import class_for_result, failure_class
+        error_text = "\n".join(str(item) for item in (row.get("errors") or []))
+        if (failure_class(error_text) == "environment" or row.get("failure_class") == "environment") and result == "automation_failure":
+            result = "environment_blocked"
+        failure_kind = row.get("failure_class") if row.get("failure_class") in {"environment", "automation", "product", "suspended"} else class_for_result(result, error_text)
         attempt = {"batch_id": batch["id"], "at": now(), "version": version, "result": result,
                    "script": batch.get("scripts", {}).get(cid),
                    "evidence": batch["report"], "evidence_sha256": file_hash(report_path),
@@ -370,7 +375,8 @@ def consume_batch(base, m, exit_code=None):
                    "setup_started": row.get("setup_started", False),
                    "duration_ms": row.get("duration_ms", 0), "errors": row.get("errors", []),
                    "attachments": row.get("attachments", []),
-                   "assertions": row.get("assertions", []), "failure_stage": row.get("failure_stage")}
+                   "assertions": row.get("assertions", []), "failure_stage": row.get("failure_stage"),
+                   "failure_class": failure_kind}
         attempt["successful_steps"] = [str(step) for step in row.get("successful_steps", [])
                                        if isinstance(step, str) and re.fullmatch(r"[A-Za-z0-9_.-]+", step)]
         if row.get("read_back"):
@@ -391,6 +397,10 @@ def consume_batch(base, m, exit_code=None):
         if attempt["executed"] and not m.get("first_result_at"):
             m["first_result_at"] = now()
         c["result"] = result
+        if failure_kind:
+            c["failure_class"] = failure_kind
+        elif result == "passed":
+            c.pop("failure_class", None)
         if result == "save_not_persisted":
             c["classification"] = {"reason": "保存未生效（后台读回不一致）", "suspected_product_defect": True, "at": now()}
         if result == "passed" and cleanup_pending:

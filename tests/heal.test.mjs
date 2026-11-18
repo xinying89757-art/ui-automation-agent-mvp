@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { bestCandidate, classifyFailure, gateProposal, scoreCandidate } from '../assets/playwright-runner/support/heal.mjs';
+import { bestCandidate, classifyFailure, failureClass, gateProposal, scoreCandidate } from '../assets/playwright-runner/support/heal.mjs';
 
 const fingerprint = { tag: 'a', name: '管理txt文件', ancestors: ['#site_customize_txt'] };
 
@@ -11,6 +11,18 @@ test('fingerprint score prefers the named control and rejects a tie', () => {
   assert.equal(bestCandidate([other, match], fingerprint).selector, '#site_customize_txt a');
   assert.equal(bestCandidate([match, { ...match, selector: '#dup a' }], fingerprint), null);
   assert.equal(bestCandidate([{ ...match, visible: false }], fingerprint), null);
+});
+
+test('site-not-found and login or site-load timeouts are environment, not automation', () => {
+  assert.equal(failureClass('SITE_NOT_ACCESSIBLE'), 'environment');
+  assert.equal(failureClass('当前账号下未找到目标网站'), 'environment');
+  assert.equal(failureClass('page.goto: Timeout 30000ms exceeded.'), 'environment');
+  assert.equal(failureClass('LOGIN_FAILED 登录未完成'), 'environment');
+  assert.equal(classifyFailure('未找到目标网站，请核对当前账号可见站点').kind, 'environment');
+  assert.equal(classifyFailure('未找到目标网站，请核对当前账号可见站点').accept, false);
+  assert.equal(failureClass('Timeout 10000ms exceeded.\nwaiting for locator("#save")'), 'automation');
+  assert.equal(failureClass('UIA_BUSINESS_FAILURE expected text mismatch'), 'product');
+  assert.equal(failureClass('缺控件：保存按钮'), 'suspended');
 });
 
 test('healer accepts a locator diff and refuses an assertion edit', () => {

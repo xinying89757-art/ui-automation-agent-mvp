@@ -15,6 +15,19 @@ class JsonParser(argparse.ArgumentParser):
     def error(self, message):
         raise UiaError(message)
 
+    def parse_args(self, args=None, namespace=None):
+        # Python 3.12 argparse drops an optional positional that follows options.
+        # `hints add --run R 页面=路径` is the documented form; move that trailing
+        # sentence to where this interpreter still accepts it.
+        if args is not None:
+            args = list(args)
+            if len(args) >= 4 and args[0] == "hints" and args[1] == "add" and not str(args[-1]).startswith("-"):
+                flags = {"--run", "--page", "--frame", "--prefix", "--report", "--name", "--locator",
+                         "--evidence", "--resource", "--saved-by", "--for", "--step"}
+                if args[-2] not in flags:
+                    args.insert(2, args.pop())
+        return super().parse_args(args, namespace)
+
 
 def parser():
     p = JsonParser(description="Local UI automation workflow; commands emit JSON")
@@ -35,6 +48,7 @@ def parser():
     go.add_argument("--hints", help="Optional page=rough path lines or a UTF-8 file")
     hints = commands.add_parser("hints")
     hints.add_argument("action", choices=["add", "confirm", "promote", "target"])
+    hints.add_argument("text", nargs="?")
     hints.add_argument("--name")
     hints.add_argument("--locator", help='target: JSON {"frames":[...],"css"|"role"+"name"|"text":...}')
     hints.add_argument("--evidence", help="target: exploration artifact that shows it")
@@ -45,13 +59,15 @@ def parser():
     hints.add_argument("--prefix")
     hints.add_argument("--overwrite", action="store_true")
     hints.add_argument("--run", required=True)
-    hints.add_argument("text", nargs="?")
     hints.add_argument("--page")
     hints.add_argument("--step", action="append", default=[])
     hints.add_argument("--frame")
     go.add_argument("--arm-watch", help="Comma-separated case IDs whose max-latency public assertion gets a pre-armed remote watch before the save")
     go.add_argument("--lead-minutes", type=int, default=20)
     go.add_argument("--watch-minutes", type=int, default=10)
+    go.add_argument("--smoke-size", type=int, default=3, help="Representative cases run before a larger batch (default 3)")
+    go.add_argument("--smoke-bar", type=float, default=1.0, help="Minimum smoke pass rate required before the full run (default 1)")
+    go.add_argument("--max-first-result-minutes", type=float, default=26, help="Abort execution when the first result takes longer than this (default 26)")
     knowledge = commands.add_parser("knowledge")
     knowledge.add_argument("action", choices=["merge", "writeback", "validate", "prune"])
     knowledge.add_argument("--from", dest="source_dir")
@@ -172,7 +188,7 @@ def parser():
         if name in {"register", "feedback"}:
             cmd.add_argument("--file", required=True)
         if name in {"preflight", "repair", "resolve-fixture", "replay-demo"}:
-            cmd.add_argument("--evidence", required=True)
+            cmd.add_argument("--evidence", required=name != "preflight")
         if name == "question":
             cmd.add_argument("--kind", choices=["login", "environment", "product", "demo", "record_request", "column_mapping", "preconditions"], required=True)
             cmd.add_argument("--subject", required=True)
@@ -290,7 +306,12 @@ def dispatch(args, path, m):
         return workflow.register(base, m, args.case, read_json(args.file))
     if cmd == "preflight":
         workflow.refresh(base, m)
-        return runtime.preflight(base, m, args.evidence)
+        if getattr(args, "evidence", None):
+            return runtime.preflight(base, m, args.evidence)
+        from .preflight_gate import ensure_environment
+        blocked = ensure_environment(base, m)
+        return {"preflight": m.get("preflight"), "environment_preflight": m.get("environment_preflight"),
+                "batch_outcome": m.get("batch_outcome"), "blocked": bool(blocked), **(blocked or {})}
     if cmd == "question":
         from .knowledge import match_run
         match_run(base, m)
@@ -484,7 +505,9 @@ def execute(args):
         require(args.run, 'knowledge writeback requires --run RUN_ID')
     if args.command == "go":
         from .experience import go
-        return go(args.excel, args.profile, args.cases, arm_watch=args.arm_watch, lead_minutes=args.lead_minutes, watch_minutes=args.watch_minutes, hints=args.hints)
+        return go(args.excel, args.profile, args.cases, arm_watch=args.arm_watch, lead_minutes=args.lead_minutes,
+                  watch_minutes=args.watch_minutes, hints=args.hints, smoke_size=args.smoke_size, smoke_bar=args.smoke_bar,
+                  max_first_result_minutes=args.max_first_result_minutes)
     if args.command == "env":
         return {"environments": profiles.presets()}
     if args.command == "setup":

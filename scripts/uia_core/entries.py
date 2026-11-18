@@ -260,7 +260,11 @@ def navigation_hint(hint):
         if not known or not known.get('open_target'):
             return hint
         hint['open_target'] = known['open_target']
-    hint['steps'] = ['click:text=' + label(p) for p in parts[1:] if label(p)]
+    from .actions import key_from_phrase
+    def route_action(text):
+        key = key_from_phrase(text)
+        return 'press:' + key if key else 'click:text=' + text
+    hint['steps'] = [route_action(label(p)) for p in parts[1:] if label(p)]
     hint['route_source'] = 'path_text'
     return hint
 
@@ -495,7 +499,7 @@ def promote(base, m, report, prefix=None, page=None, overwrite=False, for_placeh
                                                    item.get('placeholder'), item.get('target'))
         require(cid in m.get('cases', {}) and isinstance(step_id, str) and step_id and
                 isinstance(placeholder, str) and placeholder and
-                re.fullmatch(r'[a-z0-9][a-z0-9.-]*', target_name or ''),
+                re.fullmatch(r'[a-z0-9][a-z0-9._-]*', target_name or ''),
                 'Invalid generator case/step/placeholder/catalog target mapping')
         require(placeholder.startswith(('?', '？')) or target_name == placeholder,
                 'Concrete missing spec targets must keep their catalog name')
@@ -558,7 +562,9 @@ def promote(base, m, report, prefix=None, page=None, overwrite=False, for_placeh
         put(catalog_name, locator_target(locator), count if type(count) is int else None)
     steps = []
     counts = route.get('step_match_counts') or route.get('match_counts') or {}
+    from .actions import normalize_route_step
     for index, step in enumerate(route.get('route') or [], 1):
+        step = normalize_route_step(step)
         count = (step.get('match_count', step.get('count')) if isinstance(step, dict) else None)
         count = count if type(count) is int else counts.get(str(index), counts.get(index)) if isinstance(counts, dict) else None
         require(count is None or count == 1,
@@ -566,6 +572,11 @@ def promote(base, m, report, prefix=None, page=None, overwrite=False, for_placeh
         if isinstance(step, dict):
             verb, target, value = step.get('verb'), step.get('target'), step.get('value')
             require(verb in {'goto', 'click', 'hover', 'fill', 'type', 'press', 'wait'} and target, 'unsupported route step: ' + json.dumps(step, ensure_ascii=False))
+            if verb == 'press' and (isinstance(target, str) or isinstance(value, str)):
+                key = value if isinstance(value, str) and value else target
+                require(isinstance(key, str) and key, 'press step needs a key')
+                steps.append('press:' + key)
+                continue
             if isinstance(target, str) and (verb in {'goto', 'press', 'wait'} or target in targets or re.match(r'^(text|role)=', target)):
                 steps.append(verb + ':' + target + ('=' + str(value) if verb in {'fill', 'type'} and value is not None else ''))
                 continue
@@ -622,7 +633,7 @@ def promote(base, m, report, prefix=None, page=None, overwrite=False, for_placeh
 
 def add_target(base, m, name, locator, evidence, overwrite=False, resource=None, saved_by=None, for_placeholders=None):
     """Register one observed target (from a snapshot/generator artifact) without fabricating a report."""
-    require(re.fullmatch(r'[a-z0-9][a-z0-9.-]*', name or ''), 'target name: lowercase dotted, e.g. faq-editor.add')
+    require(re.fullmatch(r'[a-z0-9][a-z0-9._-]*', name or ''), 'target name: lowercase dotted or underscored, e.g. faq-editor.add or faq_editor.add')
     path = base / evidence
     require(evidence and path.is_file() and base.resolve() in path.resolve().parents, '--evidence must be an existing artifact inside the run (exploration/... or evidence/...)')
     if resource:

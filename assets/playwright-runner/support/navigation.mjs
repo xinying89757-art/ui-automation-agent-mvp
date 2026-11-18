@@ -3,6 +3,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { runtimeRoot, loadConfig } from './environment.mjs';
+import { keyFromPhrase } from './key-phrase.mjs';
+export { keyFromPhrase };
 import { openLlms, openSettings } from '../flows/llms-txt.mjs';
 // Reuse the YAML parser shipped with the locked Playwright runtime.
 const require = createRequire(import.meta.url);
@@ -265,7 +267,9 @@ export async function navigateSnapshot(page, cfg, { goto, openTarget: named, ste
           if (destination?.context) page = destination;
         } else {
           const step = parseStep(action);
-          if (step.verb === 'wait') await page.waitForTimeout(Number(step.value));
+          const phraseKey = step.verb === 'click' ? keyFromPhrase(action) : null;
+          if (phraseKey) await page.keyboard.press(phraseKey);
+          else if (step.verb === 'wait') await page.waitForTimeout(Number(step.value));
           else if (step.verb === 'press') await page.keyboard.press(step.value);
           else {
             const actionOptions = index < entrySteps ? { ...options, frame: undefined, scope: undefined } : options;

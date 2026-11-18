@@ -21,7 +21,9 @@ Excel 导入接受常见中英文表头别名并跳过无用例内容的行；�
 | 运行 | run-batch/wait 保留尝试；环境→会话→数据→定位/时序→业务分诊 | 每日 1 次，夜间 2 批同版本成功 | feedback |
 | 反馈交付 | 生成审核候选与结果 | 长期写回经用户审核 | completed |
 
-运行总状态为 active、waiting_human、delivery_pending 或 completed。每条用例的
+`uia go` 在导入之后先做环境预检。登录、目标站点不可选或内容编辑器打不开时，整批记为 `environment_blocked`（失败分类 `environment`）并停止，不执行用例。批次大于冒烟条数时，先跑 3 条代表用例（可用 `--smoke-size` / `--smoke-bar` 调整）；达标后才跑全量。执行开始后首个结果超过 26 分钟（`--max-first-result-minutes`）则不再开下一批。
+
+运行总状态为 active、waiting_human、delivery_pending 或 completed。环境预检失败时运行停在 waiting_human，并带 `batch_outcome=environment_blocked`。每条用例的
 阶段和工作状态分别保存；`result` 与 `stability` 分开，避免把代码已生成或一次成功
 当成稳定完成。部分结果可随时报告，但不能将尚有未知工作表或未完成用例的运行标为完成。
 
@@ -60,9 +62,10 @@ owner marker 准备独有数据，验证起点后才执行业务操作；无论�
 每日交付把 `stability_passes` 设为 1。夜间回归设为 2，不能用重试、同一批里的页面复用
 或历史 PASS 凑够第二次。一批内部可以复用编辑器会话，那只减少打开编辑器的时间。
 
-业务断言通过 `businessAssertion` 标识，失败保留为 business_failure。准备、定位、
-等待或生成错误为 automation_failure，保存诊断后最多两轮修复。修复不修改业务期望。
-环境与产品问题进入问题队列；不能继续的用例最终明确分类。
+业务断言通过 `businessAssertion` 标识，失败保留为 business_failure，失败分类为 product。准备、定位、
+等待或生成错误为 automation_failure（分类 automation），保存诊断后最多两轮修复。修复不修改业务期望。
+`SITE_NOT_ACCESSIBLE`、未找到目标网站、登录失败和站点加载超时是 environment，不是自动化失败。
+挂起为 suspended。环境与产品问题进入问题队列；不能继续的用例最终明确分类。报告给出四类占比。
 
 清理失败写入共享 fixture 污染标记，同批后续依赖用例也在准备前检查标记；独立
 fixtures 可继续。清理恢复需要实际证据，通过 `resolve-fixture` 清除对应标记。

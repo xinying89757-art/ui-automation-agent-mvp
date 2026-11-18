@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { checkEnvironment, contextOptions, loadConfig, launchOptions, resolveConfig, WorkflowError } from '../support/environment.mjs';
-import { authenticatedSession, privateWrite, snapshotSession } from '../support/auth.mjs';
+import { authenticatedSession, openSiteArea, privateWrite, snapshotSession } from '../support/auth.mjs';
 import { scrubText } from '../support/redact.mjs';
 
 function safeError(error, cfg) {
@@ -18,7 +18,7 @@ function safeError(error, cfg) {
   return text.replace(/\s+/g, ' ').slice(0, 400);
 }
 
-export async function runSession(cfg, browser, { checkOnly = false, force = false, manual = false } = {}) {
+export async function runSession(cfg, browser, { checkOnly = false, force = false, manual = false, openEditor = false } = {}) {
   if (checkOnly) {
     const context = await browser.newContext(contextOptions(cfg));
     try { return { status: 'environment_verified', environment: await checkEnvironment(await context.newPage(), cfg) }; }
@@ -43,8 +43,17 @@ export async function runSession(cfg, browser, { checkOnly = false, force = fals
         targets.public = { url: cfg.targets.public, reachable: false, target_visible: false, authenticated: false, error: safeError(error, cfg) };
       } finally { await visitor.close(); }
     }
+    let editor;
+    if (openEditor) {
+      const opened = await openSiteArea(session.page, cfg, '编辑网站');
+      let hostName = '';
+      try { hostName = new URL(opened.url()).host; } catch { hostName = ''; }
+      editor = { opened: true, host: hostName };
+    }
+    const site = session.site?.host ? { host: session.site.host, kind: session.site.kind ?? null, reachable: true, selected: true } : null;
     return { status: 'authenticated', environment: session.environment, targets,
-      reused: session.reused, refreshed: session.refreshed, storage_state: cfg.auth.storage_state };
+      reused: session.reused, refreshed: session.refreshed, storage_state: cfg.auth.storage_state,
+      ...(editor ? { editor, site } : {}) };
   } finally { await session.context.close(); }
 }
 export async function main(args = process.argv.slice(2)) {
@@ -63,7 +72,7 @@ export async function main(args = process.argv.slice(2)) {
     const result = snapshotAt >= 0
       ? { status: 'snapshot', structure: await snapshotSession(browser, cfg, {
         entrySteps: Number(option('--entry-steps') ?? 0), area: snapshotArea, manual: args.includes('--manual'), frame: option('--frame'), scope: option('--scope'), openTarget: option('--open-target'), goto: option('--goto'), steps: args.flatMap((arg, index) => arg === '--step' ? [args[index + 1]] : []), hover: option('--hover'), clicks: args.flatMap((arg, index) => arg === '--click' ? [args[index + 1]] : []) }) }
-      : await runSession(cfg, browser, { checkOnly: args.includes('--check-only'), force: args.includes('--force'), manual: args.includes('--manual') });
+      : await runSession(cfg, browser, { checkOnly: args.includes('--check-only'), force: args.includes('--force'), manual: args.includes('--manual'), openEditor: args.includes('--open-editor') });
     if (option('--output')) privateWrite(path.resolve(option('--output')), result);
     console.log(JSON.stringify({ ok: true, ...result }));
   } catch (error) {

@@ -30,20 +30,36 @@ export type SiteSession = {
   openArea(area?: '内容管理' | '编辑网站'): Promise<Page>;
 };
 
+const ENVIRONMENT_CODES = new Set(['AUTH_REQUIRED', 'CAPTCHA_REQUIRED', 'LOGIN_FAILED', 'LOGIN_FORM_MISSING', 'CREDENTIALS_REQUIRED', 'ENVIRONMENT_UNREACHABLE', 'ENVIRONMENT_MISMATCH', 'ENVIRONMENT_HTTP_ERROR', 'GRAY_NOT_CONFIRMED', 'INVALID_CREDENTIALS', 'SITE_NOT_ACCESSIBLE', 'SITE_PERMISSION_DENIED', 'SITE_PERMISSION_UNVERIFIED', 'SITE_AMBIGUOUS', 'ACCOUNT_CHANGED', 'MANUAL_LOGIN_TIMEOUT', 'SITE_REQUIRED', 'SITE_AREA_NOT_READY', 'EDITOR_POPUP_MISSING', 'ENVIRONMENT_REQUIRED']);
+
+function rethrowEnvironment(error: unknown): never {
+  const code = (error as { code?: string }).code ?? '';
+  const message = error instanceof Error ? error.message : String(error);
+  const siteLoad = /page\.goto:.*Timeout|net::ERR_|环境不可达|站点加载超时|未找到目标网站/u.test(message);
+  if (ENVIRONMENT_CODES.has(code) || siteLoad || /UIA_ENVIRONMENT_BLOCKED/u.test(message)) {
+    throw new Error(message.startsWith('UIA_ENVIRONMENT_BLOCKED') ? message : `UIA_ENVIRONMENT_BLOCKED: ${message}`);
+  }
+  throw error instanceof Error ? error : new Error(message);
+}
+
 export const test = base.extend<{ caseContext: CaseContext; lifecycle: void; adminPage: Page; adminContext: BrowserContext }, { siteSession: SiteSession }>({
   siteSession: [async ({ browser }, use) => {
     const cfg = loadConfig();
     const session = await authenticatedSession(browser, cfg, { allowLogin: false });
     let editor: Page | undefined;
     const openArea = async (area?: '内容管理' | '编辑网站'): Promise<Page> => {
-      if (!area) return session.page;
-      if (area === '编辑网站' && editor && !editor.isClosed()) {
-        await cancelDialog(editor).catch(() => {});
-        return editor;
+      try {
+        if (!area) return session.page;
+        if (area === '编辑网站' && editor && !editor.isClosed()) {
+          await cancelDialog(editor).catch(() => {});
+          return editor;
+        }
+        const opened = await openSiteArea(session.page, cfg, area);
+        if (area === '编辑网站') editor = opened;
+        return opened;
+      } catch (error) {
+        rethrowEnvironment(error);
       }
-      const opened = await openSiteArea(session.page, cfg, area);
-      if (area === '编辑网站') editor = opened;
-      return opened;
     };
     try {
       await use({ openArea });
@@ -68,10 +84,7 @@ export const test = base.extend<{ caseContext: CaseContext; lifecycle: void; adm
       try {
         return await siteSession.openArea(area);
       } catch (error) {
-        const code = (error as { code?: string }).code;
-        const blocked = new Set(['AUTH_REQUIRED', 'CAPTCHA_REQUIRED', 'LOGIN_FAILED', 'LOGIN_FORM_MISSING', 'CREDENTIALS_REQUIRED', 'ENVIRONMENT_UNREACHABLE', 'ENVIRONMENT_MISMATCH', 'ENVIRONMENT_HTTP_ERROR', 'GRAY_NOT_CONFIRMED', 'INVALID_CREDENTIALS', 'SITE_NOT_ACCESSIBLE', 'SITE_PERMISSION_DENIED', 'SITE_PERMISSION_UNVERIFIED', 'SITE_AMBIGUOUS', 'ACCOUNT_CHANGED', 'MANUAL_LOGIN_TIMEOUT']);
-        if (code && blocked.has(code)) throw new Error(`UIA_ENVIRONMENT_BLOCKED: ${(error as Error).message}`);
-        throw error;
+        rethrowEnvironment(error);
       }
     };
     await use({ caseId, batchId, ownerMarker: `uia-${batchId}-${caseId}`,

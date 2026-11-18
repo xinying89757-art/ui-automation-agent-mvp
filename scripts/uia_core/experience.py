@@ -389,10 +389,16 @@ def checklist_notice(checklist):
     return '清单全部来自环境记忆（' + str(entries) + ' 项），本次 0 问' if entries == checklist.get('memory_answer_count', 0) else None
 
 
-def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_minutes=10, hints=None):
+def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_minutes=10, hints=None,
+       smoke_size=3, smoke_bar=1.0, max_first_result_minutes=26):
     from . import workflow, specs, profiles, runtime, reports
     source = Path(excel).resolve()
     require(source.is_file(), '工作簿不存在')
+    require(type(smoke_size) is int and smoke_size >= 1, 'smoke-size 至少为 1')
+    require(isinstance(smoke_bar, (int, float)) and not isinstance(smoke_bar, bool) and 0 < float(smoke_bar) <= 1,
+            'smoke-bar 须在 (0, 1]')
+    require(isinstance(max_first_result_minutes, (int, float)) and not isinstance(max_first_result_minutes, bool)
+            and float(max_first_result_minutes) > 0, 'max-first-result-minutes 须为正数')
     selected = sorted(set(cid.strip() for cid in cases.split(','))) if cases is not None else None
     require(selected is None or selected and all(selected), '用例范围不能为空')
     if not profile:
@@ -439,6 +445,23 @@ def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_m
         from .remote_checks import expire
         expire(base, m)
         workflow.refresh(base, m)
+        from .preflight_gate import ensure_environment
+        from .smoke import plan_smoke
+        m.setdefault('go_started_at', now())
+        m['max_first_result_minutes'] = max_first_result_minutes
+        if (m.get('abort') or {}).get('reason') == 'first_result_exceeded':
+            m.pop('abort', None)
+        blocked = ensure_environment(base, m)
+        if blocked:
+            save(manifest, m)
+            output = reports.make_report(base, m)
+            save(manifest, m)
+            return {'run_id': m['run_id'], 'run_reused': bool(matches), 'batch_outcome': 'environment_blocked',
+                    'environment_preflight': m.get('environment_preflight'), 'reason': blocked.get('reason'),
+                    'failure_class': 'environment', 'report': output,
+                    'next': {'action': 'stop', 'reason': 'environment_blocked'}}
+        plan_smoke(m, smoke_size, float(smoke_bar))
+        save(manifest, m)
         # Reuse only source-fingerprint-matched example contracts, never by case ID alone.
         index = ROOT / 'examples/phase2/index.json'
         matched = []
@@ -496,20 +519,13 @@ def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_m
                 except UiaError as exc:
                     pending['error'] = str(exc)
                 checklist = sync_checklist(base, m)
-        # Runtime environment evidence is refreshed each invocation; memory is not a preflight.
-        evidence = 'evidence/go-environment-' + now().replace(':', '-') + '.json'
-        try:
-            profiles.invoke_login(m['config'], base / 'runner', evidence=base / evidence)
-            runtime.preflight(base, m, evidence)
-        except UiaError as error:
-            workflow.question(m, 'environment', 'preflight', scrub_text(str(error), m['config']), list(m['cases']), reopen=True)
         save(manifest, m)
         ready = [cid for cid, c in m['cases'].items() if c['work_status'] == 'runnable' and not c.get('case_spec')]
         armed = _arm_requested_watches(base, m, arm_watch, lead_minutes, watch_minutes)
         save(manifest, m)
     # Existing runnable scripts get the first batch, before new generation.
     if ready:
-        _run_ready(manifest, ready)
+        _run_filtered(manifest, ready)
     with locked_run(manifest) as (manifest, m):
         base = manifest.parent
         if not checklist['question_count']:
@@ -537,7 +553,7 @@ def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_m
         save(manifest, m)
         ready = [cid for cid, c in m['cases'].items() if c['work_status'] == 'runnable'] if not checklist['question_count'] else []
     if ready:
-        _run_ready(manifest, ready)
+        _run_filtered(manifest, ready)
     with locked_run(manifest) as (manifest, m):
         output = reports.make_report(manifest.parent, m)
         save(manifest, m)
@@ -573,6 +589,31 @@ def _arm_requested_watches(base, m, arm_watch, lead_minutes, watch_minutes):
     return armed
 
 
+def _run_filtered(manifest, ready):
+    """Execute the smoke slice first. The remainder runs only after the smoke bar is met."""
+    from .smoke import abort_reason, allowed_cases, update_smoke
+    with locked_run(manifest) as (path, m):
+        allowed = allowed_cases(m, ready)
+        save(path, m)
+    if allowed:
+        _run_ready(manifest, allowed)
+    with locked_run(manifest) as (path, m):
+        update_smoke(m)
+        abort_reason(m)
+        rest = []
+        plan = m.get('smoke_plan') or {}
+        if plan.get('status') in {'passed', 'skipped'} and not m.get('abort'):
+            done = set(allowed)
+            rest = [cid for cid in ready if cid not in done and m['cases'].get(cid, {}).get('work_status') == 'runnable']
+        save(path, m)
+    if rest:
+        _run_ready(manifest, rest)
+    with locked_run(manifest) as (path, m):
+        update_smoke(m)
+        abort_reason(m)
+        save(path, m)
+
+
 def _run_ready(manifest, ready):
     from . import runtime
     from .common import read_yaml
@@ -589,8 +630,13 @@ def _run_ready(manifest, ready):
         held_ids = set(deferred)
     while ready:
         with locked_run(manifest) as (path, m):
+            from .smoke import abort_reason
+            if abort_reason(m):
+                save(path, m)
+                return
             if not m.get('preflight') or m['preflight']['status'] != 'passed':
                 return
+            m.setdefault('execution_started_at', now())
             size = m['config']['execution']['batch_size']
             selected = ready[:size]
             ready = ready[len(selected):]

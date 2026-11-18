@@ -44,6 +44,31 @@ def opening(m, metrics, review):
                     f"计划外人工介入 {metrics['unplanned_interventions']}，会话轮次 {metrics['session_turns']}；"
                     f"脚本实际执行覆盖率 {metrics['script_coverage']['ratio']:.1%}；"
                     f"越权 {metrics['scope_violations']}，泄露 {metrics['leak_hits']}，未审核断言变更 {metrics['unreviewed_assertion_changes']}。")
+    def _seconds(value):
+        return '无' if value is None else f"{value:.0f} 秒"
+    def _rate(value):
+        return '无' if value is None else f"{value:.1%}"
+    shares = metrics.get('failure_class_shares') or {}
+    share_text = '、'.join(label + ' ' + _rate((shares.get(key) or {}).get('share'))
+                          for key, label in (('environment', '环境'), ('automation', '自动化'), ('product', '产品'), ('suspended', '挂起')))
+    kb = metrics.get('kb_hit_rate') or {}
+    tokens = metrics.get('knowledge_injected_tokens') or {}
+    metrics_text += (f" 首个结果耗时 {_seconds(metrics.get('time_to_first_result_seconds'))}；"
+                     f"通过率 {_rate(metrics.get('pass_rate'))}；失败分类占比 {share_text}；"
+                     f"人工介入 {metrics.get('human_interventions', 0)} 次（每条 {metrics.get('human_interventions_per_case', 0):.2f}）；"
+                     f"知识命中率 {_rate(kb.get('rate'))}（用上 {kb.get('used', 0)}/{kb.get('retrieved', 0)}）；"
+                     f"已知页面重复探索 {metrics.get('re_explored_known_pages', 0)} 次；"
+                     f"知识注入 token p50/p95 {tokens.get('p50')}/{tokens.get('p95')}。")
+    if metrics.get('batch_outcome') == 'environment_blocked':
+        metrics_text += ' 本批已按环境阻断停止，未执行用例。'
+    smoke = metrics.get('smoke') or {}
+    if smoke.get('status') and smoke.get('status') != 'skipped':
+        metrics_text += f" 冒烟 {smoke.get('status')}（{len(smoke.get('cases') or [])} 条，通过率 {_rate(smoke.get('pass_rate'))}，门槛 {_rate(smoke.get('bar'))}）。"
+    abort = metrics.get('abort') or {}
+    if abort.get('reason') == 'first_result_exceeded':
+        metrics_text += f" 已停止：首个结果超过 {abort.get('limit_minutes')} 分钟。"
+    elif abort.get('reason') == 'smoke_below_bar':
+        metrics_text += ' 已停止：冒烟未达到门槛，未继续全量。'
     if metrics.get('re_explored_known_pages', 0):
         metrics_text += f"流程问题：已知页面重复探索 {metrics['re_explored_known_pages']} 次（re_explored_known_pages）。"
     if metrics.get('exploration_for_missing_controls', 0):
@@ -99,6 +124,8 @@ def make_report(base, m):
                        "sheet", "rows", "stage", "work_status", "result", "stability", "pass_streak",
                        "flow_ids", "fixture_ids", "repair_rounds", "attempts", "feedback", "classification", "case_spec", "spec_first_lint", "spec_lint", "remote_status")})
         records[-1]['result_label'] = zh(c.get('result'))
+        from .failure_class import case_class
+        records[-1]['failure_class'] = case_class(c)
         records[-1]['script_binding'] = c.get('script_binding')
         records[-1]['read_back'] = (c.get('attempts') or [{}])[-1].get('read_back')
         records[-1]['duplicate_script_warning'] = c.get('duplicate_script_warning')

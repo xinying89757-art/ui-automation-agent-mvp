@@ -41,7 +41,12 @@ python3 scripts/uia.py setup --profile my-gray --environment gray --site en.exam
 python3 scripts/uia.py init --run-id REQ-001 --profile my-gray
 python3 scripts/uia.py login --profile my-gray --check-only
 python3 scripts/uia.py login --run REQ-001
+python3 scripts/uia.py preflight --run REQ-001
 ```
+
+`preflight` 不带 `--evidence` 时单独执行环境预检：登录、目标站点可选、内容编辑器能打开。
+凭据只来自环境变量或 gitignore 的 `.auth/`，命令不接受密码。失败时把整批标为
+`environment_blocked` 并写入原因，不执行用例。`--evidence` 仍只校验已有浏览器证据。
 
 `setup` 的密码隐藏输入，或显式使用 `--credentials-file` / `--password-env`；不接受密码参数。
 裸域名会探测 HTTP/HTTPS；写明协议则保持该协议。`profile set` 修改已有配置的站点、变更范围和稳定性次数，不手改 JSON：
@@ -202,12 +207,15 @@ HTML 支持筛选；脚本 ZIP 排除依赖、凭证与运行日志。只有源�
 
 ```bash
 .venv/bin/python scripts/uia.py go /path/to/cases.xlsx --profile my-prod --cases TC-0004,TC-0016
+.venv/bin/python scripts/uia.py go /path/to/cases.xlsx --profile my-prod --smoke-size 3 --smoke-bar 1 --max-first-result-minutes 26
 .venv/bin/python scripts/uia.py answer --run GO-xxx "A 除 TC-0002 缺少外其余可用，B 同意，C 无歧义"
 .venv/bin/python scripts/uia.py session-turn --run GO-xxx --id conversation-turn-1 --kind 发起
 ```
 
 `--cases` 以逗号分隔；不传则保留全部用例。未知 ID 直接报错。省略 profile 时仅在恰有一份
 私有配置时自动选择。相同工作簿路径、profile、用例范围恢复同一个 run；工作簿内容变化仍做来源对齐。
+导入之后、检索和执行之前，go 固定先做环境预检（登录、目标站点、内容编辑器）。预检失败则整批 `batch_outcome=environment_blocked`，用例结果为 `environment_blocked`、`failure_class=environment`，并停止，不执行用例。预检通过后，用例数大于 `--smoke-size`（默认 3）时先跑一组跨模块、高优先级的代表用例；通过率达到 `--smoke-bar`（默认 1）才继续全量。执行开始后，若首个结果耗时超过 `--max-first-result-minutes`（默认 26）则停止后续批次。不大于冒烟条数的批次不单独分两段。
+
 导入、索引既有脚本、真实环境自检、可恢复样本契约复用、case-spec 任务、前置聚合和可执行批次由 go 衔接。
 只有全量业务指纹匹配才复用样本契约。未知工作簿由当前 Codex 会话编写契约，不会启动模型子进程。
 待编写契约时清单为草稿，不提问；已具备权限的独立既有脚本优先执行。
@@ -226,8 +234,26 @@ C 有多项时须逐项给选项；不会把“默认”当作业务答案。旧
 没有接入会话轮次记录的调用者，无法从终端自动推断真实聊天轮次；指标只统计已记录事件。
 
 报告的 Markdown/HTML/Excel 首先展示“结论、需要你处理、流程指标”，可见状态使用中文。
-JSON 保留兼容的机器状态码，并附同样中文开头。metrics.json 记录清单问题数、回答数、会话轮次、
-中途提问和计划外介入。review.json 包含复现、原始期望、实际失败、证据和受限脱敏截图。
+JSON 保留兼容的机器状态码（`schema_version` 仍为 `uia-results.v1`），并附同样中文开头。每条用例增加
+`failure_class`：`environment`、`automation`、`product`、`suspended` 之一，或通过时为空。
+`SITE_NOT_ACCESSIBLE`、未找到目标网站、登录失败、站点加载超时归为 `environment`，不再记为自动化失败。
+
+`metrics` / `flow_metrics` / `metrics.json` 在原有字段之外始终包含：
+
+| 字段 | 含义 |
+|---|---|
+| `time_to_first_result_seconds` | 导入（或创建）到首个结果的秒数；尚无结果时为 null |
+| `pass_rate` | 已执行用例中的通过率；没有执行时为 null |
+| `failure_class_shares` | 上述四类的 `count` 与 `share`（分母为有失败分类的用例） |
+| `human_interventions` / `human_interventions_per_case` | 清单回答、中途提问与计划外会话次数，以及除以用例数 |
+| `kb_hit_rate` | `{retrieved, used, rate}`：检索到的知识里，规格或脚本实际引用的比例 |
+| `re_explored_known_pages` | 已知页面被再次探索的次数 |
+| `knowledge_injected_tokens` | `{count, p50, p95}` |
+| `smoke` | `{status, cases, bar, pass_rate, size}` |
+| `abort` | 冒烟未达标或首个结果超时的停止记录；否则为 null |
+| `max_first_result_minutes` / `batch_outcome` | 停止阈值；环境预检失败时 `batch_outcome` 为 `environment_blocked` |
+
+metrics.json 仍记录清单问题数、回答数、会话轮次、中途提问和计划外介入。review.json 包含复现、原始期望、实际失败、证据和受限脱敏截图。
 只有公共控件文字白名单保留的弹窗截图可保留；任意输入、自由文字及媒体均遮罩，未采集时明确标注，
 不替代成原始全页截图。截图不进入 scripts.zip。
 

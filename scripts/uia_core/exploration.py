@@ -144,8 +144,8 @@ Checkpoint: the moment you reach the Starting entry, send one short progress mes
 {{"checkpoint": "entry", "reached": false, "reached_entry": true, "route": [...], "frames": [...]}} and then continue.
 Final answer: ONE fenced ```json block {{"reached": true|false, "reached_entry": true|false,
 "failed_interaction": "drag|clipboard|gesture|file-dialog|canvas|other:<specific text> or null; only after reaching entry",
-"route": [ordered steps; "goto:/path" or "click:text=<visible text>" strings, or objects
-{{"verb": "click|hover|fill|press", "target": <TARGET>, "value": "<literal non-secret text typed, e.g. / for a slash menu>"}}],
+"route": [ordered steps; "goto:/path", "press:Enter" when the step is a natural-language press Enter (never a click), or "click:text=<visible text>" strings, or objects
+{{"verb": "click|hover|fill|press", "target": <TARGET>, "value": "<literal non-secret text typed, or Enter when verb is press>"}}],
 "frames": [iframe selectors on the way], "completion_signal": "<locator + visible text>",
 "targets": {{"<proposed.name>": <TARGET>}}, "notes": "<=3 short sentences"}}.
 Also return "step_targets": [{{"case_id": "CASE", "step_id": "S1", "placeholder": "?name or the exact existing spec target", "target": "stable.catalog.target", "locator": <TARGET>, "verified": true, "match_count": 1}}] for every listed spec target that was actually observed and matched exactly once. For a question-mark placeholder the catalog writer binds the target name and rewrites the spec; for a concrete missing target use that same target name. Do not return rows for guesses, missing controls, or non-unique locators; only verified rows with match_count exactly 1 are written.

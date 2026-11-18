@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { FullResult, Reporter, TestCase, TestResult, TestStep } from '@playwright/test/reporter';
 import { credentials } from './auth.mjs';
+import { failureClass } from './heal.mjs';
 import { scrubText, unsafeArtifact } from './redact.mjs';
 
 export default class UiaReporter implements Reporter {
@@ -70,20 +71,27 @@ export default class UiaReporter implements Reporter {
     const errors = result.errors.map(error => this.clean(error.message ?? String(error)));
     const message = errors.join('\n');
     const passed = result.status === 'passed' && lifecycle.setup_verified === true && (lifecycle.cleanup_verified === true || lifecycle.cleanup_pending === true);
-    const status = passed ? 'passed' : /UIA_ENVIRONMENT_BLOCKED/u.test(message) ? 'environment_blocked'
+    const environment = failureClass(message) === 'environment';
+    const suspended = failureClass(message) === 'suspended';
+    const status = passed ? 'passed' : environment ? 'environment_blocked'
       : /UIA_PRODUCT_CONFIRMATION/u.test(message) ? 'product_confirmation'
       : /UIA_SAVE_NOT_PERSISTED/u.test(message) ? 'save_not_persisted'
       : /UIA_SETUP_FAILED/u.test(message) ? 'automation_failure'
       : this.locatorNeverResolved(message) ? 'automation_failure'
       : /UIA_BUSINESS_FAILURE/u.test(message) ? 'business_failure'
       : /UIA_CLEANUP_FAILED/u.test(message) ? 'automation_failure'
+      : suspended ? 'suspended'
       : result.status === 'interrupted' || result.status === 'skipped' ? 'interrupted' : 'automation_failure';
+    const failure_class = passed ? null : environment ? 'environment'
+      : /UIA_PRODUCT_CONFIRMATION|UIA_SAVE_NOT_PERSISTED|UIA_BUSINESS_FAILURE/u.test(message) ? 'product'
+      : suspended || status === 'suspended' ? 'suspended' : 'automation';
     this.cases.push({ case_id: caseId, result: status, playwright_status: result.status,
       setup_started: result.attachments.some(a => a.name === 'uia-setup-started'),
       duration_ms: result.duration, retry: result.retry, errors, lifecycle,
       assertions: this.assertions.get(test.id) ?? [],
       successful_steps: this.successfulSteps.get(test.id) ?? [],
-      failure_stage: passed ? null : /UIA_SAVE_NOT_PERSISTED/u.test(message) ? "save_not_persisted" : /UIA_ENVIRONMENT_BLOCKED/u.test(message) ? "environment_or_session" : /UIA_SETUP_FAILED/u.test(message) ? "data_preparation" : this.locatorNeverResolved(message) ? "locator_resolution" : /UIA_BUSINESS_FAILURE/u.test(message) ? "business_assertion" : "locator_or_timing",
+      failure_class,
+      failure_stage: passed ? null : /UIA_SAVE_NOT_PERSISTED/u.test(message) ? "save_not_persisted" : environment ? "environment" : /UIA_SETUP_FAILED/u.test(message) ? "data_preparation" : this.locatorNeverResolved(message) ? "locator_resolution" : /UIA_BUSINESS_FAILURE/u.test(message) ? "business_assertion" : suspended ? "suspended" : "locator_or_timing",
       read_back: this.readBack(caseId),
       saves: this.saveObservations(caseId),
       script: test.location.file, line: test.location.line,

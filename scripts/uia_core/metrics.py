@@ -109,6 +109,50 @@ def exploration_counts(m):
                                         'p50': percentile(.50), 'p95': percentile(.95)}}
 
 
+def _knowledge_use(base, m):
+    """Hit rate is retrieved knowledge that the case spec or script actually references."""
+    match_path = Path(base) / (m.get("knowledge_match") or {}).get("file", "knowledge-match.json")
+    if not match_path.is_file():
+        return 0, 0
+    try:
+        import json
+        matched = json.loads(match_path.read_text(encoding="utf-8")).get("matched") or {}
+    except (OSError, ValueError, TypeError):
+        return 0, 0
+    retrieved = used = 0
+    for cid, items in matched.items():
+        if not isinstance(items, dict):
+            continue
+        case = m.get("cases", {}).get(cid, {})
+        spec_file = Path(base) / case.get("case_spec", "")
+        spec_text = spec_file.read_text(encoding="utf-8") if spec_file.is_file() else ""
+        script_rel = (case.get("registration") or {}).get("script")
+        script_text = ""
+        if script_rel:
+            script_file = Path(base) / script_rel
+            if script_file.is_file():
+                script_text = "\n".join(line for line in script_file.read_text(encoding="utf-8").splitlines()
+                                        if not line.strip().startswith("// Knowledge targets:"))
+        explicit = set(case.get("knowledge_used") or [])
+        start_page = ""
+        try:
+            import yaml
+            start_page = str((yaml.safe_load(spec_text) or {}).get("start_page") or "") if spec_text else ""
+        except Exception:
+            start_page = ""
+        for kid, row in items.items():
+            retrieved += 1
+            row = row if isinstance(row, dict) else {}
+            page = str(row.get("page") or "")
+            if kid in explicit or (kid and kid in script_text):
+                used += 1
+            elif str(kid).startswith("target.") and str(kid)[len("target."):] and str(kid)[len("target."):] in spec_text:
+                used += 1
+            elif str(kid).startswith("page.") and page and page == start_page:
+                used += 1
+    return retrieved, used
+
+
 def calculate(base, m, final_report_at=None):
     cases = list(m.get("cases", {}).values())
     eligible = [case for case in cases if _eligible(case)]
@@ -143,6 +187,16 @@ def calculate(base, m, final_report_at=None):
         return ordered[index]
     first_lints = [c["spec_first_lint"] for c in cases if c.get("spec_first_lint") and c["spec_first_lint"].get("automatable") != "manual"]
     first_passed = sum(bool(row.get("passed")) for row in first_lints)
+    from .failure_class import shares
+    executed_passes = [case for case in cases if any(a.get("executed") for a in case.get("attempts", []))]
+    passed = sum(case.get("result") == "passed" for case in executed_passes)
+    human_events = (sum(x.get('kind') == 'checklist_answer' for x in m.get('interaction_events', []))
+                    + sum(x.get('kind') == 'mid_run_question' for x in m.get('interaction_events', []))
+                    + sum(x.get('kind') == 'session_turn' and x.get('category') == '计划外' for x in m.get('interaction_events', [])))
+    retrieved, used = _knowledge_use(base, m)
+    time_to_first = elapsed(imported_at, first_at) if imported_at and first_at else (
+        elapsed(m.get("created_at"), first_at) if m.get("created_at") and first_at else None)
+    plan = m.get("smoke_plan") or {}
     return {
         "spec_lint_first_pass": {"passed": first_passed, "automatable": len(first_lints),
                                  "rate": first_passed / len(first_lints) if first_lints else None},
@@ -161,6 +215,17 @@ def calculate(base, m, final_report_at=None):
         "exploration_for_missing_controls": missing_control_explorations,
         "exploration_duration_ms": exploration_metric['exploration_duration_ms'],
         "knowledge_injected_tokens": {"count": len(injected), "p50": percentile(injected, .50), "p95": percentile(injected, .95)},
+        "time_to_first_result_seconds": time_to_first,
+        "pass_rate": (passed / len(executed_passes) if executed_passes else None),
+        "failure_class_shares": shares(cases),
+        "human_interventions": human_events,
+        "human_interventions_per_case": (human_events / len(cases) if cases else 0.0),
+        "kb_hit_rate": {"retrieved": retrieved, "used": used, "rate": (used / retrieved if retrieved else None)},
+        "smoke": {"status": plan.get("status"), "cases": plan.get("cases") or [], "bar": plan.get("bar"),
+                  "pass_rate": plan.get("pass_rate"), "size": plan.get("size")},
+        "abort": m.get("abort"),
+        "max_first_result_minutes": m.get("max_first_result_minutes"),
+        "batch_outcome": m.get("batch_outcome"),
         "scope_violations": int(m.get("scope_violations", 0)),
         "leak_hits": len(m.get("leak_hits", [])),
         "unreviewed_assertion_changes": max(int(m.get("unreviewed_assertion_changes", 0)), assertion_changes),

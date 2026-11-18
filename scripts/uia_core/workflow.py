@@ -357,6 +357,8 @@ def reopen_unearned(m):
     """Self-heal: earlier unexecuted verdicts go back to the AI queue instead of counting as outcomes."""
     reopened = []
     for cid, c in m["cases"].items():
+        if c.get("environment_preflight_block"):
+            continue
         if c.get("stage") == "finished" or c.get("work_status") == "finished":
             if (c.get("result") in EXECUTED_RESULTS or c.get("result") == "environment_blocked" and not c.get("checklist_wait")) \
                     and not c.get("attempts"):

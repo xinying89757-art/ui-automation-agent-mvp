@@ -49,8 +49,24 @@ export function bestCandidate(candidates, fingerprint, threshold = 0.72) {
   return { selector: top.item.selector, score: top.score, text: top.item.text, tag: top.item.tag };
 }
 
+const ENVIRONMENT_TEXT = /UIA_ENVIRONMENT_BLOCKED|SITE_NOT_ACCESSIBLE|未找到目标网站|当前账号下未找到目标网站|LOGIN_FAILED|AUTH_REQUIRED|INVALID_CREDENTIALS|CAPTCHA_REQUIRED|LOGIN_FORM_MISSING|CREDENTIALS_REQUIRED|MANUAL_LOGIN_TIMEOUT|ACCOUNT_CHANGED|ENVIRONMENT_UNREACHABLE|ENVIRONMENT_MISMATCH|ENVIRONMENT_HTTP_ERROR|GRAY_NOT_CONFIRMED|SITE_PERMISSION_DENIED|SITE_PERMISSION_UNVERIFIED|SITE_AMBIGUOUS|SITE_REQUIRED|SITE_AREA_NOT_READY|EDITOR_POPUP_MISSING|登录未完成|登录态已过期|账号或密码错误|环境不可达|站点加载超时|net::ERR_|page\.goto:.*Timeout/iu;
+
+/** environment is distinct from automation, product, and suspended. */
+export function failureClass(message) {
+  const text = String(message || '');
+  const locator = /waiting for locator|locator resolved|strict mode violation|UIA_LOCATOR_MISS/iu.test(text);
+  if (ENVIRONMENT_TEXT.test(text) && !locator) return 'environment';
+  if (/UIA_PRODUCT_CONFIRMATION|UIA_SAVE_NOT_PERSISTED|UIA_BUSINESS_FAILURE/.test(text)) return 'product';
+  if (/\bsuspended\b|缺知识|缺控件/.test(text)) return 'suspended';
+  if (locator || /UIA_SETUP_FAILED|UIA_CLEANUP_FAILED/.test(text)) return 'automation';
+  return null;
+}
+
 export function classifyFailure(message) {
   const text = String(message || '');
+  if (failureClass(text) === 'environment') {
+    return { kind: 'environment', accept: false, change: 'none', action: '环境或登录阻塞，不改脚本' };
+  }
   const resolved = /locator resolved to (?:<|\d+ elements?)/iu.test(text);
   if (/UIA_LOCATOR_MISS|strict mode violation|resolved to 0 elements/iu.test(text) ||
       (/waiting for locator/iu.test(text) && !resolved)) {

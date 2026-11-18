@@ -533,7 +533,13 @@ def generate(base, m, cid):
         lines.append('  await test.step(' + json.dumps('uia-step:' + sid) + ', async () => {')
         lines.append('  // @step ' + sid)
         loc = locator_expression(name, pages)
-        if sid in replayed_route_steps:
+        from .actions import key_from_phrase
+        target_key = key_from_phrase(name)
+        value_key = key_from_phrase(step.get('value'))
+        if target_key or (verb == 'click' and value_key):
+            # "press Enter" is a key, including when a case-spec stored it as a click.
+            lines.append('  await page.keyboard.press(' + json.dumps(target_key or value_key) + ');')
+        elif sid in replayed_route_steps:
             lines.append('  // Navigation replayed by openTarget(' + json.dumps(route_id) + ').')
         elif verb == 'observe':
             lines.append('  observations[' + json.dumps(name) + '] = await observeOccurrences(page, ' + json.dumps(pages['targets'][name]['observe_text'], ensure_ascii=False) + ');')

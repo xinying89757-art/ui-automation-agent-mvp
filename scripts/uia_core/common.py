@@ -307,7 +307,11 @@ def save(path, m):
     cases = list(m["cases"].values())
     source_gaps = any(src.get("unresolved_sheets") for src in m["sources"])
     open_questions = any(q["status"] == "open" for q in m["questions"].values())
-    if m.get("source_update_required"):
+    if m.get("batch_outcome") == "environment_blocked":
+        m["status"] = "waiting_human"
+    elif m.get("abort"):
+        m["status"] = "active"
+    elif m.get("source_update_required"):
         m["status"] = "active"
     elif source_gaps and not any(c["work_status"] not in {"finished", "waiting_human"} for c in cases):
         m["status"] = "waiting_human"

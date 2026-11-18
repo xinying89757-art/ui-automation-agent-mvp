@@ -1,0 +1,18 @@
+id: entry.article-editor-markdown-import
+kind: flow
+label: article-editor-markdown-import
+path_text: 内容管理 → 文章 → 编辑 → 导入 → Markdown
+steps:
+- click:text=内容管理
+- click:text=文章
+- click:text=编辑
+- click:text=导入
+- click:text=Markdown
+frame: 'iframe[name="article"] >> internal:control=enter-frame >> #tiptap-iframe >>
+  internal:control=enter-frame >> iframe.tiptap-iframe'
+not_a_page: false
+aliases: []
+source: explored
+confirmed: true
+at: '2026-10-23T03:36:29.913376+00:00'
+created_at: '2026-10-23'

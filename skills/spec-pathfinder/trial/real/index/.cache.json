@@ -1,0 +1,2472 @@
+{
+  "version": 1,
+  "root": "/home/hatch/workspace/goals/web-ui-automation-testing/files/phoenix-llms-evidence",
+  "scriptMtimeMs": 1793261925365.2715,
+  "files": {
+    "TtnSmartBw/src/main/java/com/focustech/subsys/smart/web/controller/phoenix/PhoenixCustomizeFileController.java": {
+      "fingerprint": "1793260570690097304:22661",
+      "routes": [
+        {
+          "url": "/phoenix/customizeFile",
+          "httpMethods": [
+            "GET"
+          ],
+          "controller": "PhoenixCustomizeFileController",
+          "method": "managePop",
+          "returnType": "String",
+          "responseKind": "view-candidate",
+          "views": [
+            {
+              "name": "phoenix_jsp/customizeFile/manage_pop",
+              "file": "TtnSmartBw/src/main/java/com/focustech/subsys/smart/web/controller/phoenix/PhoenixCustomizeFileController.java",
+              "line": 81,
+              "endLine": 81
+            }
+          ],
+          "file": "TtnSmartBw/src/main/java/com/focustech/subsys/smart/web/controller/phoenix/PhoenixCustomizeFileController.java",
+          "line": 76,
+          "endLine": 82,
+          "parser": "regex-candidate"
+        },
+        {
+          "url": "/phoenix/customizeFile/list",
+          "httpMethods": [
+            "GET"
+          ],
+          "controller": "PhoenixCustomizeFileController",
+          "method": "managePopList",
+          "returnType": "String",
+          "responseKind": "view-candidate",
+          "views": [
+            {
+              "name": "phoenix_jsp/customizeFile/manage_pop_include_wrap",
+              "file": "TtnSmartBw/src/main/java/com/focustech/subsys/smart/web/controller/phoenix/PhoenixCustomizeFileController.java",
+              "line": 106,
+              "endLine": 106
+            }
+          ],
+          "file": "TtnSmartBw/src/main/java/com/focustech/subsys/smart/web/controller/phoenix/PhoenixCustomizeFileController.java",
+          "line": 93,
+          "endLine": 107,
+          "parser": "regex-candidate"
+        },
+        {
+          "url": "/phoenix/customizeFile/edit",
+          "httpMethods": [
+            "GET"
+          ],
+          "controller": "PhoenixCustomizeFileController",
+          "method": "createPop",
+          "returnType": "String",
+          "responseKind": "view-candidate",
+          "views": [
+            {
+              "name": "phoenix_jsp/customizeFile/edit_pop",
+              "file": "TtnSmartBw/src/main/java/com/focustech/subsys/smart/web/controller/phoenix/PhoenixCustomizeFileController.java",
+              "line": 127,
+              "endLine": 127
+            },
+            {
+              "name": "phoenix_jsp/customizeFile/edit_pop",
+              "file": "TtnSmartBw/src/main/java/com/focustech/subsys/smart/web/controller/phoenix/PhoenixCustomizeFileController.java",
+              "line": 138,
+              "endLine": 138
+            }
+          ],
+          "file": "TtnSmartBw/src/main/java/com/focustech/subsys/smart/web/controller/phoenix/PhoenixCustomizeFileController.java",
+          "line": 112,
+          "endLine": 140,
+          "parser": "regex-candidate"
+        },
+        {
+          "url": "/phoenix/customizeFile/save",
+          "httpMethods": [
+            "POST"
+          ],
+          "controller": "PhoenixCustomizeFileController",
+          "method": "create",
+          "returnType": "String",
+          "responseKind": "render-json",
+          "views": [],
+          "file": "TtnSmartBw/src/main/java/com/focustech/subsys/smart/web/controller/phoenix/PhoenixCustomizeFileController.java",
+          "line": 152,
+          "endLine": 210,
+          "parser": "regex-candidate"
+        },
+        {
+          "url": "/phoenix/customizeFile/delete/{fileId}",
+          "httpMethods": [
+            "GET"
+          ],
+          "controller": "PhoenixCustomizeFileController",
+          "method": "deleteCustomizeFile",
+          "returnType": "String",
+          "responseKind": "response-body",
+          "views": [],
+          "file": "TtnSmartBw/src/main/java/com/focustech/subsys/smart/web/controller/phoenix/PhoenixCustomizeFileController.java",
+          "line": 318,
+          "endLine": 329,
+          "parser": "regex-candidate"
+        },
+        {
+          "url": "/phoenix/customizeFile/llms/config",
+          "httpMethods": [
+            "GET"
+          ],
+          "controller": "PhoenixCustomizeFileController",
+          "method": "loadLlmsConfig",
+          "returnType": "String",
+          "responseKind": "view-candidate",
+          "views": [
+            {
+              "name": "phoenix_jsp/customizeFile/llms_config",
+              "file": "TtnSmartBw/src/main/java/com/focustech/subsys/smart/web/controller/phoenix/PhoenixCustomizeFileController.java",
+              "line": 350,
+              "endLine": 350,
+              "resolvedFrom": {
+                "value": "phoenix_jsp/customizeFile/llms_config",
+                "file": "TtnSmartBw/src/main/java/com/focustech/subsys/smart/web/controller/phoenix/PhoenixCustomizeFileController.java",
+                "line": 48,
+                "endLine": 48
+              }
+            },
+            {
+              "name": "phoenix_jsp/customizeFile/llms_tab",
+              "file": "TtnSmartBw/src/main/java/com/focustech/subsys/smart/web/controller/phoenix/PhoenixCustomizeFileController.java",
+              "line": 352,
+              "endLine": 352,
+              "resolvedFrom": {
+                "value": "phoenix_jsp/customizeFile/llms_tab",
+                "file": "TtnSmartBw/src/main/java/com/focustech/subsys/smart/web/controller/phoenix/PhoenixCustomizeFileController.java",
+                "line": 47,
+                "endLine": 47
+              }
+            }
+          ],
+          "file": "TtnSmartBw/src/main/java/com/focustech/subsys/smart/web/controller/phoenix/PhoenixCustomizeFileController.java",
+          "line": 334,
+          "endLine": 353,
+          "parser": "regex-candidate"
+        },
+        {
+          "url": "/phoenix/customizeFile/llms/systemContent",
+          "httpMethods": [
+            "POST"
+          ],
+          "controller": "PhoenixCustomizeFileController",
+          "method": "loadLlmsSystemContent",
+          "returnType": "void",
+          "responseKind": "render-json",
+          "views": [],
+          "file": "TtnSmartBw/src/main/java/com/focustech/subsys/smart/web/controller/phoenix/PhoenixCustomizeFileController.java",
+          "line": 355,
+          "endLine": 383,
+          "parser": "regex-candidate"
+        },
+        {
+          "url": "/phoenix/customizeFile/llms/save",
+          "httpMethods": [
+            "POST"
+          ],
+          "controller": "PhoenixCustomizeFileController",
+          "method": "saveLlmsConfig",
+          "returnType": "void",
+          "responseKind": "render-json",
+          "views": [],
+          "file": "TtnSmartBw/src/main/java/com/focustech/subsys/smart/web/controller/phoenix/PhoenixCustomizeFileController.java",
+          "line": 385,
+          "endLine": 423,
+          "parser": "regex-candidate"
+        }
+      ],
+      "actions": [
+        {
+          "url": "/phoenix/customizeFile/edit",
+          "httpMethods": [
+            "GET"
+          ],
+          "controller": "PhoenixCustomizeFileController",
+          "method": "createPop",
+          "returnType": "String",
+          "responseKind": "view-candidate",
+          "views": [
+            {
+              "name": "phoenix_jsp/customizeFile/edit_pop",
+              "file": "TtnSmartBw/src/main/java/com/focustech/subsys/smart/web/controller/phoenix/PhoenixCustomizeFileController.java",
+              "line": 127,
+              "endLine": 127
+            },
+            {
+              "name": "phoenix_jsp/customizeFile/edit_pop",
+              "file": "TtnSmartBw/src/main/java/com/focustech/subsys/smart/web/controller/phoenix/PhoenixCustomizeFileController.java",
+              "line": 138,
+              "endLine": 138
+            }
+          ],
+          "file": "TtnSmartBw/src/main/java/com/focustech/subsys/smart/web/controller/phoenix/PhoenixCustomizeFileController.java",
+          "line": 112,
+          "endLine": 140,
+          "parser": "regex-candidate",
+          "kind": "backend-write-candidate",
+          "successSignals": [],
+          "unresolved": [
+            "未识别成功信号，需按需读方法实现"
+          ],
+          "frontendEvidence": []
+        },
+        {
+          "url": "/phoenix/customizeFile/save",
+          "httpMethods": [
+            "POST"
+          ],
+          "controller": "PhoenixCustomizeFileController",
+          "method": "create",
+          "returnType": "String",
+          "responseKind": "render-json",
+          "views": [],
+          "file": "TtnSmartBw/src/main/java/com/focustech/subsys/smart/web/controller/phoenix/PhoenixCustomizeFileController.java",
+          "line": 152,
+          "endLine": 210,
+          "parser": "regex-candidate",
+          "kind": "backend-write-candidate",
+          "successSignals": [
+            {
+              "kind": "status",
+              "file": "TtnSmartBw/src/main/java/com/focustech/subsys/smart/web/controller/phoenix/PhoenixCustomizeFileController.java",
+              "line": 192,
+              "endLine": 192,
+              "excerpt": "result.put(\"status\", \"success\");",
+              "interpretation": "候选信号，必须读上下文确认分支及含义"
+            },
+            {
+              "kind": "status",
+              "file": "TtnSmartBw/src/main/java/com/focustech/subsys/smart/web/controller/phoenix/PhoenixCustomizeFileController.java",
+              "line": 207,
+              "endLine": 207,
+              "excerpt": "result.put(\"status\", \"success\");",
+              "interpretation": "候选信号，必须读上下文确认分支及含义"
+            }
+          ],
+          "unresolved": [],
+          "frontendEvidence": []
+        },
+        {
+          "url": "/phoenix/customizeFile/delete/{fileId}",
+          "httpMethods": [
+            "GET"
+          ],
+          "controller": "PhoenixCustomizeFileController",
+          "method": "deleteCustomizeFile",
+          "returnType": "String",
+          "responseKind": "response-body",
+          "views": [],
+          "file": "TtnSmartBw/src/main/java/com/focustech/subsys/smart/web/controller/phoenix/PhoenixCustomizeFileController.java",
+          "line": 318,
+          "endLine": 329,
+          "parser": "regex-candidate",
+          "kind": "backend-write-candidate",
+          "successSignals": [],
+          "unresolved": [
+            "未识别成功信号，需按需读方法实现"
+          ],
+          "frontendEvidence": []
+        },
+        {
+          "url": "/phoenix/customizeFile/llms/systemContent",
+          "httpMethods": [
+            "POST"
+          ],
+          "controller": "PhoenixCustomizeFileController",
+          "method": "loadLlmsSystemContent",
+          "returnType": "void",
+          "responseKind": "render-json",
+          "views": [],
+          "file": "TtnSmartBw/src/main/java/com/focustech/subsys/smart/web/controller/phoenix/PhoenixCustomizeFileController.java",
+          "line": 355,
+          "endLine": 383,
+          "parser": "regex-candidate",
+          "kind": "backend-write-candidate",
+          "successSignals": [
+            {
+              "kind": "success-helper-call",
+              "file": "TtnSmartBw/src/main/java/com/focustech/subsys/smart/web/controller/phoenix/PhoenixCustomizeFileController.java",
+              "line": 370,
+              "endLine": 370,
+              "excerpt": "Map<String, Object> body = successBody();",
+              "interpretation": "候选信号，必须读上下文确认分支及含义"
+            },
+            {
+              "kind": "status",
+              "file": "TtnSmartBw/src/main/java/com/focustech/subsys/smart/web/controller/phoenix/PhoenixCustomizeFileController.java",
+              "line": 477,
+              "endLine": 477,
+              "excerpt": "body.put(\"status\", \"success\");",
+              "interpretation": "候选信号，必须读上下文确认分支及含义",
+              "via": "successBody"
+            }
+          ],
+          "unresolved": [],
+          "frontendEvidence": []
+        },
+        {
+          "url": "/phoenix/customizeFile/llms/save",
+          "httpMethods": [
+            "POST"
+          ],
+          "controller": "PhoenixCustomizeFileController",
+          "method": "saveLlmsConfig",
+          "returnType": "void",
+          "responseKind": "render-json",
+          "views": [],
+          "file": "TtnSmartBw/src/main/java/com/focustech/subsys/smart/web/controller/phoenix/PhoenixCustomizeFileController.java",
+          "line": 385,
+          "endLine": 423,
+          "parser": "regex-candidate",
+          "kind": "backend-write-candidate",
+          "successSignals": [
+            {
+              "kind": "success-helper-call",
+              "file": "TtnSmartBw/src/main/java/com/focustech/subsys/smart/web/controller/phoenix/PhoenixCustomizeFileController.java",
+              "line": 411,
+              "endLine": 411,
+              "excerpt": "PhoenixResponseUtils.renderJson(response, successBody());",
+              "interpretation": "候选信号，必须读上下文确认分支及含义"
+            },
+            {
+              "kind": "status",
+              "file": "TtnSmartBw/src/main/java/com/focustech/subsys/smart/web/controller/phoenix/PhoenixCustomizeFileController.java",
+              "line": 477,
+              "endLine": 477,
+              "excerpt": "body.put(\"status\", \"success\");",
+              "interpretation": "候选信号，必须读上下文确认分支及含义",
+              "via": "successBody"
+            }
+          ],
+          "unresolved": [],
+          "frontendEvidence": []
+        }
+      ],
+      "elements": [],
+      "warnings": []
+    },
+    "TtnSmartBw/src/main/webapp/assets/script/phoenix/pagefunc/phoenix_function_llms_txt.js": {
+      "fingerprint": "1793260570688236382:8066",
+      "routes": [],
+      "actions": [
+        {
+          "kind": "frontend-request-candidate",
+          "url": "/phoenix/customizeFile/llms/config",
+          "httpMethods": [
+            "GET"
+          ],
+          "reference": "API.config",
+          "urlDefinition": {
+            "url": "/phoenix/customizeFile/llms/config",
+            "file": "TtnSmartBw/src/main/webapp/assets/script/phoenix/pagefunc/phoenix_function_llms_txt.js",
+            "line": 9,
+            "endLine": 9
+          },
+          "file": "TtnSmartBw/src/main/webapp/assets/script/phoenix/pagefunc/phoenix_function_llms_txt.js",
+          "line": 66,
+          "endLine": 84,
+          "successSignals": [],
+          "unresolved": [
+            "payload/DOM/国际化最终文本及回调控制流须读源代码确认"
+          ],
+          "frontendEvidence": []
+        },
+        {
+          "kind": "frontend-request-candidate",
+          "url": "/phoenix/customizeFile/llms/systemContent",
+          "httpMethods": [
+            "POST"
+          ],
+          "reference": "API.systemContent",
+          "urlDefinition": {
+            "url": "/phoenix/customizeFile/llms/systemContent",
+            "file": "TtnSmartBw/src/main/webapp/assets/script/phoenix/pagefunc/phoenix_function_llms_txt.js",
+            "line": 10,
+            "endLine": 10
+          },
+          "file": "TtnSmartBw/src/main/webapp/assets/script/phoenix/pagefunc/phoenix_function_llms_txt.js",
+          "line": 128,
+          "endLine": 139,
+          "successSignals": [],
+          "unresolved": [
+            "payload/DOM/国际化最终文本及回调控制流须读源代码确认"
+          ],
+          "frontendEvidence": []
+        },
+        {
+          "kind": "frontend-request-candidate",
+          "url": "/phoenix/customizeFile/llms/save",
+          "httpMethods": [
+            "POST"
+          ],
+          "reference": "API.save",
+          "urlDefinition": {
+            "url": "/phoenix/customizeFile/llms/save",
+            "file": "TtnSmartBw/src/main/webapp/assets/script/phoenix/pagefunc/phoenix_function_llms_txt.js",
+            "line": 11,
+            "endLine": 11
+          },
+          "file": "TtnSmartBw/src/main/webapp/assets/script/phoenix/pagefunc/phoenix_function_llms_txt.js",
+          "line": 208,
+          "endLine": 249,
+          "successSignals": [
+            {
+              "kind": "status-check",
+              "file": "TtnSmartBw/src/main/webapp/assets/script/phoenix/pagefunc/phoenix_function_llms_txt.js",
+              "line": 216,
+              "endLine": 216,
+              "excerpt": "if (response && response.status == 'success') {",
+              "interpretation": "候选信号，必须读上下文确认分支及含义"
+            },
+            {
+              "kind": "toast-candidate",
+              "file": "TtnSmartBw/src/main/webapp/assets/script/phoenix/pagefunc/phoenix_function_llms_txt.js",
+              "line": 218,
+              "endLine": 218,
+              "excerpt": "state.view.showToast(text(\nconfig.enabled ? 'llmsSaveSuccess' : 'llmsDisableSuccess',\nconfig.enabled ? 'llms.txt 配置已保存' : '已关闭 llms.txt 功能，该文件已从网站根目录移除'\n));",
+              "interpretation": "候选信号，必须读上下文确认分支及含义"
+            },
+            {
+              "kind": "dialog-close-candidate",
+              "file": "TtnSmartBw/src/main/webapp/assets/script/phoenix/pagefunc/phoenix_function_llms_txt.js",
+              "line": 224,
+              "endLine": 224,
+              "excerpt": "close();",
+              "interpretation": "候选信号，必须读上下文确认分支及含义"
+            }
+          ],
+          "unresolved": [
+            "payload/DOM/国际化最终文本及回调控制流须读源代码确认"
+          ],
+          "frontendEvidence": []
+        }
+      ],
+      "elements": [],
+      "warnings": []
+    },
+    "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_config.jsp": {
+      "fingerprint": "1793260570686408819:4742",
+      "routes": [],
+      "actions": [],
+      "elements": [
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_config.jsp",
+          "tag": "label",
+          "id": null,
+          "text": "checked />",
+          "i18nFallbacks": [
+            "开启 llms.txt"
+          ],
+          "name": null,
+          "type": null,
+          "classes": [],
+          "attributes": {},
+          "locatorCandidate": null,
+          "dynamic": true,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_config.jsp",
+          "line": 14,
+          "endLine": 14
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_config.jsp",
+          "tag": "input",
+          "id": "llmsEnabled",
+          "text": "",
+          "i18nFallbacks": [],
+          "name": null,
+          "type": "checkbox",
+          "classes": [],
+          "attributes": {
+            "type": "checkbox",
+            "id": "llmsEnabled",
+            "test": "${llmsConfig.enabled}"
+          },
+          "locatorCandidate": {
+            "strategy": "id",
+            "value": "llmsEnabled"
+          },
+          "dynamic": true,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_config.jsp",
+          "line": 14,
+          "endLine": 14
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_config.jsp",
+          "tag": "div",
+          "id": "llmsConfigFields",
+          "text": "checked /> checked />",
+          "i18nFallbacks": [
+            "系统自动生成",
+            "自定义内容"
+          ],
+          "name": null,
+          "type": null,
+          "classes": [],
+          "attributes": {
+            "id": "llmsConfigFields"
+          },
+          "locatorCandidate": {
+            "strategy": "id",
+            "value": "llmsConfigFields"
+          },
+          "dynamic": true,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_config.jsp",
+          "line": 17,
+          "endLine": 17
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_config.jsp",
+          "tag": "label",
+          "id": null,
+          "text": "checked />",
+          "i18nFallbacks": [
+            "系统自动生成"
+          ],
+          "name": null,
+          "type": null,
+          "classes": [
+            "mr20"
+          ],
+          "attributes": {
+            "class": "mr20"
+          },
+          "locatorCandidate": {
+            "strategy": "structure",
+            "value": "label.mr20"
+          },
+          "dynamic": true,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_config.jsp",
+          "line": 20,
+          "endLine": 20
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_config.jsp",
+          "tag": "input",
+          "id": null,
+          "text": "",
+          "i18nFallbacks": [],
+          "name": "llmsContentSource",
+          "type": "radio",
+          "classes": [],
+          "attributes": {
+            "type": "radio",
+            "name": "llmsContentSource",
+            "value": "0",
+            "test": "${llmsConfig.contentSource == '0'}"
+          },
+          "locatorCandidate": {
+            "strategy": "structure",
+            "value": "input[name=\"llmsContentSource\"]"
+          },
+          "dynamic": true,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_config.jsp",
+          "line": 20,
+          "endLine": 20
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_config.jsp",
+          "tag": "label",
+          "id": null,
+          "text": "checked />",
+          "i18nFallbacks": [
+            "自定义内容"
+          ],
+          "name": null,
+          "type": null,
+          "classes": [],
+          "attributes": {},
+          "locatorCandidate": null,
+          "dynamic": true,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_config.jsp",
+          "line": 21,
+          "endLine": 21
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_config.jsp",
+          "tag": "input",
+          "id": null,
+          "text": "",
+          "i18nFallbacks": [],
+          "name": "llmsContentSource",
+          "type": "radio",
+          "classes": [],
+          "attributes": {
+            "type": "radio",
+            "name": "llmsContentSource",
+            "value": "1",
+            "test": "${llmsConfig.contentSource == '1'}"
+          },
+          "locatorCandidate": {
+            "strategy": "structure",
+            "value": "input[name=\"llmsContentSource\"]"
+          },
+          "dynamic": true,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_config.jsp",
+          "line": 21,
+          "endLine": 21
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_config.jsp",
+          "tag": "div",
+          "id": "llmsSystemFields",
+          "text": "",
+          "i18nFallbacks": [
+            "网站概述",
+            "选填，最多1000字符，用于向 AI 概括网站核心业务。"
+          ],
+          "name": null,
+          "type": null,
+          "classes": [],
+          "attributes": {
+            "id": "llmsSystemFields"
+          },
+          "locatorCandidate": {
+            "strategy": "id",
+            "value": "llmsSystemFields"
+          },
+          "dynamic": true,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_config.jsp",
+          "line": 25,
+          "endLine": 25
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_config.jsp",
+          "tag": "textarea",
+          "id": "llmsSiteSummary",
+          "text": "",
+          "i18nFallbacks": [],
+          "name": null,
+          "type": null,
+          "classes": [
+            "wrap-wd-80",
+            "mt10"
+          ],
+          "attributes": {
+            "class": "wrap-wd-80 mt10",
+            "rows": "3",
+            "cols": "30",
+            "id": "llmsSiteSummary",
+            "maxlength": "1000"
+          },
+          "locatorCandidate": {
+            "strategy": "id",
+            "value": "llmsSiteSummary"
+          },
+          "dynamic": true,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_config.jsp",
+          "line": 30,
+          "endLine": 30
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_config.jsp",
+          "tag": "a",
+          "id": "llmsAddField",
+          "text": "",
+          "i18nFallbacks": [
+            "+ 添加"
+          ],
+          "name": null,
+          "type": null,
+          "classes": [
+            "flr"
+          ],
+          "attributes": {
+            "href": "javascript:void(0)",
+            "id": "llmsAddField",
+            "class": "flr"
+          },
+          "locatorCandidate": {
+            "strategy": "id",
+            "value": "llmsAddField"
+          },
+          "dynamic": true,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_config.jsp",
+          "line": 36,
+          "endLine": 36
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_config.jsp",
+          "tag": "div",
+          "id": "llmsExtendFields",
+          "text": "\"/> \"/> \"/>",
+          "i18nFallbacks": [
+            "删除"
+          ],
+          "name": null,
+          "type": null,
+          "classes": [],
+          "attributes": {
+            "id": "llmsExtendFields"
+          },
+          "locatorCandidate": {
+            "strategy": "id",
+            "value": "llmsExtendFields"
+          },
+          "dynamic": true,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_config.jsp",
+          "line": 39,
+          "endLine": 39
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_config.jsp",
+          "tag": "input",
+          "id": null,
+          "text": "",
+          "i18nFallbacks": [],
+          "name": null,
+          "type": "button",
+          "classes": [
+            "small",
+            "flr",
+            "ml5",
+            "llms_field_delete"
+          ],
+          "attributes": {
+            "class": "small flr ml5 llms_field_delete",
+            "type": "button",
+            "value": "<smartTag:message code=",
+            "text": "删除"
+          },
+          "locatorCandidate": {
+            "strategy": "structure",
+            "value": "input.small.flr.ml5.llms_field_delete"
+          },
+          "dynamic": true,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_config.jsp",
+          "line": 42,
+          "endLine": 42
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_config.jsp",
+          "tag": "input",
+          "id": null,
+          "text": "",
+          "i18nFallbacks": [],
+          "name": null,
+          "type": "text",
+          "classes": [
+            "medium",
+            "flr",
+            "ml5",
+            "llms_field_content"
+          ],
+          "attributes": {
+            "class": "medium flr ml5 llms_field_content",
+            "type": "text",
+            "maxlength": "500",
+            "value": "<c:out value="
+          },
+          "locatorCandidate": {
+            "strategy": "structure",
+            "value": "input.medium.flr.ml5.llms_field_content"
+          },
+          "dynamic": true,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_config.jsp",
+          "line": 43,
+          "endLine": 43
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_config.jsp",
+          "tag": "input",
+          "id": null,
+          "text": "",
+          "i18nFallbacks": [],
+          "name": null,
+          "type": "text",
+          "classes": [
+            "medium",
+            "flr",
+            "llms_field_name"
+          ],
+          "attributes": {
+            "class": "medium flr llms_field_name",
+            "type": "text",
+            "maxlength": "100",
+            "value": "<c:out value="
+          },
+          "locatorCandidate": {
+            "strategy": "structure",
+            "value": "input.medium.flr.llms_field_name"
+          },
+          "dynamic": true,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_config.jsp",
+          "line": 44,
+          "endLine": 44
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_config.jsp",
+          "tag": "div",
+          "id": "llmsExtendFieldTemplate",
+          "text": "\"/>",
+          "i18nFallbacks": [
+            "删除"
+          ],
+          "name": null,
+          "type": null,
+          "classes": [
+            "fix",
+            "llms_extend_field_row",
+            "mt5"
+          ],
+          "attributes": {
+            "id": "llmsExtendFieldTemplate",
+            "class": "fix llms_extend_field_row mt5",
+            "style": "display:none;"
+          },
+          "locatorCandidate": {
+            "strategy": "id",
+            "value": "llmsExtendFieldTemplate"
+          },
+          "dynamic": true,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_config.jsp",
+          "line": 49,
+          "endLine": 49
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_config.jsp",
+          "tag": "input",
+          "id": null,
+          "text": "",
+          "i18nFallbacks": [],
+          "name": null,
+          "type": "button",
+          "classes": [
+            "small",
+            "flr",
+            "ml5",
+            "llms_field_delete"
+          ],
+          "attributes": {
+            "class": "small flr ml5 llms_field_delete",
+            "type": "button",
+            "value": "<smartTag:message code=",
+            "text": "删除"
+          },
+          "locatorCandidate": {
+            "strategy": "structure",
+            "value": "input.small.flr.ml5.llms_field_delete"
+          },
+          "dynamic": true,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_config.jsp",
+          "line": 50,
+          "endLine": 50
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_config.jsp",
+          "tag": "input",
+          "id": null,
+          "text": "",
+          "i18nFallbacks": [],
+          "name": null,
+          "type": "text",
+          "classes": [
+            "medium",
+            "flr",
+            "ml5",
+            "llms_field_content"
+          ],
+          "attributes": {
+            "class": "medium flr ml5 llms_field_content",
+            "type": "text",
+            "maxlength": "500",
+            "value": ""
+          },
+          "locatorCandidate": {
+            "strategy": "structure",
+            "value": "input.medium.flr.ml5.llms_field_content"
+          },
+          "dynamic": false,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_config.jsp",
+          "line": 51,
+          "endLine": 51
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_config.jsp",
+          "tag": "input",
+          "id": null,
+          "text": "",
+          "i18nFallbacks": [],
+          "name": null,
+          "type": "text",
+          "classes": [
+            "medium",
+            "flr",
+            "llms_field_name"
+          ],
+          "attributes": {
+            "class": "medium flr llms_field_name",
+            "type": "text",
+            "maxlength": "100",
+            "value": ""
+          },
+          "locatorCandidate": {
+            "strategy": "structure",
+            "value": "input.medium.flr.llms_field_name"
+          },
+          "dynamic": false,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_config.jsp",
+          "line": 52,
+          "endLine": 52
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_config.jsp",
+          "tag": "div",
+          "id": "llmsCustomFields",
+          "text": "0 /100000",
+          "i18nFallbacks": [
+            "自定义内容",
+            "最多100000字符，将直接作为 llms.txt 内容输出。"
+          ],
+          "name": null,
+          "type": null,
+          "classes": [],
+          "attributes": {
+            "id": "llmsCustomFields",
+            "style": "display:none;"
+          },
+          "locatorCandidate": {
+            "strategy": "id",
+            "value": "llmsCustomFields"
+          },
+          "dynamic": true,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_config.jsp",
+          "line": 59,
+          "endLine": 59
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_config.jsp",
+          "tag": "textarea",
+          "id": "llmsCustomContent",
+          "text": "",
+          "i18nFallbacks": [],
+          "name": null,
+          "type": null,
+          "classes": [
+            "wrap-wd-80",
+            "mt10"
+          ],
+          "attributes": {
+            "class": "wrap-wd-80 mt10",
+            "rows": "10",
+            "cols": "30",
+            "id": "llmsCustomContent",
+            "maxlength": "100000"
+          },
+          "locatorCandidate": {
+            "strategy": "id",
+            "value": "llmsCustomContent"
+          },
+          "dynamic": true,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_config.jsp",
+          "line": 64,
+          "endLine": 64
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_config.jsp",
+          "tag": "span",
+          "id": "llmsCustomCount",
+          "text": "0",
+          "i18nFallbacks": [],
+          "name": null,
+          "type": null,
+          "classes": [],
+          "attributes": {
+            "id": "llmsCustomCount"
+          },
+          "locatorCandidate": {
+            "strategy": "id",
+            "value": "llmsCustomCount"
+          },
+          "dynamic": false,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_config.jsp",
+          "line": 65,
+          "endLine": 65
+        }
+      ],
+      "warnings": []
+    },
+    "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp": {
+      "fingerprint": "1793260570684285472:9595",
+      "routes": [],
+      "actions": [],
+      "elements": [
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "tag": "div",
+          "id": null,
+          "text": "llms.txt",
+          "i18nFallbacks": [
+            "功能",
+            "开启后系统将自动在网站根目录生成并持续更新 llms.txt 文件，帮助 AI 大语言模型更好地理解和索引您的网站内容。"
+          ],
+          "name": null,
+          "type": null,
+          "classes": [
+            "llms-form"
+          ],
+          "attributes": {
+            "class": "llms-form",
+            "data-enabled": "${llmsConfig.enabled ? 'true' : 'false'}",
+            "data-source": "<c:out value='${llmsConfig.source}'/>",
+            "data-meta-empty": "${llmsConfig.homeMetaDescriptionEmpty ? 'true' : 'false'}"
+          },
+          "locatorCandidate": {
+            "strategy": "structure",
+            "value": "div.llms-form"
+          },
+          "dynamic": true,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "line": 4,
+          "endLine": 4
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "tag": "div",
+          "id": null,
+          "text": "llms.txt",
+          "i18nFallbacks": [
+            "功能",
+            "开启后系统将自动在网站根目录生成并持续更新 llms.txt 文件，帮助 AI 大语言模型更好地理解和索引您的网站内容。"
+          ],
+          "name": null,
+          "type": null,
+          "classes": [
+            "llms-banner"
+          ],
+          "attributes": {
+            "class": "llms-banner"
+          },
+          "locatorCandidate": {
+            "strategy": "structure",
+            "value": "div.llms-banner"
+          },
+          "dynamic": true,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "line": 7,
+          "endLine": 7
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "tag": "span",
+          "id": null,
+          "text": "",
+          "i18nFallbacks": [],
+          "name": null,
+          "type": null,
+          "classes": [
+            "llms-lock"
+          ],
+          "attributes": {
+            "class": "llms-lock"
+          },
+          "locatorCandidate": {
+            "strategy": "structure",
+            "value": "span.llms-lock"
+          },
+          "dynamic": false,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "line": 8,
+          "endLine": 8
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "tag": "div",
+          "id": null,
+          "text": "llms.txt",
+          "i18nFallbacks": [
+            "功能",
+            "开启后系统将自动在网站根目录生成并持续更新 llms.txt 文件，帮助 AI 大语言模型更好地理解和索引您的网站内容。"
+          ],
+          "name": null,
+          "type": null,
+          "classes": [
+            "llms-banner-text"
+          ],
+          "attributes": {
+            "class": "llms-banner-text"
+          },
+          "locatorCandidate": {
+            "strategy": "structure",
+            "value": "div.llms-banner-text"
+          },
+          "dynamic": true,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "line": 9,
+          "endLine": 9
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "tag": "h3",
+          "id": null,
+          "text": "llms.txt",
+          "i18nFallbacks": [
+            "功能"
+          ],
+          "name": null,
+          "type": null,
+          "classes": [
+            "llms-banner-title"
+          ],
+          "attributes": {
+            "class": "llms-banner-title"
+          },
+          "locatorCandidate": {
+            "strategy": "structure",
+            "value": "h3.llms-banner-title"
+          },
+          "dynamic": true,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "line": 10,
+          "endLine": 10
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "tag": "em",
+          "id": null,
+          "text": "",
+          "i18nFallbacks": [],
+          "name": null,
+          "type": null,
+          "classes": [
+            "llms-status"
+          ],
+          "attributes": {
+            "class": "llms-status"
+          },
+          "locatorCandidate": {
+            "strategy": "structure",
+            "value": "em.llms-status"
+          },
+          "dynamic": false,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "line": 10,
+          "endLine": 10
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "tag": "p",
+          "id": null,
+          "text": "",
+          "i18nFallbacks": [
+            "开启后系统将自动在网站根目录生成并持续更新 llms.txt 文件，帮助 AI 大语言模型更好地理解和索引您的网站内容。"
+          ],
+          "name": null,
+          "type": null,
+          "classes": [
+            "llms-banner-desc"
+          ],
+          "attributes": {
+            "class": "llms-banner-desc"
+          },
+          "locatorCandidate": {
+            "strategy": "structure",
+            "value": "p.llms-banner-desc"
+          },
+          "dynamic": true,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "line": 11,
+          "endLine": 11
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "tag": "a",
+          "id": null,
+          "text": "",
+          "i18nFallbacks": [],
+          "name": null,
+          "type": null,
+          "classes": [
+            "llms-switch"
+          ],
+          "attributes": {
+            "href": "javascript:;",
+            "class": "llms-switch"
+          },
+          "locatorCandidate": {
+            "strategy": "structure",
+            "value": "a.llms-switch"
+          },
+          "dynamic": false,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "line": 13,
+          "endLine": 13
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "tag": "p",
+          "id": null,
+          "text": "",
+          "i18nFallbacks": [],
+          "name": null,
+          "type": null,
+          "classes": [
+            "llms-save-error",
+            "hide"
+          ],
+          "attributes": {
+            "class": "llms-save-error hide"
+          },
+          "locatorCandidate": {
+            "strategy": "structure",
+            "value": "p.llms-save-error.hide"
+          },
+          "dynamic": false,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "line": 16,
+          "endLine": 16
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "tag": "div",
+          "id": null,
+          "text": "",
+          "i18nFallbacks": [
+            "内容来源",
+            "系统自动生成",
+            "自定义内容"
+          ],
+          "name": null,
+          "type": null,
+          "classes": [
+            "llms-fields"
+          ],
+          "attributes": {
+            "class": "llms-fields"
+          },
+          "locatorCandidate": {
+            "strategy": "structure",
+            "value": "div.llms-fields"
+          },
+          "dynamic": true,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "line": 17,
+          "endLine": 17
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "tag": "div",
+          "id": null,
+          "text": "",
+          "i18nFallbacks": [
+            "内容来源",
+            "系统自动生成",
+            "自定义内容"
+          ],
+          "name": null,
+          "type": null,
+          "classes": [
+            "llms-section",
+            "llms-source-section"
+          ],
+          "attributes": {
+            "class": "llms-section llms-source-section"
+          },
+          "locatorCandidate": {
+            "strategy": "structure",
+            "value": "div.llms-section.llms-source-section"
+          },
+          "dynamic": true,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "line": 18,
+          "endLine": 18
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "tag": "div",
+          "id": null,
+          "text": "",
+          "i18nFallbacks": [
+            "系统自动生成",
+            "自定义内容"
+          ],
+          "name": null,
+          "type": null,
+          "classes": [
+            "llms-sources"
+          ],
+          "attributes": {
+            "class": "llms-sources"
+          },
+          "locatorCandidate": {
+            "strategy": "structure",
+            "value": "div.llms-sources"
+          },
+          "dynamic": true,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "line": 20,
+          "endLine": 20
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "tag": "label",
+          "id": null,
+          "text": "",
+          "i18nFallbacks": [
+            "系统自动生成"
+          ],
+          "name": null,
+          "type": null,
+          "classes": [
+            "llms-source-option",
+            "llms-source-system"
+          ],
+          "attributes": {
+            "class": "llms-source-option llms-source-system"
+          },
+          "locatorCandidate": {
+            "strategy": "structure",
+            "value": "label.llms-source-option.llms-source-system"
+          },
+          "dynamic": true,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "line": 21,
+          "endLine": 21
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "tag": "input",
+          "id": null,
+          "text": "",
+          "i18nFallbacks": [],
+          "name": "llmsSource",
+          "type": "radio",
+          "classes": [
+            "llms-source-input"
+          ],
+          "attributes": {
+            "class": "llms-source-input",
+            "type": "radio",
+            "name": "llmsSource",
+            "value": "system"
+          },
+          "locatorCandidate": {
+            "strategy": "structure",
+            "value": "input.llms-source-input"
+          },
+          "dynamic": false,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "line": 21,
+          "endLine": 21
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "tag": "span",
+          "id": null,
+          "text": "",
+          "i18nFallbacks": [
+            "系统自动生成"
+          ],
+          "name": null,
+          "type": null,
+          "classes": [
+            "llms-source-content"
+          ],
+          "attributes": {
+            "class": "llms-source-content"
+          },
+          "locatorCandidate": {
+            "strategy": "structure",
+            "value": "span.llms-source-content"
+          },
+          "dynamic": true,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "line": 21,
+          "endLine": 21
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "tag": "i",
+          "id": null,
+          "text": "",
+          "i18nFallbacks": [],
+          "name": null,
+          "type": null,
+          "classes": [
+            "llms-source-icon"
+          ],
+          "attributes": {
+            "class": "llms-source-icon"
+          },
+          "locatorCandidate": {
+            "strategy": "structure",
+            "value": "i.llms-source-icon"
+          },
+          "dynamic": false,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "line": 21,
+          "endLine": 21
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "tag": "label",
+          "id": null,
+          "text": "",
+          "i18nFallbacks": [
+            "自定义内容"
+          ],
+          "name": null,
+          "type": null,
+          "classes": [
+            "llms-source-option",
+            "llms-source-custom"
+          ],
+          "attributes": {
+            "class": "llms-source-option llms-source-custom"
+          },
+          "locatorCandidate": {
+            "strategy": "structure",
+            "value": "label.llms-source-option.llms-source-custom"
+          },
+          "dynamic": true,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "line": 22,
+          "endLine": 22
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "tag": "input",
+          "id": null,
+          "text": "",
+          "i18nFallbacks": [],
+          "name": "llmsSource",
+          "type": "radio",
+          "classes": [
+            "llms-source-input"
+          ],
+          "attributes": {
+            "class": "llms-source-input",
+            "type": "radio",
+            "name": "llmsSource",
+            "value": "custom"
+          },
+          "locatorCandidate": {
+            "strategy": "structure",
+            "value": "input.llms-source-input"
+          },
+          "dynamic": false,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "line": 22,
+          "endLine": 22
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "tag": "span",
+          "id": null,
+          "text": "",
+          "i18nFallbacks": [
+            "自定义内容"
+          ],
+          "name": null,
+          "type": null,
+          "classes": [
+            "llms-source-content"
+          ],
+          "attributes": {
+            "class": "llms-source-content"
+          },
+          "locatorCandidate": {
+            "strategy": "structure",
+            "value": "span.llms-source-content"
+          },
+          "dynamic": true,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "line": 22,
+          "endLine": 22
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "tag": "i",
+          "id": null,
+          "text": "",
+          "i18nFallbacks": [],
+          "name": null,
+          "type": null,
+          "classes": [
+            "llms-source-icon"
+          ],
+          "attributes": {
+            "class": "llms-source-icon"
+          },
+          "locatorCandidate": {
+            "strategy": "structure",
+            "value": "i.llms-source-icon"
+          },
+          "dynamic": false,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "line": 22,
+          "endLine": 22
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "tag": "div",
+          "id": null,
+          "text": "\" aria-describedby=\"llms-rule-tooltip\">? ： ： ： Contact Us ： Social Media ： Website Language Versions ： Website Navigation ： Product Category ： FAQ ：",
+          "i18nFallbacks": [
+            "自动生成规则",
+            "自动生成规则",
+            "文件按以下模块顺序生成，各模块取值规则如下：",
+            "网站标题",
+            "取网站简称字段",
+            "网站概述",
+            "优先使用下方填写的「网站概述」；留空则取首页 Meta Description",
+            "扩展内容字段",
+            "仅写入已填写名称与内容的自定义字段",
+            "自动读取首页「快速联系」组件中配置的联系方式",
+            "自动读取首页「社交关注」组件中添加的社媒信息",
+            "自动读取网站已开通的多语言版本及对应 URL",
+            "自动读取网站导航菜单结构（含子菜单层级）",
+            "自动读取产品分类树结构",
+            "自动读取内容管理后台「FAQ 管理」中的前 5 条问答"
+          ],
+          "name": null,
+          "type": null,
+          "classes": [
+            "llms-source-tip"
+          ],
+          "attributes": {
+            "class": "llms-source-tip"
+          },
+          "locatorCandidate": {
+            "strategy": "structure",
+            "value": "div.llms-source-tip"
+          },
+          "dynamic": true,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "line": 24,
+          "endLine": 24
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "tag": "div",
+          "id": null,
+          "text": "? ： ： ： Contact Us ： Social Media ： Website Language Versions ： Website Navigation ： Product Category ： FAQ ：",
+          "i18nFallbacks": [
+            "自动生成规则",
+            "文件按以下模块顺序生成，各模块取值规则如下：",
+            "网站标题",
+            "取网站简称字段",
+            "网站概述",
+            "优先使用下方填写的「网站概述」；留空则取首页 Meta Description",
+            "扩展内容字段",
+            "仅写入已填写名称与内容的自定义字段",
+            "自动读取首页「快速联系」组件中配置的联系方式",
+            "自动读取首页「社交关注」组件中添加的社媒信息",
+            "自动读取网站已开通的多语言版本及对应 URL",
+            "自动读取网站导航菜单结构（含子菜单层级）",
+            "自动读取产品分类树结构",
+            "自动读取内容管理后台「FAQ 管理」中的前 5 条问答"
+          ],
+          "name": null,
+          "type": null,
+          "classes": [
+            "llms-rule-help"
+          ],
+          "attributes": {
+            "class": "llms-rule-help",
+            "tabindex": "0",
+            "aria-label": "<smartTag:message code='backend.customize_file.generate_rule' text='自动生成规则'/>",
+            "aria-describedby": "llms-rule-tooltip"
+          },
+          "locatorCandidate": {
+            "strategy": "structure",
+            "value": "div.llms-rule-help"
+          },
+          "dynamic": true,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "line": 24,
+          "endLine": 24
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "tag": "div",
+          "id": "llms-rule-tooltip",
+          "text": "： ： ： Contact Us ： Social Media ： Website Language Versions ： Website Navigation ： Product Category ： FAQ ：",
+          "i18nFallbacks": [
+            "自动生成规则",
+            "文件按以下模块顺序生成，各模块取值规则如下：",
+            "网站标题",
+            "取网站简称字段",
+            "网站概述",
+            "优先使用下方填写的「网站概述」；留空则取首页 Meta Description",
+            "扩展内容字段",
+            "仅写入已填写名称与内容的自定义字段",
+            "自动读取首页「快速联系」组件中配置的联系方式",
+            "自动读取首页「社交关注」组件中添加的社媒信息",
+            "自动读取网站已开通的多语言版本及对应 URL",
+            "自动读取网站导航菜单结构（含子菜单层级）",
+            "自动读取产品分类树结构",
+            "自动读取内容管理后台「FAQ 管理」中的前 5 条问答"
+          ],
+          "name": null,
+          "type": null,
+          "classes": [
+            "llms-rule-tooltip"
+          ],
+          "attributes": {
+            "class": "llms-rule-tooltip",
+            "id": "llms-rule-tooltip",
+            "role": "tooltip"
+          },
+          "locatorCandidate": {
+            "strategy": "id",
+            "value": "llms-rule-tooltip"
+          },
+          "dynamic": true,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "line": 24,
+          "endLine": 24
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "tag": "div",
+          "id": null,
+          "text": "\" placeholder=\" \"/> 0 /1000",
+          "i18nFallbacks": [
+            "网站概述",
+            "选填。留空时将自动使用首页 Meta Description 作为网站概述。",
+            "为空则取首页 Meta Description"
+          ],
+          "name": null,
+          "type": null,
+          "classes": [
+            "llms-system-fields"
+          ],
+          "attributes": {
+            "class": "llms-system-fields"
+          },
+          "locatorCandidate": {
+            "strategy": "structure",
+            "value": "div.llms-system-fields"
+          },
+          "dynamic": true,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "line": 27,
+          "endLine": 27
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "tag": "input",
+          "id": null,
+          "text": "",
+          "i18nFallbacks": [],
+          "name": null,
+          "type": "text",
+          "classes": [
+            "llms-overview"
+          ],
+          "attributes": {
+            "type": "text",
+            "class": "llms-overview",
+            "value": "<c:out value='${llmsConfig.overview}'/>",
+            "placeholder": "<smartTag:message code='backend.customize_file.overview_placeholder' text='为空则取首页 Meta Description'/>"
+          },
+          "locatorCandidate": {
+            "strategy": "structure",
+            "value": "input.llms-overview"
+          },
+          "dynamic": true,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "line": 30,
+          "endLine": 30
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "tag": "div",
+          "id": null,
+          "text": "+ \" placeholder=\" \"/> 0 /100",
+          "i18nFallbacks": [
+            "扩展内容字段",
+            "添加字段",
+            "以下字段均为选填，您可根据业务需要自由补充，不填写不影响 llms.txt 正常生成。常见可添加字段：认证资质、定制服务、最小起订量、交货周期、主要出口市场。",
+            "字段名称"
+          ],
+          "name": null,
+          "type": null,
+          "classes": [
+            "llms-section",
+            "llms-box",
+            "llms-extra-row"
+          ],
+          "attributes": {
+            "class": "llms-section llms-box llms-extra-row"
+          },
+          "locatorCandidate": {
+            "strategy": "structure",
+            "value": "div.llms-section.llms-box.llms-extra-row"
+          },
+          "dynamic": true,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "line": 35,
+          "endLine": 35
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "tag": "h4",
+          "id": null,
+          "text": "+",
+          "i18nFallbacks": [
+            "扩展内容字段",
+            "添加字段"
+          ],
+          "name": null,
+          "type": null,
+          "classes": [
+            "llms-section-title",
+            "llms-extra-heading"
+          ],
+          "attributes": {
+            "class": "llms-section-title llms-extra-heading"
+          },
+          "locatorCandidate": {
+            "strategy": "structure",
+            "value": "h4.llms-section-title.llms-extra-heading"
+          },
+          "dynamic": true,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "line": 36,
+          "endLine": 36
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "tag": "a",
+          "id": null,
+          "text": "+",
+          "i18nFallbacks": [
+            "添加字段"
+          ],
+          "name": null,
+          "type": null,
+          "classes": [
+            "llms-add-field"
+          ],
+          "attributes": {
+            "href": "javascript:;",
+            "class": "llms-add-field"
+          },
+          "locatorCandidate": {
+            "strategy": "structure",
+            "value": "a.llms-add-field"
+          },
+          "dynamic": true,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "line": 36,
+          "endLine": 36
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "tag": "span",
+          "id": "llms-add-field-tooltip",
+          "text": "",
+          "i18nFallbacks": [],
+          "name": null,
+          "type": null,
+          "classes": [
+            "llms-add-field-tooltip"
+          ],
+          "attributes": {
+            "class": "llms-add-field-tooltip",
+            "id": "llms-add-field-tooltip",
+            "role": "tooltip",
+            "data-llms-text": "maxExtra"
+          },
+          "locatorCandidate": {
+            "strategy": "id",
+            "value": "llms-add-field-tooltip"
+          },
+          "dynamic": false,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "line": 36,
+          "endLine": 36
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "tag": "p",
+          "id": null,
+          "text": "",
+          "i18nFallbacks": [],
+          "name": null,
+          "type": null,
+          "classes": [
+            "llms-error",
+            "llms-extra-error",
+            "hide"
+          ],
+          "attributes": {
+            "class": "llms-error llms-extra-error hide"
+          },
+          "locatorCandidate": {
+            "strategy": "structure",
+            "value": "p.llms-error.llms-extra-error.hide"
+          },
+          "dynamic": false,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "line": 38,
+          "endLine": 38
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "tag": "div",
+          "id": null,
+          "text": "\" placeholder=\" \"/> 0 /100",
+          "i18nFallbacks": [
+            "字段名称"
+          ],
+          "name": null,
+          "type": null,
+          "classes": [
+            "llms-extra-fields"
+          ],
+          "attributes": {
+            "class": "llms-extra-fields"
+          },
+          "locatorCandidate": {
+            "strategy": "structure",
+            "value": "div.llms-extra-fields"
+          },
+          "dynamic": true,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "line": 39,
+          "endLine": 39
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "tag": "div",
+          "id": null,
+          "text": "\" placeholder=\" \"/> 0 /100",
+          "i18nFallbacks": [
+            "字段名称"
+          ],
+          "name": null,
+          "type": null,
+          "classes": [
+            "llms-extra-item"
+          ],
+          "attributes": {
+            "class": "llms-extra-item"
+          },
+          "locatorCandidate": {
+            "strategy": "structure",
+            "value": "div.llms-extra-item"
+          },
+          "dynamic": true,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "line": 41,
+          "endLine": 41
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "tag": "div",
+          "id": null,
+          "text": "\" placeholder=\" \"/> 0 /100",
+          "i18nFallbacks": [
+            "字段名称"
+          ],
+          "name": null,
+          "type": null,
+          "classes": [
+            "llms-extra-controls"
+          ],
+          "attributes": {
+            "class": "llms-extra-controls"
+          },
+          "locatorCandidate": {
+            "strategy": "structure",
+            "value": "div.llms-extra-controls"
+          },
+          "dynamic": true,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "line": 41,
+          "endLine": 41
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "tag": "div",
+          "id": null,
+          "text": "\" placeholder=\" \"/> 0 /100",
+          "i18nFallbacks": [
+            "字段名称"
+          ],
+          "name": null,
+          "type": null,
+          "classes": [
+            "llms-input-count-wrap",
+            "llms-extra-name-wrap"
+          ],
+          "attributes": {
+            "class": "llms-input-count-wrap llms-extra-name-wrap"
+          },
+          "locatorCandidate": {
+            "strategy": "structure",
+            "value": "div.llms-input-count-wrap.llms-extra-name-wrap"
+          },
+          "dynamic": true,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "line": 42,
+          "endLine": 42
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "tag": "input",
+          "id": null,
+          "text": "",
+          "i18nFallbacks": [],
+          "name": null,
+          "type": "text",
+          "classes": [
+            "llms-extra-name"
+          ],
+          "attributes": {
+            "type": "text",
+            "class": "llms-extra-name",
+            "value": "<c:out value='${extraField.name}'/>",
+            "placeholder": "<smartTag:message code='backend.customize_file.field_name' text='字段名称'/>"
+          },
+          "locatorCandidate": {
+            "strategy": "structure",
+            "value": "input.llms-extra-name"
+          },
+          "dynamic": true,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "line": 42,
+          "endLine": 42
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "tag": "span",
+          "id": null,
+          "text": "0 /100",
+          "i18nFallbacks": [],
+          "name": null,
+          "type": null,
+          "classes": [
+            "llms-input-count",
+            "llms-extra-name-count"
+          ],
+          "attributes": {
+            "class": "llms-input-count llms-extra-name-count",
+            "aria-live": "polite"
+          },
+          "locatorCandidate": {
+            "strategy": "text",
+            "value": "0 /100"
+          },
+          "dynamic": false,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "line": 42,
+          "endLine": 42
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "tag": "div",
+          "id": null,
+          "text": "\" placeholder=\" \"/> 0 /500",
+          "i18nFallbacks": [
+            "请输入内容"
+          ],
+          "name": null,
+          "type": null,
+          "classes": [
+            "llms-input-count-wrap",
+            "llms-extra-value-wrap"
+          ],
+          "attributes": {
+            "class": "llms-input-count-wrap llms-extra-value-wrap"
+          },
+          "locatorCandidate": {
+            "strategy": "structure",
+            "value": "div.llms-input-count-wrap.llms-extra-value-wrap"
+          },
+          "dynamic": true,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "line": 43,
+          "endLine": 43
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "tag": "input",
+          "id": null,
+          "text": "",
+          "i18nFallbacks": [],
+          "name": null,
+          "type": "text",
+          "classes": [
+            "llms-extra-value"
+          ],
+          "attributes": {
+            "type": "text",
+            "class": "llms-extra-value",
+            "value": "<c:out value='${extraField.value}'/>",
+            "placeholder": "<smartTag:message code='backend.customize_file.field_content' text='请输入内容'/>"
+          },
+          "locatorCandidate": {
+            "strategy": "structure",
+            "value": "input.llms-extra-value"
+          },
+          "dynamic": true,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "line": 43,
+          "endLine": 43
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "tag": "span",
+          "id": null,
+          "text": "0 /500",
+          "i18nFallbacks": [],
+          "name": null,
+          "type": null,
+          "classes": [
+            "llms-input-count",
+            "llms-extra-value-count"
+          ],
+          "attributes": {
+            "class": "llms-input-count llms-extra-value-count",
+            "aria-live": "polite"
+          },
+          "locatorCandidate": {
+            "strategy": "text",
+            "value": "0 /500"
+          },
+          "dynamic": false,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "line": 43,
+          "endLine": 43
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "tag": "a",
+          "id": null,
+          "text": "&times;",
+          "i18nFallbacks": [],
+          "name": null,
+          "type": null,
+          "classes": [
+            "llms-remove-field"
+          ],
+          "attributes": {
+            "href": "javascript:;",
+            "class": "llms-remove-field",
+            "title": "<smartTag:message code='backend.common.delete' text='删除'/>"
+          },
+          "locatorCandidate": {
+            "strategy": "structure",
+            "value": "a.llms-remove-field"
+          },
+          "dynamic": true,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "line": 44,
+          "endLine": 44
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "tag": "div",
+          "id": null,
+          "text": "",
+          "i18nFallbacks": [
+            "暂未添加扩展字段，可点击「添加字段」按钮补充"
+          ],
+          "name": null,
+          "type": null,
+          "classes": [
+            "llms-extra-empty"
+          ],
+          "attributes": {
+            "class": "llms-extra-empty"
+          },
+          "locatorCandidate": {
+            "strategy": "structure",
+            "value": "div.llms-extra-empty"
+          },
+          "dynamic": true,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "line": 48,
+          "endLine": 48
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "tag": "div",
+          "id": null,
+          "text": "\"/> 0 /100",
+          "i18nFallbacks": [
+            "字段名称"
+          ],
+          "name": null,
+          "type": null,
+          "classes": [
+            "llms-extra-template",
+            "hide"
+          ],
+          "attributes": {
+            "class": "llms-extra-template hide"
+          },
+          "locatorCandidate": {
+            "strategy": "structure",
+            "value": "div.llms-extra-template.hide"
+          },
+          "dynamic": true,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "line": 51,
+          "endLine": 51
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "tag": "div",
+          "id": null,
+          "text": "\"/> 0 /100",
+          "i18nFallbacks": [
+            "字段名称"
+          ],
+          "name": null,
+          "type": null,
+          "classes": [
+            "llms-extra-controls"
+          ],
+          "attributes": {
+            "class": "llms-extra-controls"
+          },
+          "locatorCandidate": {
+            "strategy": "structure",
+            "value": "div.llms-extra-controls"
+          },
+          "dynamic": true,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "line": 51,
+          "endLine": 51
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "tag": "div",
+          "id": null,
+          "text": "\"/> 0 /100",
+          "i18nFallbacks": [
+            "字段名称"
+          ],
+          "name": null,
+          "type": null,
+          "classes": [
+            "llms-input-count-wrap",
+            "llms-extra-name-wrap"
+          ],
+          "attributes": {
+            "class": "llms-input-count-wrap llms-extra-name-wrap"
+          },
+          "locatorCandidate": {
+            "strategy": "structure",
+            "value": "div.llms-input-count-wrap.llms-extra-name-wrap"
+          },
+          "dynamic": true,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "line": 52,
+          "endLine": 52
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "tag": "input",
+          "id": null,
+          "text": "",
+          "i18nFallbacks": [],
+          "name": null,
+          "type": "text",
+          "classes": [
+            "llms-extra-name"
+          ],
+          "attributes": {
+            "type": "text",
+            "class": "llms-extra-name",
+            "placeholder": "<smartTag:message code='backend.customize_file.field_name' text='字段名称'/>"
+          },
+          "locatorCandidate": {
+            "strategy": "structure",
+            "value": "input.llms-extra-name"
+          },
+          "dynamic": true,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "line": 52,
+          "endLine": 52
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "tag": "span",
+          "id": null,
+          "text": "0 /100",
+          "i18nFallbacks": [],
+          "name": null,
+          "type": null,
+          "classes": [
+            "llms-input-count",
+            "llms-extra-name-count"
+          ],
+          "attributes": {
+            "class": "llms-input-count llms-extra-name-count",
+            "aria-live": "polite"
+          },
+          "locatorCandidate": {
+            "strategy": "text",
+            "value": "0 /100"
+          },
+          "dynamic": false,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "line": 52,
+          "endLine": 52
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "tag": "div",
+          "id": null,
+          "text": "\"/> 0 /500",
+          "i18nFallbacks": [
+            "请输入内容"
+          ],
+          "name": null,
+          "type": null,
+          "classes": [
+            "llms-input-count-wrap",
+            "llms-extra-value-wrap"
+          ],
+          "attributes": {
+            "class": "llms-input-count-wrap llms-extra-value-wrap"
+          },
+          "locatorCandidate": {
+            "strategy": "structure",
+            "value": "div.llms-input-count-wrap.llms-extra-value-wrap"
+          },
+          "dynamic": true,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "line": 53,
+          "endLine": 53
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "tag": "input",
+          "id": null,
+          "text": "",
+          "i18nFallbacks": [],
+          "name": null,
+          "type": "text",
+          "classes": [
+            "llms-extra-value"
+          ],
+          "attributes": {
+            "type": "text",
+            "class": "llms-extra-value",
+            "placeholder": "<smartTag:message code='backend.customize_file.field_content' text='请输入内容'/>"
+          },
+          "locatorCandidate": {
+            "strategy": "structure",
+            "value": "input.llms-extra-value"
+          },
+          "dynamic": true,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "line": 53,
+          "endLine": 53
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "tag": "span",
+          "id": null,
+          "text": "0 /500",
+          "i18nFallbacks": [],
+          "name": null,
+          "type": null,
+          "classes": [
+            "llms-input-count",
+            "llms-extra-value-count"
+          ],
+          "attributes": {
+            "class": "llms-input-count llms-extra-value-count",
+            "aria-live": "polite"
+          },
+          "locatorCandidate": {
+            "strategy": "text",
+            "value": "0 /500"
+          },
+          "dynamic": false,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "line": 53,
+          "endLine": 53
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "tag": "a",
+          "id": null,
+          "text": "&times;",
+          "i18nFallbacks": [],
+          "name": null,
+          "type": null,
+          "classes": [
+            "llms-remove-field"
+          ],
+          "attributes": {
+            "href": "javascript:;",
+            "class": "llms-remove-field",
+            "title": "<smartTag:message code='backend.common.delete' text='删除'/>"
+          },
+          "locatorCandidate": {
+            "strategy": "structure",
+            "value": "a.llms-remove-field"
+          },
+          "dynamic": true,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "line": 54,
+          "endLine": 54
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "tag": "div",
+          "id": null,
+          "text": "",
+          "i18nFallbacks": [
+            "暂未添加扩展字段，可点击「添加字段」按钮补充"
+          ],
+          "name": null,
+          "type": null,
+          "classes": [
+            "llms-extra-empty-template",
+            "hide"
+          ],
+          "attributes": {
+            "class": "llms-extra-empty-template hide"
+          },
+          "locatorCandidate": {
+            "strategy": "structure",
+            "value": "div.llms-extra-empty-template.hide"
+          },
+          "dynamic": true,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "line": 56,
+          "endLine": 56
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "tag": "div",
+          "id": null,
+          "text": "0 /100000 \">",
+          "i18nFallbacks": [
+            "自定义 llms.txt 内容",
+            "请输入完整的 llms.txt 文件内容"
+          ],
+          "name": null,
+          "type": null,
+          "classes": [
+            "llms-custom-fields"
+          ],
+          "attributes": {
+            "class": "llms-custom-fields"
+          },
+          "locatorCandidate": {
+            "strategy": "structure",
+            "value": "div.llms-custom-fields"
+          },
+          "dynamic": true,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "line": 60,
+          "endLine": 60
+        },
+        {
+          "template": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "tag": "textarea",
+          "id": null,
+          "text": "",
+          "i18nFallbacks": [],
+          "name": null,
+          "type": null,
+          "classes": [
+            "llms-custom-content"
+          ],
+          "attributes": {
+            "class": "llms-custom-content",
+            "rows": "16",
+            "placeholder": "<smartTag:message code='backend.customize_file.custom_placeholder' text='请输入完整的 llms.txt 文件内容'/>"
+          },
+          "locatorCandidate": {
+            "strategy": "structure",
+            "value": "textarea.llms-custom-content"
+          },
+          "dynamic": true,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+          "line": 63,
+          "endLine": 63
+        }
+      ],
+      "warnings": []
+    }
+  }
+}

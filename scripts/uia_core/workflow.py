@@ -30,19 +30,29 @@ def init(run_id, config_path):
     base = ROOT / "runs" / run_id
     require(not (base / "run.json").exists(), "Run already exists; use status/next to resume")
     cfg = run_config(base, config_path)
-    m = {"schema_version": "uia-run.v1", "run_id": run_id, "created_at": now(),
+    initial_specs = sorted("runner/" + str(p.relative_to(ROOT / "assets/playwright-runner")) for p in
+                           (ROOT / "assets/playwright-runner/tests").rglob("*.spec.ts"))
+    from .metrics import assertion_signature
+    initial_assertions = {relative: assertion_signature(ROOT / "assets/playwright-runner" / Path(relative).relative_to("runner")) for relative in initial_specs}
+    m = {"schema_version": "uia-run.v1", "pipeline": "case-spec.v1", "run_id": run_id, "created_at": now(),
          "updated_at": now(), "config_path": str(Path(config_path).resolve()), "config": cfg,
          "config_hash": execution_config_fingerprint(cfg), "sources": [], "identity_map": {},
          "cases": {}, "archived_cases": [], "questions": {}, "exploration": [],
          "batches": [], "active_batch": None, "contaminated_fixtures": {},
-         "history": [], "delivery": {}, "preflight": None, "status": "active"}
+         "history": [], "delivery": {}, "preflight": None, "status": "active",
+         "initial_spec_files": initial_specs, "initial_assertion_signatures": initial_assertions,
+         "unplanned_interventions": 0,
+         "scope_violations": 0, "unreviewed_assertion_changes": 0}
     event(m, "initialized")
     atomic_write(base / "run.json", m)
     return {"run": str(base / "run.json"), "next": "import", "status": "not_executed"}
 
 
-def question(m, kind, subject, prompt, case_ids, key=None, attempted=None, sheet=None, reopen=False):
+def question(m, kind, subject, prompt, case_ids, key=None, attempted=None, sheet=None, reopen=False, interaction=None, base=None, page=None):
     require(all(cid in m["cases"] for cid in case_ids), "Question refers to an unknown case")
+    if kind in {"demo", "record_request"}:
+        from .exploration import demo_gate
+        demo_gate(m, subject, case_ids, interaction, base=base, page=page)
     require(kind != "column_mapping" or sheet, "A column mapping question needs its source sheet")
     key = key or digest([kind, subject, sheet])[:16]
     existing = m["questions"].get(key)
@@ -55,6 +65,13 @@ def question(m, kind, subject, prompt, case_ids, key=None, attempted=None, sheet
     q = existing or {"id": key, "kind": kind, "subject": subject, "prompt": prompt,
                      "case_ids": [], "attempted": [], "created_at": now(), "status": "open",
                      "resume_states": {}, "sheet": sheet}
+    require(not (kind == "environment" and PUBLIC_RE.search(prompt or "")), PUBLIC_GUIDE)
+    if kind in {"demo", "record_request"}:
+        q.update(interaction=interaction, page=page)
+    elif page:
+        q["page"] = page
+    if m.get("interaction_mode") == "once" and subject != "run-preconditions":
+        q["status"] = "deferred"
     q["attempted"] = list(dict.fromkeys(q["attempted"] + (attempted or [])))
     for cid in case_ids:
         if cid not in q["case_ids"]:
@@ -71,9 +88,23 @@ def question(m, kind, subject, prompt, case_ids, key=None, attempted=None, sheet
 def answer(m, qid, value, base):
     require(qid in m["questions"], "Unknown question")
     q = m["questions"][qid]
-    require(q["status"] == "open", "Question already answered")
+    require(q["status"] in {"open", "deferred"}, "Question already answered")
     require(q["kind"] != "login" or not isinstance(value, dict) or
             not any(k in value for k in ("password", "token", "cookie")), "Answer with a login-state reference, not a secret")
+    if q["kind"] == "preconditions":
+        require(isinstance(value, dict) and set(value) <= {"available", "unavailable", "business"},
+                "Answer with available/unavailable precondition ids and business question answers")
+        for key in ("available", "unavailable"):
+            require(isinstance(value.get(key, []), list) and all(isinstance(item, str) for item in value.get(key, [])),
+                    "Precondition answer lists must be string arrays")
+        require(isinstance(value.get("business", {}), dict) and all(isinstance(k, str) and isinstance(v, str) and v.strip() for k, v in value.get("business", {}).items()),
+                "Business answers must map questions to nonempty text")
+        q.update(status="answered", answer=value, answered_at=now(), wait_seconds=elapsed(q["created_at"]))
+        from .preconditions import apply_precondition_answer
+        apply_precondition_answer(m, q)
+        event(m, "question_answered", question_id=qid)
+        waiting = [cid for cid in q["case_ids"] if m["cases"][cid]["work_status"] == "waiting_human"]
+        return {"question_id": qid, "next": "next", "waiting": waiting}
     if q["kind"] == "demo":
         require(isinstance(value, dict) and value.get("script"), "Demo answer requires a script path")
         src = Path(value["script"]).expanduser().resolve()
@@ -97,8 +128,21 @@ def answer(m, qid, value, base):
     return {"question_id": qid, "next": "next", "replay_required": q["kind"] == "demo"}
 
 
+def _restore_deselected(m, cid, content_hash, pop=False):
+    """Latest archived copy of a case removed only by subset selection, if its source is unchanged."""
+    archive = m.get("archived_cases", [])
+    for index in range(len(archive) - 1, -1, -1):
+        row = archive[index]
+        if row.get("reason") == "deselected" and row["case"].get("case_id") == cid:
+            if row["case"].get("source_hash") != content_hash:
+                return None
+            return archive.pop(index)["case"] if pop else row["case"]
+    return None
+
+
 def import_excel(base, m, excel, mapping=None):
     require(not m.get("active_batch"), "Finish or recover the active batch before importing")
+    require(not any(c.get("attempts") and c["attempts"][-1].get("cleanup_pending") for c in m["cases"].values()), "Restore held remote data before importing another workbook version")
     mappings = copy.deepcopy(mapping or {})
     for q in m["questions"].values():
         if q["kind"] == "column_mapping" and q["status"] == "answered":
@@ -108,10 +152,14 @@ def import_excel(base, m, excel, mapping=None):
     require(source.is_file(), "Source workbook does not exist")
     parsed = extract(source, mappings)
     # Keep one active Excel per run. Importing a changed version reconciles by stable identity.
+    if m.get("selected_cases"):
+        require(set(m["selected_cases"]) <= {r["suggested_id"] for r in parsed["cases"]}, "Unknown selected case ID")
     old = m["cases"]
     new, used = {}, set()
     counts = {"added": 0, "changed": 0, "unchanged": 0, "archived": 0}
     for raw in parsed["cases"]:
+        if m.get("selected_cases") and raw["suggested_id"] not in m["selected_cases"]:
+            continue
         identity = raw["identity_key"]
         cid = m["identity_map"].get(identity, raw["suggested_id"])
         reserved = {v for k, v in m["identity_map"].items() if k != identity}
@@ -128,14 +176,18 @@ def import_excel(base, m, excel, mapping=None):
             changed = c["source_hash"] != raw["content_hash"]
             counts["changed" if changed else "unchanged"] += 1
             if changed:
-                reset_case(c, "source_case_changed")
+                reset_case(c, "source_case_changed", "spec" if m.get("pipeline") else "intent")
                 c["registration"] = None
                 c["intent_hash"] = None
                 c["plan_hash"] = None
                 c["repair_rounds"] = 0
+        elif _restore_deselected(m, cid, raw["content_hash"]) is not None:
+            # A case dropped only by an earlier subset selection keeps its results and scripts.
+            c = _restore_deselected(m, cid, raw["content_hash"], pop=True)
+            counts["unchanged"] += 1
         else:
             counts["added"] += 1
-            c = {"case_id": cid, "stage": "intent", "work_status": "pending", "result": None,
+            c = {"case_id": cid, "stage": "spec" if m.get("pipeline") else "intent", "work_status": "pending", "result": None,
                  "stability": "not_run", "pass_streak": 0, "version": None,
                  "flow_ids": ["case:" + cid], "fixture_ids": [], "isolated": False,
                  "registration": None, "intent_hash": None, "plan_hash": None,
@@ -147,10 +199,13 @@ def import_excel(base, m, excel, mapping=None):
                  sheet=raw["sheet"], rows=raw["rows"])
         new[cid] = c
     incomplete_sheets = {g["sheet"] for g in parsed["gaps"]}
+    still_in_source = {m["identity_map"].get(r["identity_key"], r["suggested_id"]) for r in parsed["cases"]}
     for cid, c in old.items():
         if cid not in new:
             if c["sheet"] in incomplete_sheets:
                 new[cid] = c  # Unreadable sheets must not silently delete previously known cases.
+            elif cid in still_in_source:
+                m["archived_cases"].append({"at": now(), "reason": "deselected", "case": c})
             else:
                 m["archived_cases"].append({"at": now(), "reason": "removed_from_source", "case": c})
                 counts["archived"] += 1
@@ -172,8 +227,11 @@ def import_excel(base, m, excel, mapping=None):
     m["source_update_required"] = False
     m["delivery"] = {}
     event(m, "excel_imported", **counts)
+    from .preconditions import sync_preconditions
+    preconditions = sync_preconditions(base, m)
     return {**counts, "total": len(new), "unresolved_sheets": sorted(incomplete_sheets),
-            "source_rows_preserved": True, "next": "next"}
+            "source_rows_preserved": True, "preconditions": preconditions,
+            "next": "bind_existing_specs", "instruction": "Run `uia.py bind-specs` to index tests/*.spec.ts, then run runnable cases before creating new specs."}
 
 
 def bind(m, case_ids, flow_ids, fixture_ids, isolated):
@@ -196,7 +254,10 @@ def advance(base, m, cid, stage):
         require(intent["case"]["id"] == cid and intent.get("validation", {}).get("ready_for_asset_matching") is True,
                 "Intent identity/readiness is not confirmed")
         intent_hash = file_hash(inside(base, c["intent"]))
-        if c.get("intent_hash") and c["intent_hash"] != intent_hash:
+        if c.get("spec_hash") and file_hash(inside(base, c.get("case_spec", "__missing__"))) != c["spec_hash"]:
+            reset_case(c, "case_spec_changed", "spec")
+            c.update(spec_hash=None, registration=None)
+        elif c.get("intent_hash") and c["intent_hash"] != intent_hash:
             reset_case(c, "intent_changed", "matching")
             c.update(registration=None, plan_hash=None)
         c["intent_hash"] = intent_hash
@@ -229,19 +290,16 @@ def match(base, m, cid):
 
 def scaffold(base):
     dest = base / "runner"
-    for file in (ROOT / "assets/playwright-runner").rglob("*"):
-        relative = file.relative_to(ROOT / "assets/playwright-runner")
-        if (not file.is_file() or file.is_symlink() or
-                any(part in {"node_modules", ".auth", "results", "test-results", "playwright-report"} for part in relative.parts) or
-                ".local." in file.name):
-            continue
-        target = dest / relative
-        target.parent.mkdir(parents=True, exist_ok=True)
-        if not target.exists():
-            shutil.copyfile(file, target)
-    if not (dest / "cases.json").exists():
-        atomic_write(dest / "cases.json", {})
-    return {"runner": str(dest), "dependencies_installed": False, "next": "generate_final_scripts"}
+    source = ROOT / "assets/playwright-runner"
+    if not dest.exists():
+        dest.symlink_to(source, target_is_directory=True)
+    require(dest.is_symlink() and dest.resolve() == source.resolve(), "Run runner must point to the shared repository runner")
+    state = base / "state/cases.json"
+    if not state.exists():
+        atomic_write(state, {})
+    return {"runner": str(source), "run_binding_file": str(state),
+            "dependencies_installed": (source / "node_modules/@playwright/test").is_dir(),
+            "next": "bind_existing_specs_then_generate_final_scripts"}
 
 
 def code_files(base, registration):
@@ -276,7 +334,79 @@ def code_files(base, registration):
             resolved = next((x for x in options if x.is_file()), None)
             require(resolved is not None, "Local import cannot be resolved", {"file": str(file), "import": ref})
             pending.append(resolved)
-    return {str(p.relative_to(runner)): file_hash(p) for p in sorted(visited)}
+    return {str(p.relative_to(runner.resolve())): file_hash(p) for p in sorted(visited)}
+
+
+EXECUTED_RESULTS = {"product_confirmation", "business_failure", "save_not_persisted", "automation_failure"}
+
+
+def classification_gate(base, m, c, result, reason=None):
+    """Outcomes are earned by running; public checks go to remote hand-off; human waits come from the checklist."""
+    if result in EXECUTED_RESULTS:
+        require(c.get("attempts"), "未执行不能下结论：先补全 case-spec（探索/hints target）并 run-batch；"
+                                   "product_confirmation 只用于执行后实际行为与期望不一致、需产品确认的情况")
+    if result == "suspended":
+        require(re.match(r"^(缺知识|缺控件|缺公开路径|远程条件不可表达|需求级|生成门禁|其他)[:：]", reason or ""),
+                "挂起需写明原因类别：缺知识|缺控件|缺公开路径|远程条件不可表达|需求级|生成门禁|其他：<说明>")
+    if result == "environment_blocked" and not c.get("attempts") and not c.get("checklist_wait"):
+        require(False, "环境阻断只能来自清单中未满足的前置或执行证据；公开前台断言请在 spec 中用 defer_public，"
+                       "运行后台部分并生成 remote-check 请求（结果 remote_pending），不要直接判环境阻断")
+
+
+def reopen_unearned(m):
+    """Self-heal: earlier unexecuted verdicts go back to the AI queue instead of counting as outcomes."""
+    reopened = []
+    for cid, c in m["cases"].items():
+        if c.get("stage") == "finished" or c.get("work_status") == "finished":
+            if (c.get("result") in EXECUTED_RESULTS or c.get("result") == "environment_blocked" and not c.get("checklist_wait")) \
+                    and not c.get("attempts"):
+                previous = c.get("result")
+                c.update(result=None, stage="spec", work_status="pending", stability="not_run",
+                         classification={"reason": "重新打开：未执行的结论（" + str(previous) + "）不计为结果", "at": now()})
+                event(m, "case_reopened_unearned", case_id=cid, previous=previous)
+                reopened.append(cid)
+    return reopened
+
+
+def page_map_slice(base, c):
+    """Only the page-map entries a case-spec references (transitively) version the case; new targets do not rerun it."""
+    path = base / "runner/knowledge/page-map.yaml"
+    if not path.is_file():
+        path = ROOT / "assets/playwright-runner/knowledge/page-map.yaml"
+    catalog = read_yaml(path) if path.is_file() else {}
+    spec_path = inside(base, c["case_spec"])
+    spec = read_yaml(spec_path) if spec_path.is_file() else {}
+    sections = {k: catalog.get(k) or {} for k in ("pages", "targets")}
+    strings = set()
+    def walk(value):
+        if isinstance(value, dict):
+            for v in value.values():
+                walk(v)
+        elif isinstance(value, list):
+            for v in value:
+                walk(v)
+        elif isinstance(value, str):
+            strings.add(value)
+    walk(spec)
+    seen, pending = {}, [x for x in strings if any(x in sec for sec in sections.values())]
+    while pending:
+        name = pending.pop()
+        if name in seen:
+            continue
+        row = next((sec[name] for sec in sections.values() if name in sec), None)
+        seen[name] = row
+        refs = set()
+        walk_refs = [row]
+        while walk_refs:
+            v = walk_refs.pop()
+            if isinstance(v, dict):
+                walk_refs += list(v.values())
+            elif isinstance(v, list):
+                walk_refs += v
+            elif isinstance(v, str) and any(v in sec for sec in sections.values()):
+                refs.add(v)
+        pending += [r for r in refs if r not in seen]
+    return digest({"slice": seen, "schema": catalog.get("schema_version")})
 
 
 def case_version(base, m, c):
@@ -290,14 +420,22 @@ def case_version(base, m, c):
     relevant_config["execution"] = {k: cfg["execution"][k] for k in ("workers", "timeout_ms")}
     from .profiles import network_fingerprint
     relevant_config["proxy_fingerprint"] = network_fingerprint(cfg)
-    return digest({"files": code_files(base, registration), "source": c["source_hash"],
+    files = code_files(base, registration)
+    if "knowledge/page-map.yaml" in files and c.get("case_spec"):
+        files["knowledge/page-map.yaml"] = page_map_slice(base, c)
+    return digest({"files": files, "source": c["source_hash"],
                    "intent": file_hash(inside(base, c["intent"])),
                    "plan": file_hash(inside(base, c["reuse_plan"])),
+                   "case_spec": file_hash(inside(base, c.get("case_spec", "__missing__"))),
                    "config": digest(relevant_config), "fixture": registration["fixture"],
                    "flow_ids": c["flow_ids"], "fixture_ids": c["fixture_ids"]})
 
 
 def register(base, m, cid, registration):
+    if m["cases"][cid].get("case_spec"):
+        from .specs import register_script
+        require(registration.get("case_id") == cid, "Registration case ID mismatch")
+        return register_script(base, m, cid, registration["script"])
     c = m["cases"][cid]
     require(not m.get("active_batch"), "Cannot register while a batch is active")
     require(not any(q["status"] == "open" and cid in q["case_ids"] for q in m["questions"].values()),
@@ -315,6 +453,14 @@ def register(base, m, cid, registration):
     require(script.is_file() and script.suffix == ".ts", "Final spec must exist inside runner/tests")
     require("[" + cid + "]" in script.read_text(), "Test title must contain [case_id]")
     previous = c.get("registration")
+    baseline = c.get("repair_baseline_script")
+    if baseline:
+        prior_spec = inside(base, baseline)
+        from .metrics import assertion_signature, locator_wait_only
+        if prior_spec.is_file() and locator_wait_only(prior_spec, script):
+            c["preserve_delivery"] = True
+        elif prior_spec.is_file() and assertion_signature(prior_spec) != assertion_signature(script):
+            m["unreviewed_assertion_changes"] = int(m.get("unreviewed_assertion_changes", 0)) + 1
     c["registration"] = registration
     try:
         errors, warnings = case_errors(base, c, m["config"], execution=True)
@@ -324,9 +470,13 @@ def register(base, m, cid, registration):
         c["registration"] = previous
         raise
     if c.get("version") != version:
-        reset_case(c, "script_or_dependency_version_changed", "execution")
+        if c.get("preserve_delivery"):
+            c.update(version=version, pass_streak=c.get("delivery_pass_streak", 0), result=None,
+                     stability="candidate" if c.get("delivery_pass_streak", 0) else "not_run")
+        else:
+            reset_case(c, "script_or_dependency_version_changed", "execution")
     c.update(version=version, stage="execution", work_status="runnable")
-    cases_file = base / "runner/cases.json"
+    cases_file = base / "state/cases.json"
     entries = read_json(cases_file) if cases_file.exists() else {}
     entries[cid] = {"case_id": cid, "hooks": registration["fixture"]["hooks"],
                     "mutates": registration["fixture"]["mutates"], "isolated": c["isolated"],
@@ -338,6 +488,11 @@ def register(base, m, cid, registration):
 
 def refresh(base, m):
     cfg = run_config(base, m["config_path"])
+    if cfg.get("mutation") != m.get("config", {}).get("mutation"):
+        m["scope_violations"] = int(m.get("scope_violations", 0)) + 1
+        event(m, "scope_change_rejected", source="profile_refresh")
+        atomic_write(base / "run.json", m)
+        require(False, "Mutation scope is locked after run initialization; update it only in the upfront checklist before init")
     new_hash = execution_config_fingerprint(cfg)
     if new_hash != m["config_hash"]:
         old = m["config"]
@@ -362,7 +517,10 @@ def refresh(base, m):
     if m.get("preflight") and m["preflight"].get("proxy_sha256") != network_fingerprint(cfg):
         m["preflight"] = None
     for c in m["cases"].values():
-        if c.get("intent_hash") and file_hash(inside(base, c["intent"])) != c["intent_hash"]:
+        if c.get("spec_hash") and file_hash(inside(base, c.get("case_spec", "__missing__"))) != c["spec_hash"]:
+            reset_case(c, "case_spec_changed", "spec")
+            c.update(spec_hash=None, registration=None)
+        elif c.get("intent_hash") and file_hash(inside(base, c["intent"])) != c["intent_hash"]:
             reset_case(c, "intent_changed", "intent")
             c.update(intent_hash=None, plan_hash=None, registration=None)
         elif c.get("plan_hash") and file_hash(inside(base, c["reuse_plan"])) != c["plan_hash"]:
@@ -394,34 +552,228 @@ def refresh(base, m):
             if version != c["version"]:
                 reset_case(c, "code_or_dependency_changed", "execution")
                 c.update(version=version, work_status="runnable")
-    for q in m["questions"].values():
-        if q["status"] == "open":
+    release_resolved(m)
+    reopen_unearned(m)
+    park_cases_with_open_questions(m)
+
+
+def park_cases_with_open_questions(m):
+    """Questions affect only cases that have not already earned a result."""
+    for q in m.get("questions", {}).values():
+        if q["status"] in {"open", "deferred"}:
             for cid in q["case_ids"]:
-                if cid in m["cases"] and m["cases"][cid]["work_status"] != "finished":
-                    m["cases"][cid]["work_status"] = "waiting_human"
+                case = m.get("cases", {}).get(cid)
+                if case and case.get("result") is None and case.get("stage") != "finished":
+                    case["work_status"] = "waiting_human"
+
+
+PUBLIC_RE = re.compile(r"公开(?:前台|页面|站点)|前台不可达|public[ _-]?(?:front|site|page)", re.I)
+PUBLIC_GUIDE = ("公开前台不可达不是人工阻断：在 case-spec 中先做后台部分，公开断言用 defer_public + remote_file，"
+                "运行后生成 remote-check 请求（结果 remote_pending），不要排队环境问题")
+
+
+def release_resolved(m):
+    """A deferred review item about a page is closed once shared knowledge confirms that page's entry."""
+    from .entries import resolve
+    released = []
+    for q in m.get("questions", {}).values():
+        if q["status"] != "deferred" or q.get("subject") == "run-preconditions":
+            continue
+        page = q.get("page")
+        hint = resolve(page) if page else None
+        public = q.get("kind") == "environment" and PUBLIC_RE.search(q.get("prompt") or "")
+        if not public and not (hint and hint.get("confirmed") and not hint.get("not_a_page")):
+            continue
+        q.update(status="closed", resolution="public_checks_use_remote_handoff" if public else "entry_confirmed_by_knowledge",
+                 closed_at=now())
+        for cid in q["case_ids"]:
+            c = m["cases"].get(cid)
+            if c and c["work_status"] == "waiting_human":
+                prior = q.get("resume_states", {}).get(cid)
+                c["work_status"] = prior if prior and prior != "waiting_human" else "pending"
+        released.append(q["id"])
+        event(m, "question_resolved_by_knowledge", question_id=q["id"], page=page)
+    return released
+
+
+def unresolved_targets(base, m, c, spec_cache=None):
+    from . import specs
+    path = specs.spec_path(base, c)
+    if not path.is_file():
+        return []
+    found = []
+    def walk(value):
+        if isinstance(value, dict):
+            for k, v in value.items():
+                if k in {"target", "start_page"} and isinstance(v, str) and v.startswith(("?", "？")):
+                    found.append(v)
+                else:
+                    walk(v)
+        elif isinstance(value, list):
+            for v in value:
+                walk(v)
+    spec = spec_cache[c['case_id']] if spec_cache is not None and c['case_id'] in spec_cache else None
+    walk(spec if spec is not None else read_yaml(path))
+    bindings = c.get('target_bindings') or {}
+    return list(dict.fromkeys(target for target in found if target not in bindings))
+
+
+def missing_catalog_targets(base, c, spec_cache=None, known_targets=None):
+    """Return concrete spec targets absent from shared page-map knowledge."""
+    from . import specs
+    path = specs.spec_path(base, c)
+    if not path.is_file():
+        return []
+    spec = spec_cache[c['case_id']] if spec_cache is not None and c['case_id'] in spec_cache else read_yaml(path) or {}
+    if known_targets is None:
+        from .common import ROOT
+        shared = ROOT / 'knowledge/page-map.yaml'
+        pages = read_yaml(shared if shared.is_file() else ROOT / 'assets/playwright-runner/knowledge/page-map.yaml') or {}
+        known_targets = set((pages.get('pages') or {})) | set((pages.get('targets') or {}))
+    known = set(known_targets)
+    known.update((c.get('target_bindings') or {}).values())
+    names = [spec.get('start_page')]
+    names.extend(row.get('target') for row in spec.get('steps', []) if isinstance(row, dict))
+    names.extend(check.get('target') for assertion in spec.get('assertions', [])
+                 for check in assertion.get('checks', []) if isinstance(check, dict))
+    return list(dict.fromkeys(name for name in names if isinstance(name, str) and name and
+                              not name.startswith(('?', '？')) and name not in known and name not in (c.get('target_bindings') or {}).values() and
+                              name not in {'defer_public', 'remote_file'}))
+
+
+def target_exploration_state(case, target, known_targets=None):
+    name = str(target or '').lstrip('?？')
+    attempts = [row for row in case.get('explore_attempts', []) if row.get('target') == name]
+    bound = (case.get('target_bindings') or {}).get(str(target or '')) or (case.get('target_bindings') or {}).get(name)
+    placeholder = str(target or '').startswith(('?', '？'))
+    succeeded = bool(bound and (known_targets is None or bound in known_targets)) or (
+        not placeholder and name in (known_targets or set()) and any(row.get('result') == 'ok' for row in attempts))
+    failed = [row for row in attempts if row.get('result') == 'failed' and isinstance(row.get('evidence'), str) and row.get('evidence')]
+    # A successful browser exploration that did not bind its spec placeholder did not
+    # resolve the requested target. Count it against the same bounded retry budget.
+    if placeholder and not bound:
+        failed.extend({**row, 'result': 'failed', 'note': 'exploration target was not bound to a catalog target'}
+                      for row in attempts if row.get('result') == 'ok' and row.get('evidence'))
+    return {'succeeded': succeeded, 'failed': failed, 'attempts': attempts}
+
+
+def script_todos(base, c):
+    """Exploration TODO labels left in a case's generated script (run-batch's static gate rejects them)."""
+    script = (c.get("registration") or {}).get("script")
+    if not script:
+        return []
+    try:
+        body = inside(base, script).read_text()
+    except (OSError, UiaError):
+        return []
+    return list(dict.fromkeys(line.split("TODO explore:", 1)[1].strip() for line in body.splitlines() if "TODO explore:" in line))
 
 
 def next_task(base, m):
     if m.get("active_batch"):
-        from .runtime import process_alive
+        from .runtime import batch_running
         active = m["active_batch"]
-        return {"action": "monitor" if process_alive(active.get("owner_pid")) else "recover",
-                "skill": "uia-runtime", "batch_id": active["id"], "report": active["report"]}
+        running = batch_running(base, active)
+        return {"action": "monitor" if running else "recover",
+                "skill": "uia-runtime", "batch_id": active["id"], "report": active["report"],
+                "wait": "python3 scripts/uia.py wait --run " + m["run_id"]}
+    from .preconditions import triage
+    unclassified = [row for row in triage(base, m) if row["classification"] == "unclassified"]
+    if unclassified:
+        return {"action": "classify_preconditions", "items": unclassified}
     refresh(base, m)
     if m["sources"] and file_hash(m["sources"][0]["path"]) != m["sources"][0]["sha256"]:
         return {"action": "import", "reason": "source_workbook_changed", "source": m["sources"][0]["path"]}
     cases = list(m["cases"].values())
     budget = m["config"]["execution"]["batch_size"]
     rank = lambda c: ({"P0": 0, "P1": 1, "P2": 2, "P3": 3}.get(c["priority"].upper(), 4), c["case_id"])
-    available = sorted([c for c in cases if c["work_status"] not in {"waiting_human", "finished"}], key=rank)
-    ready = [c for c in available if c["work_status"] == "runnable"]
+    concluded = {"passed", "business_failure", "automation_failure", "product_confirmation", "environment_blocked", "not_suitable", "suspended"}
+    available = sorted([c for c in cases if c["work_status"] not in {"waiting_human", "finished"}
+                        and not (c.get("result") in concluded and c.get("stage") != "repair")], key=rank)
+    # Read every case spec and the shared catalog once. This keeps next() independent of
+    # case count for filesystem metadata while preserving fresh data on each invocation.
+    from . import specs
+    spec_cache = {c['case_id']: (read_yaml(specs.spec_path(base, c)) or {})
+                  for c in available if specs.spec_path(base, c).is_file()}
+    from .common import ROOT
+    page_map = ROOT / 'knowledge/page-map.yaml'
+    if not page_map.is_file():
+        page_map = ROOT / 'assets/playwright-runner/knowledge/page-map.yaml'
+    page_data = read_yaml(page_map) or {}
+    known_targets = set((page_data.get('pages') or {})) | set((page_data.get('targets') or {}))
+    missing_by_case = {}
+    for c in available:
+        spec = spec_cache.get(c['case_id'], {})
+        unresolved = unresolved_targets(base, m, c, spec_cache)
+        missing = missing_catalog_targets(base, c, spec_cache, known_targets)
+        targets = list(dict.fromkeys(unresolved + missing))
+        missing_by_case[c['case_id']] = targets
+        for target in targets:
+            state = target_exploration_state(c, target, known_targets)
+            if len(state['failed']) >= 2 and not state['succeeded']:
+                evidence = [row.get('evidence') for row in state['failed'] if row.get('evidence')]
+                latest = evidence[-1] if evidence else None
+                display_target = str(target).lstrip('?？')
+                import shlex
+                reason = '缺控件：' + display_target
+                return {'action': 'classify', 'skill': 'uia-runtime', 'case_ids': [c['case_id']],
+                        'case_id': c['case_id'], 'result': 'suspended',
+                        'reason': reason,
+                        'evidence': latest, 'attempt_evidence': evidence[-2:],
+                        'instruction': '两次有界探索均失败。执行 `uia.py classify --run RUN --case ' + c['case_id'] +
+                                       ' --result suspended --reason ' + shlex.quote(reason) +
+                                       ' --evidence ' + shlex.quote(str(latest or '<evidence-path>')) + '；不得再次探索。'}
+    # Breadth first: runnable cases with complete specs go before any further exploration.
+    ready = [c for c in available if c["work_status"] == "runnable" and
+             not missing_by_case.get(c['case_id']) and not script_todos(base, c)]
     if ready:
         if not m.get("preflight") or m["preflight"]["status"] != "passed":
             return {"action": "preflight", "skill": "uia-runtime", "case_ids": [c["case_id"] for c in ready]}
         return {"action": "run-batch", "skill": "uia-runtime", "case_ids": [c["case_id"] for c in ready[:budget]]}
     repairs = [c for c in available if c["stage"] == "repair"]
-    if repairs:
+    # Breadth first: every case gets a first execution before any case gets another repair round.
+    untried = [c for c in available if not c.get("attempts") and c["stage"] in {"spec", "intent", "matching", "discovery"}]
+    if repairs and not untried:
         return {"action": "repair", "skill": "uia-runtime", "case_ids": [c["case_id"] for c in repairs[:budget]]}
+    if m.get("checklist_issued"):
+        refine = [(c, missing_by_case.get(c['case_id'], []) +
+                   ["TODO explore: " + t for t in script_todos(base, c)]) for c in available]
+        refine = [(c, t) for c, t in refine if t]
+        if refine:
+            missing = []
+            for c, targets in refine:
+                pending = [target for target in targets if not target.startswith('TODO explore:')]
+                pending = [target for target in pending if not target_exploration_state(c, target, known_targets)['succeeded']]
+                if pending:
+                    missing.append((c, pending))
+            missing = [(c, targets) for c, targets in missing if targets]
+            if missing:
+                groups = {}
+                for c, targets in missing:
+                    spec = spec_cache.get(c['case_id'], {})
+                    entry = spec.get('start_page')
+                    frame = spec.get('frame') or (page_data.get('pages') or {}).get(entry, {}).get('frame')
+                    groups.setdefault((entry, frame), []).append((c, targets))
+                (entry, frame), members = sorted(groups.items(), key=lambda item: (-len(item[1]), str(item[0])))[0]
+                case_ids = [c['case_id'] for c, _ in members]
+                targets_by_case = {c['case_id']: targets for c, targets in members}
+                return {"action": "explore", "skill": "uia-runtime", "case_ids": case_ids,
+                        "entry": entry, "frame": frame,
+                        "targets_by_case": targets_by_case,
+                        "targets": list(dict.fromkeys(t for _, ts in members for t in ts)),
+                        "instruction": "对 targets_by_case 中每个 case 的目标执行一次共享的有界 snapshot --run RUN --entry ENTRY --step ... 或 generator --run RUN --entry ENTRY --purpose TARGET --plan PLAN --draft，按 case/目标记录实际到达或失败证据。成功后用 hints target --for '?占位符' 或 hints promote --for '?占位符' 写入并绑定已观察到的 page-map 目标，再运行 spec lint/gen；绝不猜目标。每个 case/目标都用 uia.py exploration-log --run RUN --method snapshot|generator --purpose TARGET --result ok|failed --note NOTE --case CID --target '?placeholder' --evidence evidence/FILE 报告。每个 case/目标最多失败两次；第二次失败后 next 返回带证据的缺控件分类。"}
+            known = sorted((page_data.get("targets") or {}).keys())
+            return {"action": "refine_specs", "skill": "uia-case-spec",
+                    "case_ids": [c["case_id"] for c, _ in refine[:budget]],
+                    "unresolved": {c["case_id"]: t for c, t in refine[:budget]},
+                    "known_targets": known,
+                    "instruction": "清单已定稿：把规格中的 ?目标 替换成已知 page-map 目标（generator 结果先用 hints promote 写入），"
+                                   "每条 Excel 期望拆成可观察的 checks；start_page 用入口提示确认路线所在区域（如 content-admin），不要沿用草稿占位；仍未知的目标先 snapshot --entry/generator --entry 探索。"
+                                   "改完运行 spec lint/gen，再按 next 执行；不要因此结束本轮或提问。"}
+    selected = [c for c in available if c["stage"] == "spec" or (m.get("pipeline") == "case-spec.v1" and c["stage"] in {"intent", "matching"})][:budget]
+    if selected:
+        return {"action": "spec", "skill": "uia-case-spec", "case_ids": [c["case_id"] for c in selected],
+                "input_paths": [str(base / c["source"]) for c in selected]}
     selected = [c for c in available if c["stage"] == "matching"][:budget]
     if selected:
         return {"action": "matching", "skill": "uia-asset-matcher", "case_ids": [c["case_id"] for c in selected],
@@ -445,10 +797,14 @@ def next_task(base, m):
     if selected:
         return {"action": "intent", "skill": "uia-excel-prep", "case_ids": [c["case_id"] for c in selected],
                 "input_paths": [str(base / c["source"]) for c in selected]}
+    if repairs:
+        return {"action": "repair", "skill": "uia-runtime", "case_ids": [c["case_id"] for c in repairs[:budget]]}
     feedback = [c for c in cases if c.get("result") == "passed" and c.get("stability") == "stable" and not c.get("feedback")]
     if feedback:
         return {"action": "feedback", "skill": "uia-runtime-feedback-reviewer", "case_ids": [c["case_id"] for c in feedback[:budget]]}
     pending_questions = [q for q in m["questions"].values() if q["status"] == "open"]
+    if m.get("interaction_mode") == "once" and m.get("checklist_issued"):
+        return {"action": "review", "file": str(base / "review.md"), "mid_run_questions": 0}
     if pending_questions:
         return {"action": "ask_human", "questions": pending_questions,
                 "message": "All currently independent work has been processed; consolidate these requests."}
@@ -458,27 +814,204 @@ def next_task(base, m):
 
 
 def explore(base, m, flow_id, gap_id, strategy, seconds, outcome, evidence):
-    require(outcome in {"resolved", "unresolved"}, "Exploration outcome must be resolved or unresolved")
-    require(seconds > 0, "Record actual positive exploration duration")
-    require(evidence and inside(base, evidence).is_file(), "Exploration requires saved runtime evidence")
-    previous = [a for a in m["exploration"] if a["flow_id"] == flow_id]
-    per_gap = [a for a in previous if a["gap_id"] == gap_id]
-    require(not any(a["strategy"] == strategy and a["evidence_sha256"] == file_hash(inside(base, evidence)) for a in per_gap),
-            "Do not repeat the same strategy without new evidence")
-    limits = m["config"]["execution"]
-    require(sum(a["seconds"] for a in previous) < limits["exploration_minutes_per_flow"] * 60,
-            "Flow exploration budget exhausted; request a focused demonstration")
-    require(len({a["strategy"] for a in per_gap}) < limits["strategies_per_gap"],
-            "Gap strategy budget exhausted; request a focused demonstration")
-    attempt = {"at": now(), "flow_id": flow_id, "gap_id": gap_id, "strategy": strategy,
-               "seconds": seconds, "outcome": outcome, "evidence": evidence,
-               "evidence_sha256": file_hash(inside(base, evidence))}
-    m["exploration"].append(attempt)
-    exhausted = (sum(a["seconds"] for a in previous) + seconds >= limits["exploration_minutes_per_flow"] * 60 or
-                 len({a["strategy"] for a in per_gap} | {strategy}) >= limits["strategies_per_gap"])
-    if exhausted and outcome != "resolved":
-        affected = [c["case_id"] for c in m["cases"].values() if flow_id in c["flow_ids"] and c["work_status"] != "finished"]
-        question(m, "demo", flow_id + ":" + gap_id,
-                 "Demonstrate the unresolved operation from its documented start state; provide a Playwright action script.",
-                 affected, attempted=[a["strategy"] for a in per_gap] + [strategy])
-    return {"recorded": attempt, "budget_exhausted": exhausted}
+    raise UiaError("legacy explore is retired; use snapshot --goto/--step")
+
+
+def bind_specs(base, m):
+    """Point imported cases at Playwright specs. This is the daily path: no intent YAML."""
+    require(not m.get("active_batch"), "Recover the active batch before binding specs")
+    runner = base / "runner"
+    specs = sorted(path for path in (runner / "tests").rglob("*.spec.ts") if path.name not in {"healer-rehearsal.spec.ts", "seed.spec.ts"})
+    # Empty fresh runners simply queue case-spec tasks.
+    found = {}
+    legacy_claims = {}
+    for legacy in specs:
+        if "generated" in legacy.relative_to(runner).parts:
+            continue
+        body = legacy.read_text(encoding="utf-8")
+        for match in re.finditer(r"\[([A-Za-z0-9][A-Za-z0-9_.-]*)\]", body):
+            cid = match.group(1)
+            if cid in m['cases']:
+                legacy_claims.setdefault(cid, []).append(legacy.relative_to(base).as_posix())
+    # A lint-passing generated contract is the authoritative executable when
+    # both generated and handwritten scripts claim the same imported case.
+    for cid, case in m['cases'].items():
+        lint = case.get('spec_lint') or {}
+        generated = runner / 'tests/generated' / (cid + '.spec.ts')
+        if case.get('case_spec') and lint.get('errors') == [] and generated.is_file() and not case.get('spec_generation_blocked'):
+            found[cid] = (generated, generated.read_text(encoding='utf-8')[:500], True)
+    for spec in specs:
+        if "generated" in spec.relative_to(runner).parts:
+            continue  # Generated tests require case-spec fixtures, not legacy hooks.
+        body = spec.read_text(encoding="utf-8")
+        for match in re.finditer(r"\[([A-Za-z0-9][A-Za-z0-9_.-]*)\]", body):
+            cid = match.group(1)
+            case = m["cases"].get(cid)
+            lint_passed = bool(case and case.get('case_spec') and (case.get('spec_lint') or {}).get('errors') == []
+                               and not case.get('spec_generation_blocked'))
+            generated = runner / 'tests/generated' / (cid + '.spec.ts')
+            if cid not in m["cases"] or cid in found or (lint_passed and generated.is_file()):
+                continue
+            found[cid] = (spec, body[match.end():match.end() + 500], False)
+    if not found:
+        return {"bound": [], "next": "spec", "instruction": "Write missing case-specs with uia-case-spec"}
+    bound = []
+    for cid, (spec, window, generated) in found.items():
+        c = m["cases"][cid]
+        if generated:
+            old_script = (c.get('registration') or {}).get('script')
+            c['registration'] = {'case_id': cid, 'case_spec': True,
+                'script': spec.relative_to(base).as_posix(),
+                'fixture': {'hooks': 'fixtures/case-spec.mjs', 'mutates': bool(read_yaml(inside(base, c['case_spec']))['mutation_scope']),
+                            'mutation_scope': read_yaml(inside(base, c['case_spec']))['mutation_scope']},
+                'dependencies': ['knowledge/page-map.yaml', 'knowledge/data-prep.yaml', 'knowledge/network.yaml']}
+            duplicates = set(legacy_claims.get(cid, []))
+            if old_script and old_script != c['registration']['script']:
+                duplicates.add(old_script)
+            c['script_binding'] = {'selected': c['registration']['script'],
+                                   'reason': 'lint-passing case-spec generated script takes precedence',
+                                   'duplicates': sorted(duplicates)}
+            c['daily_spec'] = False
+            c['fixture_ids'] = ['case-spec:' + cid]
+            c['flow_ids'] = ['case-spec']
+            c['isolated'] = False
+            version = case_version(base, m, c)
+            if c.get('version') != version:
+                reset_case(c, 'generated_case_spec_preferred', 'execution')
+                c['version'] = version
+                c['work_status'] = 'runnable'
+            c['stage'] = 'execution'
+            bound.append(cid)
+            if c['script_binding']['duplicates']:
+                c['duplicate_script_warning'] = '同时存在 legacy 与 generated 脚本；本次运行 generated。'
+            else:
+                c.pop('duplicate_script_warning', None)
+            continue
+        mutates = "uia-mutates" in window
+        registration = {
+            "case_id": cid, "daily_spec": True,
+            "script": spec.relative_to(base).as_posix(),
+            "fixture": {"hooks": "fixtures/llms-txt.mjs", "mutates": mutates,
+                        "mutation_scope": ["llms.txt"] if mutates else []},
+            "dependencies": ["flows/llms-txt.mjs", "support/heal.mjs"],
+        }
+        c["daily_spec"] = True
+        c["registration"] = registration
+        generated = runner / 'tests/generated' / (cid + '.spec.ts')
+        if c.get('case_spec') or generated.is_file():
+            duplicates = set(legacy_claims.get(cid, [])) - {registration['script']}
+            if generated.is_file():
+                duplicates.add(generated.relative_to(base).as_posix())
+            c['script_binding'] = {'selected': registration['script'],
+                                   'reason': ('case-spec generation refused: ' + c['spec_generation_blocked']) if c.get('spec_generation_blocked') else
+                                             'case-spec generated script unavailable or did not pass lint; legacy script fallback',
+                                   'duplicates': sorted(duplicates)}
+            c['duplicate_script_warning'] = '同时存在 case-spec 或 generated 与 legacy 脚本；生成脚本不可用或未通过 lint，本次运行 legacy。'
+        else:
+            c.pop('script_binding', None)
+            c.pop('duplicate_script_warning', None)
+        c["flow_ids"] = ["llms-txt"]
+        c["fixture_ids"] = ["llms-overview"] if mutates else ["llms-readonly"]
+        c["isolated"] = False
+        errors, _warnings = case_errors(base, c, m["config"], execution=True)
+        require(not errors, "Daily spec gate failed", {"case_id": cid, "errors": errors})
+        version = case_version(base, m, c)
+        if c.get("version") == version and (c.get("result") is not None or c.get("work_status") in {"runnable", "waiting_human"}):
+            continue
+        if c.get("version") and c.get("version") != version:
+            reset_case(c, "daily_spec_changed", "execution")
+        c.update(version=version, stage="execution", work_status="runnable", intent_hash=None,
+                 plan_hash=None, result=None, stability="not_run", pass_streak=0)
+        bound.append(cid)
+    entries = {}
+    for cid, c in m["cases"].items():
+        if not c.get("registration"):
+            continue
+        entries[cid] = {"case_id": cid, "hooks": c["registration"]["fixture"]["hooks"],
+                        "mutates": c["registration"]["fixture"]["mutates"], "isolated": c["isolated"],
+                        "fixture_ids": c["fixture_ids"], "flow_ids": c["flow_ids"]}
+    atomic_write(base / "state/cases.json", entries)
+    event(m, "specs_bound", case_ids=sorted(found))
+    return {"bound": sorted(found), "reopened": bound,
+            "script_choices": {cid: m['cases'][cid].get('script_binding') for cid in sorted(found) if m['cases'][cid].get('script_binding')},
+            "duplicate_warnings": {cid: m['cases'][cid]['duplicate_script_warning'] for cid in sorted(found) if m['cases'][cid].get('duplicate_script_warning')},
+            "next": "preflight_then_run_batch" if bound else "generate_missing_specs",
+            "instruction": "Run existing runnable specs before generating any new spec."}
+
+
+def absorb_locators(base, m):
+    """Write fingerprints back only for cases that passed in that batch. Never edit specs."""
+    files = sorted((base / "batches").glob("*/locator-hits.json"), key=lambda item: item.stat().st_mtime)
+    if not files:
+        return {"updated": [], "missing": True}
+    hits_path = files[-1]
+    hits = read_json(hits_path)
+    batch_id = hits_path.parent.name
+    passed = {cid for cid, c in m["cases"].items()
+              if any(a.get("batch_id") == batch_id and a.get("result") == "passed" for a in c.get("attempts", []))}
+    knowledge_path = base / "state/knowledge/llms-txt.json"
+    if not knowledge_path.is_file():
+        knowledge_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(base / "runner/knowledge/llms-txt.json", knowledge_path)
+    knowledge = read_json(knowledge_path)
+    environment = m["config"].get("environment", {}).get("id")
+    updated = []
+    from .specs import has_snapshot_ref
+    for hit in hits:
+        if has_snapshot_ref(hit):
+            continue
+        key = str(hit.get("key") or "")
+        if key.startswith("rehearse.") or hit.get("case_id") not in passed or hit.get("environment") != environment:
+            continue
+        if hit.get("via") == "preview":
+            knowledge["preview"] = {"iframe": "#backstage-innerpage",
+                                    **{name: hit.get(name) for name in ("access", "sameOrigin", "parentCanvas", "frameCanvas", "iframeCount")}}
+            updated.append("preview")
+            continue
+        entry = knowledge.get("entries", {}).get(key)
+        if not entry or not hit.get("selector"):
+            continue
+        previous = entry.get("last_success")
+        if previous and previous != hit["selector"]:
+            entry["history"] = ([{"selector": previous, "at": entry.get("updated_at")}] + entry.get("history", []))[:3]
+        entry["last_success"] = hit["selector"]
+        for field in ("bbox", "ancestors", "tag"):
+            if hit.get(field):
+                entry[field] = hit[field]
+        text = " ".join(str(hit.get("text") or "").split())
+        if text:
+            entry["observed_text"] = text[:80]
+            current = str(entry.get("name") or "")
+            huge = ("\n" in current) or len(current) > 40
+            if len(text) <= 40 and (not current or huge):
+                entry["name"] = text
+            elif huge:
+                entry.pop("name", None)
+        entry["via"] = hit.get("via")
+        entry["updated_at"] = now()
+        updated.append(key)
+    knowledge["environment"] = environment
+    knowledge["updated_at"] = now()
+    require(not has_snapshot_ref(knowledge), "Knowledge write-back cannot contain snapshot refs")
+    atomic_write(knowledge_path, knowledge)
+    event(m, "locators_absorbed", updated=updated, passed=sorted(passed))
+    return {"updated": updated, "passed_cases": sorted(passed), "writeback": "passed_cases_only"}
+
+
+def heal_review(base, evidence):
+    """Classify a proposed repair. The spec file is never written."""
+    import subprocess
+    payload_path = inside(base, evidence)
+    payload = read_json(payload_path)
+    spec = inside(base, payload["spec"])
+    before = spec.read_bytes()
+    out = base / "state" / "heal-review.json"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    cli = ROOT / "assets/playwright-runner/support/heal-cli.mjs"
+    proc = subprocess.run(["node", str(cli), str(payload_path), str(out), str(base)],
+                          check=False, capture_output=True, text=True)
+    require(proc.returncode == 0 and out.is_file(), "Heal review failed", (proc.stderr or proc.stdout)[-500:])
+    require(spec.read_bytes() == before, "Heal review rewrote the spec")
+    result = read_json(out)
+    require(result.get("applied") is False and result.get("spec_unchanged") is True, "Heal review must leave the spec unchanged")
+    return result

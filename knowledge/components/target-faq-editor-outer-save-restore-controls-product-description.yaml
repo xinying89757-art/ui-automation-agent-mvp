@@ -1,0 +1,11 @@
+id: target.faq-editor.outer-save-restore-controls.product.description
+kind: component
+role: heading
+name: 产品描述
+frame: iframe[name="prod"]
+source: generator:faq-editor.outer-save-restore-controls
+confirmed: false
+provenance:
+  source_run: GO-a0f244227ab4
+  verified_by: unverified
+created_at: '2026-10-23'

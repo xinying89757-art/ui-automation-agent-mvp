@@ -1,0 +1,6 @@
+id: pattern.FRAME_JOIN
+kind: pattern
+description: Enter nested iframes in order, then locate the target in the innermost
+  frame.
+strategy: frame_chain
+created_at: '2026-10-23'

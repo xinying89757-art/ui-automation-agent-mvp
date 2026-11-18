@@ -1,0 +1,11 @@
+id: target.public.llms.immediate
+kind: component
+resource:
+  path: /llms.txt
+  max_latency_seconds: 5
+  saved_by: network.llms.save
+alias_of: target.public.llms.immediate
+provenance:
+- source_run: GO-a0f244227ab4
+  verified_by: unverified
+created_at: '2026-10-23'

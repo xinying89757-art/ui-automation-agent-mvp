@@ -1,0 +1,9 @@
+id: target.settings
+kind: component
+selector: li.backstage-siteTool-setting .backstage-siteTool-inner
+open: settings
+alias_of: target.settings
+provenance:
+- source_run: GO-a0f244227ab4
+  verified_by: unverified
+created_at: '2026-10-23'

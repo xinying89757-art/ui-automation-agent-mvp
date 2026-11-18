@@ -1,0 +1,10 @@
+id: target.txt.custom.error
+kind: component
+dialog: txt.dialog
+scope: '#backstage-dialog-customizeFile'
+selector: .llms-custom-row .llms-error
+alias_of: target.txt.custom.error
+provenance:
+- source_run: GO-a0f244227ab4
+  verified_by: unverified
+created_at: '2026-10-23'

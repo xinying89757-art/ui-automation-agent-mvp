@@ -1,0 +1,11 @@
+id: target.faq.add
+kind: component
+frame: '#faq'
+scope: .top-title
+role: link
+name: 添加FAQ
+alias_of: target.faq.add
+provenance:
+- source_run: GO-a0f244227ab4
+  verified_by: unverified
+created_at: '2026-10-23'

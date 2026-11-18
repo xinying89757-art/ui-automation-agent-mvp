@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "UIA remote watch results v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "run_id", "watch_id", "request_sha256", "first_poll_at", "last_poll_at", "poll_count", "error_count", "max_gap_ms", "baseline_absent", "last_absent_at", "first_present_at", "confirmed_present", "clock_offset_ms", "evidence", "timeline", "polls"],
+  "properties": {
+    "t_ms_basis": {"enum": ["request_start"]},
+    "schema_version": {"const": "uia-remote-watch-results.v1"}, "run_id": {"type": "string"}, "watch_id": {"type": "string"},
+    "request_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "first_poll_at": {"type": ["string", "null"], "format": "date-time"}, "last_poll_at": {"type": ["string", "null"], "format": "date-time"},
+    "poll_count": {"type": "integer", "minimum": 0}, "error_count": {"type": "integer", "minimum": 0}, "max_gap_ms": {"type": "integer", "minimum": 0},
+    "baseline_absent": {"type": "boolean"}, "last_absent_at": {"type": ["string", "null"], "format": "date-time"},
+    "first_present_at": {"type": ["string", "null"], "format": "date-time"}, "confirmed_present": {"type": "boolean"},
+    "clock_offset_ms": {"type": ["integer", "null"]},
+    "evidence": {"type": ["object", "null"], "additionalProperties": false, "required": ["excerpt", "section_sha256"], "properties": {"excerpt": {"type": "string", "maxLength": 2000}, "section_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}}},
+    "timeline": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["t_ms", "state"], "properties": {"t_ms": {"type": "integer", "minimum": 0}, "state": {"enum": ["error", "absent", "present"]}}}},
+    "polls": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["t_ms", "ok", "present"], "properties": {"t_ms": {"type": "integer", "minimum": 0}, "ok": {"type": "boolean"}, "present": {"type": "boolean"}}}}
+  }
+}

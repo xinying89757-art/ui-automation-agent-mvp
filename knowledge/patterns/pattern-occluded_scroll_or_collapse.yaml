@@ -1,0 +1,7 @@
+id: pattern.OCCLUDED_SCROLL_OR_COLLAPSE
+kind: pattern
+description: Scroll the target into view; if an overlay intercepts the click, collapse
+  its expanded covering panel and retry.
+strategy: scroll_collapse
+retries: 2
+created_at: '2026-10-23'

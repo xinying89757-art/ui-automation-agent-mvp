@@ -1,0 +1,10 @@
+id: target.faq-editor.public-product-path.frontend.view
+kind: component
+selector: '[title="前台查看"] a'
+frame: iframe[name="prod"]
+source: generator:faq-editor.public-product-path
+confirmed: false
+provenance:
+  source_run: GO-a0f244227ab4
+  verified_by: unverified
+created_at: '2026-10-23'

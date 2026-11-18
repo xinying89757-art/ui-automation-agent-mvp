@@ -1,0 +1,150 @@
+{
+  "version": 1,
+  "root": "/home/hatch/workspace/goals/web-ui-automation-testing/custom-skills/spec-pathfinder/trial/fixtures",
+  "generatedAt": "2026-10-29T08:18:53.497Z",
+  "cache": {
+    "scanned": 3,
+    "parsed": 0,
+    "reused": 3,
+    "removed": 0,
+    "forced": false
+  },
+  "warnings": [],
+  "limits": [
+    "正则候选索引；读源代码后才能写入高置信规格",
+    "不解析继承/自定义组合注解/跨文件常量/动态拼接/模板渲染/CSS",
+    "POST 只代表写操作候选（如草稿生成不一定持久化）；不推断 404 或实际部署状态"
+  ],
+  "entries": [
+    {
+      "url": "/files/remove",
+      "httpMethods": [
+        "POST"
+      ],
+      "controller": "FilesController",
+      "method": "remove",
+      "returnType": "String",
+      "responseKind": "view-candidate",
+      "views": [
+        {
+          "name": "redirect:/settings/llms",
+          "file": "demo/src/main/java/demo/FilesController.java",
+          "line": 12,
+          "endLine": 12
+        }
+      ],
+      "file": "demo/src/main/java/demo/FilesController.java",
+      "line": 9,
+      "endLine": 13,
+      "parser": "regex-candidate"
+    },
+    {
+      "url": "/files/delete",
+      "httpMethods": [
+        "POST"
+      ],
+      "controller": "FilesController",
+      "method": "remove",
+      "returnType": "String",
+      "responseKind": "view-candidate",
+      "views": [
+        {
+          "name": "redirect:/settings/llms",
+          "file": "demo/src/main/java/demo/FilesController.java",
+          "line": 12,
+          "endLine": 12
+        }
+      ],
+      "file": "demo/src/main/java/demo/FilesController.java",
+      "line": 9,
+      "endLine": 13,
+      "parser": "regex-candidate"
+    },
+    {
+      "url": "/settings/llms",
+      "httpMethods": [
+        "GET"
+      ],
+      "controller": "SettingsController",
+      "method": "page",
+      "returnType": "String",
+      "responseKind": "view-candidate",
+      "views": [
+        {
+          "name": "settings/llms",
+          "file": "demo/src/main/java/demo/SettingsController.java",
+          "line": 12,
+          "endLine": 12,
+          "resolvedFrom": {
+            "value": "settings/llms",
+            "file": "demo/src/main/java/demo/SettingsController.java",
+            "line": 8,
+            "endLine": 8
+          }
+        }
+      ],
+      "file": "demo/src/main/java/demo/SettingsController.java",
+      "line": 10,
+      "endLine": 13,
+      "parser": "regex-candidate"
+    },
+    {
+      "url": "/prefs/llms",
+      "httpMethods": [
+        "GET"
+      ],
+      "controller": "SettingsController",
+      "method": "page",
+      "returnType": "String",
+      "responseKind": "view-candidate",
+      "views": [
+        {
+          "name": "settings/llms",
+          "file": "demo/src/main/java/demo/SettingsController.java",
+          "line": 12,
+          "endLine": 12,
+          "resolvedFrom": {
+            "value": "settings/llms",
+            "file": "demo/src/main/java/demo/SettingsController.java",
+            "line": 8,
+            "endLine": 8
+          }
+        }
+      ],
+      "file": "demo/src/main/java/demo/SettingsController.java",
+      "line": 10,
+      "endLine": 13,
+      "parser": "regex-candidate"
+    },
+    {
+      "url": "/settings/llms/save",
+      "httpMethods": [
+        "POST"
+      ],
+      "controller": "SettingsController",
+      "method": "save",
+      "returnType": "java.util.Map<String, String>",
+      "responseKind": "response-body",
+      "views": [],
+      "file": "demo/src/main/java/demo/SettingsController.java",
+      "line": 15,
+      "endLine": 21,
+      "parser": "regex-candidate"
+    },
+    {
+      "url": "/prefs/llms/save",
+      "httpMethods": [
+        "POST"
+      ],
+      "controller": "SettingsController",
+      "method": "save",
+      "returnType": "java.util.Map<String, String>",
+      "responseKind": "response-body",
+      "views": [],
+      "file": "demo/src/main/java/demo/SettingsController.java",
+      "line": 15,
+      "endLine": 21,
+      "parser": "regex-candidate"
+    }
+  ]
+}

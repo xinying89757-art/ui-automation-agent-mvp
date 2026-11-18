@@ -1,0 +1,10 @@
+id: target.faq.delete
+kind: component
+frame: '#faq'
+scope: '#content tr'
+selector: .edDel
+alias_of: target.faq.delete
+provenance:
+- source_run: GO-a0f244227ab4
+  verified_by: unverified
+created_at: '2026-10-23'

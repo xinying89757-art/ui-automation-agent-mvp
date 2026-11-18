@@ -1,0 +1,12 @@
+id: target.faq-editor.outer-save-restore-controls.outer.cancel
+kind: component
+role: link
+name: 取消
+frame: iframe[name="prod"]
+source: generator:faq-editor.outer-save-restore-controls
+confirmed: false
+provenance:
+  source_run: GO-a0f244227ab4
+  verified_by: unverified
+alias_of: target.faq-editor.required-validation.editor-cancel
+created_at: '2026-10-23'

@@ -1,0 +1,10 @@
+id: target.faq-editor.new-editor-types.proposed.product.category.description
+kind: component
+selector: text="产品分类描述"
+frame: iframe[name="prod"]
+source: generator:faq-editor.new-editor-types
+confirmed: false
+provenance:
+  source_run: GO-a0f244227ab4
+  verified_by: unverified
+created_at: '2026-10-23'

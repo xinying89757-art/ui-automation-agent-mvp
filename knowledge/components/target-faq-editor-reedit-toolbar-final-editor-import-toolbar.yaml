@@ -1,0 +1,13 @@
+id: target.faq-editor.reedit-toolbar-final.editor.import.toolbar
+kind: component
+role: button
+name: 导入
+frame: iframe[name="prod"]
+nested_frames:
+- '#tiptap-iframe'
+source: generator:faq-editor.reedit-toolbar-final
+confirmed: false
+provenance:
+  source_run: GO-a0f244227ab4
+  verified_by: unverified
+created_at: '2026-10-23'

@@ -1,0 +1,9 @@
+id: target.faq-editor.required-validation.route.5
+kind: component
+selector: editor
+source: generator:faq-editor.required-validation
+confirmed: false
+provenance:
+  source_run: GO-a0f244227ab4
+  verified_by: unverified
+created_at: '2026-10-23'

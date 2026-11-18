@@ -1,6 +1,6 @@
 # Standalone Playwright runner
 
-This directory is copied into each run and included in `scripts.zip`. It includes
+Each run links to this shared repository directory; delivery packages include a scrubbed copy. It includes
 `environments.json`, the complete local `network/gray.pac`, browser configuration,
 shared login/site selection, fixture lifecycle, and reporters. No original workspace
 or remote PAC download is needed.
@@ -38,15 +38,8 @@ Test execution does not fill passwords; expired authentication returns a blocker
 login can be refreshed outside test traces. Every registered case supplies real
 `prepare`, `verifyPrepared`, `cleanup`, `verifyCleanup` hooks. No retries are enabled.
 
-Bounded browser exploration:
+Use the one-shot snapshot instead of a persistent exploration process. From the project root:
 
 ```bash
-node support/explore.mjs --config /absolute/path/config.local.json --evidence-dir /absolute/path/evidence
+python3 scripts/uia.py snapshot --run REQ-001 --node editor
 ```
-
-Send one JSON object per line: `{"op":"navigate","url":"https://configured-host/path"}`,
-`{"op":"snapshot"}`, `{"op":"click","target":{"role":"button","name":"Search"}}`,
-`{"op":"fill","target":{"label":"Name"},"value":"example"}`, or `{"op":"close"}`.
-Use `value_env` for sensitive fills. Mutation operations require `mutates:true` and an
-authorized `scope`. Add `--public` for a clean visitor context. Saving login state
-requires `--auth-out` pointing outside delivered source.

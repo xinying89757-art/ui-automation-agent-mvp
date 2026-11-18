@@ -1,0 +1,15 @@
+id: target.faq-editor.validation.case500.form-cancel
+kind: component
+role: button
+name: 取消
+frame: iframe[name="prod"]
+nested_frames:
+- iframe[name="tiptap-iframe"]
+- iframe
+source: observed:exploration/generator-faq-editor.validation-reedit-toolbar-draft.json
+confirmed: false
+provenance:
+  source_run: GO-a0f244227ab4
+  verified_by: unverified
+alias_of: target.faq-editor.validation-reedit-toolbar-draft.faq.component.cancel
+created_at: '2026-10-23'

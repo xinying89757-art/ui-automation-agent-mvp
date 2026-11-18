@@ -1,0 +1,192 @@
+{
+  "version": 1,
+  "root": "/home/hatch/workspace/goals/web-ui-automation-testing/files/phoenix-llms-evidence",
+  "generatedAt": "2026-10-29T08:18:53.793Z",
+  "cache": {
+    "scanned": 4,
+    "parsed": 0,
+    "reused": 4,
+    "removed": 0,
+    "forced": false
+  },
+  "warnings": [],
+  "limits": [
+    "正则候选索引；读源代码后才能写入高置信规格",
+    "不解析继承/自定义组合注解/跨文件常量/动态拼接/模板渲染/CSS",
+    "POST 只代表写操作候选（如草稿生成不一定持久化）；不推断 404 或实际部署状态"
+  ],
+  "entries": [
+    {
+      "url": "/phoenix/customizeFile",
+      "httpMethods": [
+        "GET"
+      ],
+      "controller": "PhoenixCustomizeFileController",
+      "method": "managePop",
+      "returnType": "String",
+      "responseKind": "view-candidate",
+      "views": [
+        {
+          "name": "phoenix_jsp/customizeFile/manage_pop",
+          "file": "TtnSmartBw/src/main/java/com/focustech/subsys/smart/web/controller/phoenix/PhoenixCustomizeFileController.java",
+          "line": 81,
+          "endLine": 81
+        }
+      ],
+      "file": "TtnSmartBw/src/main/java/com/focustech/subsys/smart/web/controller/phoenix/PhoenixCustomizeFileController.java",
+      "line": 76,
+      "endLine": 82,
+      "parser": "regex-candidate"
+    },
+    {
+      "url": "/phoenix/customizeFile/list",
+      "httpMethods": [
+        "GET"
+      ],
+      "controller": "PhoenixCustomizeFileController",
+      "method": "managePopList",
+      "returnType": "String",
+      "responseKind": "view-candidate",
+      "views": [
+        {
+          "name": "phoenix_jsp/customizeFile/manage_pop_include_wrap",
+          "file": "TtnSmartBw/src/main/java/com/focustech/subsys/smart/web/controller/phoenix/PhoenixCustomizeFileController.java",
+          "line": 106,
+          "endLine": 106
+        }
+      ],
+      "file": "TtnSmartBw/src/main/java/com/focustech/subsys/smart/web/controller/phoenix/PhoenixCustomizeFileController.java",
+      "line": 93,
+      "endLine": 107,
+      "parser": "regex-candidate"
+    },
+    {
+      "url": "/phoenix/customizeFile/edit",
+      "httpMethods": [
+        "GET"
+      ],
+      "controller": "PhoenixCustomizeFileController",
+      "method": "createPop",
+      "returnType": "String",
+      "responseKind": "view-candidate",
+      "views": [
+        {
+          "name": "phoenix_jsp/customizeFile/edit_pop",
+          "file": "TtnSmartBw/src/main/java/com/focustech/subsys/smart/web/controller/phoenix/PhoenixCustomizeFileController.java",
+          "line": 127,
+          "endLine": 127
+        },
+        {
+          "name": "phoenix_jsp/customizeFile/edit_pop",
+          "file": "TtnSmartBw/src/main/java/com/focustech/subsys/smart/web/controller/phoenix/PhoenixCustomizeFileController.java",
+          "line": 138,
+          "endLine": 138
+        }
+      ],
+      "file": "TtnSmartBw/src/main/java/com/focustech/subsys/smart/web/controller/phoenix/PhoenixCustomizeFileController.java",
+      "line": 112,
+      "endLine": 140,
+      "parser": "regex-candidate"
+    },
+    {
+      "url": "/phoenix/customizeFile/save",
+      "httpMethods": [
+        "POST"
+      ],
+      "controller": "PhoenixCustomizeFileController",
+      "method": "create",
+      "returnType": "String",
+      "responseKind": "render-json",
+      "views": [],
+      "file": "TtnSmartBw/src/main/java/com/focustech/subsys/smart/web/controller/phoenix/PhoenixCustomizeFileController.java",
+      "line": 152,
+      "endLine": 210,
+      "parser": "regex-candidate"
+    },
+    {
+      "url": "/phoenix/customizeFile/delete/{fileId}",
+      "httpMethods": [
+        "GET"
+      ],
+      "controller": "PhoenixCustomizeFileController",
+      "method": "deleteCustomizeFile",
+      "returnType": "String",
+      "responseKind": "response-body",
+      "views": [],
+      "file": "TtnSmartBw/src/main/java/com/focustech/subsys/smart/web/controller/phoenix/PhoenixCustomizeFileController.java",
+      "line": 318,
+      "endLine": 329,
+      "parser": "regex-candidate"
+    },
+    {
+      "url": "/phoenix/customizeFile/llms/config",
+      "httpMethods": [
+        "GET"
+      ],
+      "controller": "PhoenixCustomizeFileController",
+      "method": "loadLlmsConfig",
+      "returnType": "String",
+      "responseKind": "view-candidate",
+      "views": [
+        {
+          "name": "phoenix_jsp/customizeFile/llms_config",
+          "file": "TtnSmartBw/src/main/java/com/focustech/subsys/smart/web/controller/phoenix/PhoenixCustomizeFileController.java",
+          "line": 350,
+          "endLine": 350,
+          "resolvedFrom": {
+            "value": "phoenix_jsp/customizeFile/llms_config",
+            "file": "TtnSmartBw/src/main/java/com/focustech/subsys/smart/web/controller/phoenix/PhoenixCustomizeFileController.java",
+            "line": 48,
+            "endLine": 48
+          }
+        },
+        {
+          "name": "phoenix_jsp/customizeFile/llms_tab",
+          "file": "TtnSmartBw/src/main/java/com/focustech/subsys/smart/web/controller/phoenix/PhoenixCustomizeFileController.java",
+          "line": 352,
+          "endLine": 352,
+          "resolvedFrom": {
+            "value": "phoenix_jsp/customizeFile/llms_tab",
+            "file": "TtnSmartBw/src/main/java/com/focustech/subsys/smart/web/controller/phoenix/PhoenixCustomizeFileController.java",
+            "line": 47,
+            "endLine": 47
+          }
+        }
+      ],
+      "file": "TtnSmartBw/src/main/java/com/focustech/subsys/smart/web/controller/phoenix/PhoenixCustomizeFileController.java",
+      "line": 334,
+      "endLine": 353,
+      "parser": "regex-candidate"
+    },
+    {
+      "url": "/phoenix/customizeFile/llms/systemContent",
+      "httpMethods": [
+        "POST"
+      ],
+      "controller": "PhoenixCustomizeFileController",
+      "method": "loadLlmsSystemContent",
+      "returnType": "void",
+      "responseKind": "render-json",
+      "views": [],
+      "file": "TtnSmartBw/src/main/java/com/focustech/subsys/smart/web/controller/phoenix/PhoenixCustomizeFileController.java",
+      "line": 355,
+      "endLine": 383,
+      "parser": "regex-candidate"
+    },
+    {
+      "url": "/phoenix/customizeFile/llms/save",
+      "httpMethods": [
+        "POST"
+      ],
+      "controller": "PhoenixCustomizeFileController",
+      "method": "saveLlmsConfig",
+      "returnType": "void",
+      "responseKind": "render-json",
+      "views": [],
+      "file": "TtnSmartBw/src/main/java/com/focustech/subsys/smart/web/controller/phoenix/PhoenixCustomizeFileController.java",
+      "line": 385,
+      "endLine": 423,
+      "parser": "regex-candidate"
+    }
+  ]
+}

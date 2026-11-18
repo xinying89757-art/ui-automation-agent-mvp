@@ -1,0 +1,15 @@
+id: target.faq-editor.entry.route.4
+kind: component
+selector: '[role="textbox"]'
+frame: iframe[name="prod"]
+nested_frames:
+- '#tiptap-iframe'
+- iframe
+source: generator:faq-editor.entry-promote
+confirmed: false
+provenance:
+  source_run: GO-a0f244227ab4
+  verified_by:
+  - AUTO-5f470087ed
+  - AUTO-fd895aaf7f
+created_at: '2026-10-23'

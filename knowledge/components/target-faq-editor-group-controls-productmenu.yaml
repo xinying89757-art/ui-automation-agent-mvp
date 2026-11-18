@@ -1,0 +1,11 @@
+id: target.faq-editor.group-controls.productmenu
+kind: component
+selector: a[href^="javascript:navigateMenu"] >> nth=0
+source: generator:faq-editor.group-controls-promote
+confirmed: false
+provenance:
+  source_run: GO-a0f244227ab4
+  verified_by:
+  - AUTO-5f470087ed
+  - AUTO-fd895aaf7f
+created_at: '2026-10-23'

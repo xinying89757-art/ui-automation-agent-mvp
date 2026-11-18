@@ -1,0 +1,14 @@
+id: target.faq-editor.group-controls.faqtitlefield1
+kind: component
+selector: input[placeholder="请输入FAQ标题"] >> nth=0
+frame: iframe[name="prod"]
+nested_frames:
+- '#tiptap-iframe'
+- iframe
+source: generator:faq-editor.group-controls-promote
+confirmed: false
+provenance:
+  source_run: GO-a0f244227ab4
+  verified_by:
+  - AUTO-5f470087ed
+created_at: '2026-10-23'

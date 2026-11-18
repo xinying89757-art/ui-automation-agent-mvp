@@ -1,0 +1,10 @@
+id: target.faq-editor.product-description.tab
+kind: component
+selector: text="产品描述"
+frame: iframe[name="prod"]
+source: observed:exploration/generator-faq-editor.public-product-path.json
+confirmed: false
+provenance:
+  source_run: GO-a0f244227ab4
+  verified_by: unverified
+created_at: '2026-10-23'

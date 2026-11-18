@@ -1,0 +1,317 @@
+{
+  "version": 1,
+  "root": "/home/hatch/workspace/goals/web-ui-automation-testing/files/phoenix-llms-evidence",
+  "generatedAt": "2026-10-29T08:18:53.793Z",
+  "cache": {
+    "scanned": 4,
+    "parsed": 0,
+    "reused": 4,
+    "removed": 0,
+    "forced": false
+  },
+  "warnings": [],
+  "limits": [
+    "正则候选索引；读源代码后才能写入高置信规格",
+    "不解析继承/自定义组合注解/跨文件常量/动态拼接/模板渲染/CSS",
+    "POST 只代表写操作候选（如草稿生成不一定持久化）；不推断 404 或实际部署状态"
+  ],
+  "entries": [
+    {
+      "url": "/phoenix/customizeFile/edit",
+      "httpMethods": [
+        "GET"
+      ],
+      "controller": "PhoenixCustomizeFileController",
+      "method": "createPop",
+      "returnType": "String",
+      "responseKind": "view-candidate",
+      "views": [
+        {
+          "name": "phoenix_jsp/customizeFile/edit_pop",
+          "file": "TtnSmartBw/src/main/java/com/focustech/subsys/smart/web/controller/phoenix/PhoenixCustomizeFileController.java",
+          "line": 127,
+          "endLine": 127
+        },
+        {
+          "name": "phoenix_jsp/customizeFile/edit_pop",
+          "file": "TtnSmartBw/src/main/java/com/focustech/subsys/smart/web/controller/phoenix/PhoenixCustomizeFileController.java",
+          "line": 138,
+          "endLine": 138
+        }
+      ],
+      "file": "TtnSmartBw/src/main/java/com/focustech/subsys/smart/web/controller/phoenix/PhoenixCustomizeFileController.java",
+      "line": 112,
+      "endLine": 140,
+      "parser": "regex-candidate",
+      "kind": "backend-write-candidate",
+      "successSignals": [],
+      "unresolved": [
+        "未识别成功信号，需按需读方法实现"
+      ],
+      "frontendEvidence": []
+    },
+    {
+      "url": "/phoenix/customizeFile/save",
+      "httpMethods": [
+        "POST"
+      ],
+      "controller": "PhoenixCustomizeFileController",
+      "method": "create",
+      "returnType": "String",
+      "responseKind": "render-json",
+      "views": [],
+      "file": "TtnSmartBw/src/main/java/com/focustech/subsys/smart/web/controller/phoenix/PhoenixCustomizeFileController.java",
+      "line": 152,
+      "endLine": 210,
+      "parser": "regex-candidate",
+      "kind": "backend-write-candidate",
+      "successSignals": [
+        {
+          "kind": "status",
+          "file": "TtnSmartBw/src/main/java/com/focustech/subsys/smart/web/controller/phoenix/PhoenixCustomizeFileController.java",
+          "line": 192,
+          "endLine": 192,
+          "excerpt": "result.put(\"status\", \"success\");",
+          "interpretation": "候选信号，必须读上下文确认分支及含义"
+        },
+        {
+          "kind": "status",
+          "file": "TtnSmartBw/src/main/java/com/focustech/subsys/smart/web/controller/phoenix/PhoenixCustomizeFileController.java",
+          "line": 207,
+          "endLine": 207,
+          "excerpt": "result.put(\"status\", \"success\");",
+          "interpretation": "候选信号，必须读上下文确认分支及含义"
+        }
+      ],
+      "unresolved": [],
+      "frontendEvidence": []
+    },
+    {
+      "url": "/phoenix/customizeFile/delete/{fileId}",
+      "httpMethods": [
+        "GET"
+      ],
+      "controller": "PhoenixCustomizeFileController",
+      "method": "deleteCustomizeFile",
+      "returnType": "String",
+      "responseKind": "response-body",
+      "views": [],
+      "file": "TtnSmartBw/src/main/java/com/focustech/subsys/smart/web/controller/phoenix/PhoenixCustomizeFileController.java",
+      "line": 318,
+      "endLine": 329,
+      "parser": "regex-candidate",
+      "kind": "backend-write-candidate",
+      "successSignals": [],
+      "unresolved": [
+        "未识别成功信号，需按需读方法实现"
+      ],
+      "frontendEvidence": []
+    },
+    {
+      "url": "/phoenix/customizeFile/llms/systemContent",
+      "httpMethods": [
+        "POST"
+      ],
+      "controller": "PhoenixCustomizeFileController",
+      "method": "loadLlmsSystemContent",
+      "returnType": "void",
+      "responseKind": "render-json",
+      "views": [],
+      "file": "TtnSmartBw/src/main/java/com/focustech/subsys/smart/web/controller/phoenix/PhoenixCustomizeFileController.java",
+      "line": 355,
+      "endLine": 383,
+      "parser": "regex-candidate",
+      "kind": "backend-write-candidate",
+      "successSignals": [
+        {
+          "kind": "success-helper-call",
+          "file": "TtnSmartBw/src/main/java/com/focustech/subsys/smart/web/controller/phoenix/PhoenixCustomizeFileController.java",
+          "line": 370,
+          "endLine": 370,
+          "excerpt": "Map<String, Object> body = successBody();",
+          "interpretation": "候选信号，必须读上下文确认分支及含义"
+        },
+        {
+          "kind": "status",
+          "file": "TtnSmartBw/src/main/java/com/focustech/subsys/smart/web/controller/phoenix/PhoenixCustomizeFileController.java",
+          "line": 477,
+          "endLine": 477,
+          "excerpt": "body.put(\"status\", \"success\");",
+          "interpretation": "候选信号，必须读上下文确认分支及含义",
+          "via": "successBody"
+        }
+      ],
+      "unresolved": [],
+      "frontendEvidence": [
+        {
+          "file": "TtnSmartBw/src/main/webapp/assets/script/phoenix/pagefunc/phoenix_function_llms_txt.js",
+          "line": 128,
+          "endLine": 139,
+          "successSignals": [],
+          "relation": "URL/HTTP 方法一致；候选关联，尚未验证运行时分支"
+        }
+      ]
+    },
+    {
+      "url": "/phoenix/customizeFile/llms/save",
+      "httpMethods": [
+        "POST"
+      ],
+      "controller": "PhoenixCustomizeFileController",
+      "method": "saveLlmsConfig",
+      "returnType": "void",
+      "responseKind": "render-json",
+      "views": [],
+      "file": "TtnSmartBw/src/main/java/com/focustech/subsys/smart/web/controller/phoenix/PhoenixCustomizeFileController.java",
+      "line": 385,
+      "endLine": 423,
+      "parser": "regex-candidate",
+      "kind": "backend-write-candidate",
+      "successSignals": [
+        {
+          "kind": "success-helper-call",
+          "file": "TtnSmartBw/src/main/java/com/focustech/subsys/smart/web/controller/phoenix/PhoenixCustomizeFileController.java",
+          "line": 411,
+          "endLine": 411,
+          "excerpt": "PhoenixResponseUtils.renderJson(response, successBody());",
+          "interpretation": "候选信号，必须读上下文确认分支及含义"
+        },
+        {
+          "kind": "status",
+          "file": "TtnSmartBw/src/main/java/com/focustech/subsys/smart/web/controller/phoenix/PhoenixCustomizeFileController.java",
+          "line": 477,
+          "endLine": 477,
+          "excerpt": "body.put(\"status\", \"success\");",
+          "interpretation": "候选信号，必须读上下文确认分支及含义",
+          "via": "successBody"
+        }
+      ],
+      "unresolved": [],
+      "frontendEvidence": [
+        {
+          "file": "TtnSmartBw/src/main/webapp/assets/script/phoenix/pagefunc/phoenix_function_llms_txt.js",
+          "line": 208,
+          "endLine": 249,
+          "successSignals": [
+            {
+              "kind": "status-check",
+              "file": "TtnSmartBw/src/main/webapp/assets/script/phoenix/pagefunc/phoenix_function_llms_txt.js",
+              "line": 216,
+              "endLine": 216,
+              "excerpt": "if (response && response.status == 'success') {",
+              "interpretation": "候选信号，必须读上下文确认分支及含义"
+            },
+            {
+              "kind": "toast-candidate",
+              "file": "TtnSmartBw/src/main/webapp/assets/script/phoenix/pagefunc/phoenix_function_llms_txt.js",
+              "line": 218,
+              "endLine": 218,
+              "excerpt": "state.view.showToast(text(\nconfig.enabled ? 'llmsSaveSuccess' : 'llmsDisableSuccess',\nconfig.enabled ? 'llms.txt 配置已保存' : '已关闭 llms.txt 功能，该文件已从网站根目录移除'\n));",
+              "interpretation": "候选信号，必须读上下文确认分支及含义"
+            },
+            {
+              "kind": "dialog-close-candidate",
+              "file": "TtnSmartBw/src/main/webapp/assets/script/phoenix/pagefunc/phoenix_function_llms_txt.js",
+              "line": 224,
+              "endLine": 224,
+              "excerpt": "close();",
+              "interpretation": "候选信号，必须读上下文确认分支及含义"
+            }
+          ],
+          "relation": "URL/HTTP 方法一致；候选关联，尚未验证运行时分支"
+        }
+      ]
+    },
+    {
+      "kind": "frontend-request-candidate",
+      "url": "/phoenix/customizeFile/llms/config",
+      "httpMethods": [
+        "GET"
+      ],
+      "reference": "API.config",
+      "urlDefinition": {
+        "url": "/phoenix/customizeFile/llms/config",
+        "file": "TtnSmartBw/src/main/webapp/assets/script/phoenix/pagefunc/phoenix_function_llms_txt.js",
+        "line": 9,
+        "endLine": 9
+      },
+      "file": "TtnSmartBw/src/main/webapp/assets/script/phoenix/pagefunc/phoenix_function_llms_txt.js",
+      "line": 66,
+      "endLine": 84,
+      "successSignals": [],
+      "unresolved": [
+        "payload/DOM/国际化最终文本及回调控制流须读源代码确认"
+      ],
+      "frontendEvidence": []
+    },
+    {
+      "kind": "frontend-request-candidate",
+      "url": "/phoenix/customizeFile/llms/systemContent",
+      "httpMethods": [
+        "POST"
+      ],
+      "reference": "API.systemContent",
+      "urlDefinition": {
+        "url": "/phoenix/customizeFile/llms/systemContent",
+        "file": "TtnSmartBw/src/main/webapp/assets/script/phoenix/pagefunc/phoenix_function_llms_txt.js",
+        "line": 10,
+        "endLine": 10
+      },
+      "file": "TtnSmartBw/src/main/webapp/assets/script/phoenix/pagefunc/phoenix_function_llms_txt.js",
+      "line": 128,
+      "endLine": 139,
+      "successSignals": [],
+      "unresolved": [
+        "payload/DOM/国际化最终文本及回调控制流须读源代码确认"
+      ],
+      "frontendEvidence": []
+    },
+    {
+      "kind": "frontend-request-candidate",
+      "url": "/phoenix/customizeFile/llms/save",
+      "httpMethods": [
+        "POST"
+      ],
+      "reference": "API.save",
+      "urlDefinition": {
+        "url": "/phoenix/customizeFile/llms/save",
+        "file": "TtnSmartBw/src/main/webapp/assets/script/phoenix/pagefunc/phoenix_function_llms_txt.js",
+        "line": 11,
+        "endLine": 11
+      },
+      "file": "TtnSmartBw/src/main/webapp/assets/script/phoenix/pagefunc/phoenix_function_llms_txt.js",
+      "line": 208,
+      "endLine": 249,
+      "successSignals": [
+        {
+          "kind": "status-check",
+          "file": "TtnSmartBw/src/main/webapp/assets/script/phoenix/pagefunc/phoenix_function_llms_txt.js",
+          "line": 216,
+          "endLine": 216,
+          "excerpt": "if (response && response.status == 'success') {",
+          "interpretation": "候选信号，必须读上下文确认分支及含义"
+        },
+        {
+          "kind": "toast-candidate",
+          "file": "TtnSmartBw/src/main/webapp/assets/script/phoenix/pagefunc/phoenix_function_llms_txt.js",
+          "line": 218,
+          "endLine": 218,
+          "excerpt": "state.view.showToast(text(\nconfig.enabled ? 'llmsSaveSuccess' : 'llmsDisableSuccess',\nconfig.enabled ? 'llms.txt 配置已保存' : '已关闭 llms.txt 功能，该文件已从网站根目录移除'\n));",
+          "interpretation": "候选信号，必须读上下文确认分支及含义"
+        },
+        {
+          "kind": "dialog-close-candidate",
+          "file": "TtnSmartBw/src/main/webapp/assets/script/phoenix/pagefunc/phoenix_function_llms_txt.js",
+          "line": 224,
+          "endLine": 224,
+          "excerpt": "close();",
+          "interpretation": "候选信号，必须读上下文确认分支及含义"
+        }
+      ],
+      "unresolved": [
+        "payload/DOM/国际化最终文本及回调控制流须读源代码确认"
+      ],
+      "frontendEvidence": []
+    }
+  ]
+}

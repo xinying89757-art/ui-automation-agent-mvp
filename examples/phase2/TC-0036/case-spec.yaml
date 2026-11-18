@@ -1,0 +1,51 @@
+schema_version: case-spec.v1
+case_id: TC-0036
+intent: 保存配置后无需发布即可立即更新公开文件
+automatable:
+  status: 'yes'
+  reason: 后台本机运行；公共文件交接远程检查，网络时序由拦截器提供
+required_env: []
+data_prep:
+  llms.enabled: true
+  llms.source: system
+mutation_scope:
+- llms.txt
+start_page: editor
+steps:
+- id: S1
+  verb: fill
+  target: txt.overview
+  value: phase2-immediate-public-overview
+- id: S2
+  verb: click
+  target: txt.save
+- id: S3
+  verb: defer_public
+  target: public.llms.immediate
+read_back:
+- id: R1
+  after: S2
+  target: txt.overview
+  value: phase2-immediate-public-overview
+  reopen: [settings, txt.entry]
+  save_target: network.llms.save
+assertions:
+- id: A1
+  after: S2
+  excel: 1. 页面显示“llms.txt 配置已保存”并关闭弹窗。
+  checks:
+  - target: txt.saved
+    op: text
+    value: llms.txt 配置已保存
+  - target: txt.dialog
+    op: hidden
+- id: A2
+  after: S3
+  excel: 2. 公开文件立即显示新的网站概述。
+  checks:
+  - target: public.llms.immediate
+    op: remote_file
+    value:
+      op: contains
+      value: phase2-immediate-public-overview
+questions: []

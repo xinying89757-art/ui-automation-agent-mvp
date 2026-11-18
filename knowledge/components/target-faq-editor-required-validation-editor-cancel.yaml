@@ -1,0 +1,11 @@
+id: target.faq-editor.required-validation.editor-cancel
+kind: component
+role: link
+name: 取消
+frame: iframe[name="prod"]
+source: generator:faq-editor.required-validation
+confirmed: false
+provenance:
+  source_run: GO-a0f244227ab4
+  verified_by: unverified
+created_at: '2026-10-23'

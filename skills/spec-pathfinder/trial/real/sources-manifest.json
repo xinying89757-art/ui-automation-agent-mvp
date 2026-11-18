@@ -1,0 +1,47 @@
+[
+  {
+    "path": "/home/hatch/workspace/goals/web-ui-automation-testing/files/historically-passed-scripts/suites/llms-txt/src/live-fixtures.mjs",
+    "sha256": "1d8bdfbb99820a78f84632cc55c93c78f76ae7bec2889ea435643d12b6f8b4ef",
+    "lines": 107
+  },
+  {
+    "path": "/home/hatch/workspace/goals/web-ui-automation-testing/files/historically-passed-scripts/suites/llms-txt/src/txt-manager-page.mjs",
+    "sha256": "78384e4f9de4e6fe6e7a85f76e2f7b390d3593a049457a755852b40062934b3c",
+    "lines": 187
+  },
+  {
+    "path": "/home/hatch/workspace/goals/web-ui-automation-testing/files/historically-passed-scripts/suites/llms-txt/test/live-extended.test.mjs",
+    "sha256": "62f4d4a5b88fc2c2c09e3a47ab6051df352c1de8af40ff3bc1a7f17d64c6c444",
+    "lines": 457
+  },
+  {
+    "path": "/home/hatch/workspace/goals/web-ui-automation-testing/files/historically-passed-scripts/suites/llms-txt/test/live-p0.test.mjs",
+    "sha256": "3359bfe247733cb0d953d122f6814106395964a812961d06f6b4537d7158ef69",
+    "lines": 68
+  },
+  {
+    "path": "/home/hatch/workspace/goals/web-ui-automation-testing/files/phoenix-llms-evidence/.env",
+    "sha256": "b6763aa877a9cc67222e2c8f7fe12ab5e81ba0440be221582ee0edd02a3462df",
+    "lines": 5
+  },
+  {
+    "path": "/home/hatch/workspace/goals/web-ui-automation-testing/files/phoenix-llms-evidence/TtnSmartBw/src/main/java/com/focustech/subsys/smart/web/controller/phoenix/PhoenixCustomizeFileController.java",
+    "sha256": "19babfaf8540e5fbe36385d6d1e015eca671bdad5babdee1af7c84088ba23e9e",
+    "lines": 487
+  },
+  {
+    "path": "/home/hatch/workspace/goals/web-ui-automation-testing/files/phoenix-llms-evidence/TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_config.jsp",
+    "sha256": "9800f0db20493c8d6b9c073c0a1e27e6aa4ce1acfb4ce159fefe5fae68b6c539",
+    "lines": 71
+  },
+  {
+    "path": "/home/hatch/workspace/goals/web-ui-automation-testing/files/phoenix-llms-evidence/TtnSmartBw/src/main/webapp/WEB-INF/jsp/phoenix_jsp/customizeFile/llms_tab.jsp",
+    "sha256": "013100ff1a7d7cceddade8e6a629438727f9d0768c5ec6dd65d0ca8f6bdad5d3",
+    "lines": 68
+  },
+  {
+    "path": "/home/hatch/workspace/goals/web-ui-automation-testing/files/phoenix-llms-evidence/TtnSmartBw/src/main/webapp/assets/script/phoenix/pagefunc/phoenix_function_llms_txt.js",
+    "sha256": "3ced162505b469ff041f51b0feb1722c64e9c2813ce8f387ad818c27a851b871",
+    "lines": 261
+  }
+]

@@ -11,6 +11,8 @@ export interface CaseContext {
   page: Page;
   openAdmin(area?: '内容管理' | '编辑网站'): Promise<Page>;
   fixtureState?: unknown;
+  spec?: Record<string, any>;
+  networkCatalog?: Record<string, any>;
 }
 
 /** Each case supplies real UI setup and verification, including read-only prerequisites. */

@@ -1,0 +1,10 @@
+id: target.faq-editor.new-editor-types.proposed.video.empty.list
+kind: component
+selector: text="无符合条件的记录显示！"
+frame: iframe[name="video"]
+source: generator:faq-editor.new-editor-types
+confirmed: false
+provenance:
+  source_run: GO-a0f244227ab4
+  verified_by: unverified
+created_at: '2026-10-23'

@@ -1,0 +1,13 @@
+id: target.faq-editor.group-controls.faqanswerfield3
+kind: component
+selector: textarea[placeholder="请输入FAQ内容"] >> nth=2
+frame: iframe[name="prod"]
+nested_frames:
+- '#tiptap-iframe'
+- iframe
+source: generator:faq-editor.group-controls-promote
+confirmed: false
+provenance:
+  source_run: GO-a0f244227ab4
+  verified_by: unverified
+created_at: '2026-10-23'

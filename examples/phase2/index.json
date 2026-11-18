@@ -1,0 +1,34 @@
+{
+  "TC-0048": {
+    "source_hash": "bb84b61dc25e4b4286f64c8e407e5998e544816035e476ca4c74098b80a0d5ea",
+    "spec": "examples/phase2/TC-0048/case-spec.yaml"
+  },
+  "TC-0019": {
+    "source_hash": "395e3962138275067b7a21f92a5bcdc43a735ed3d8f902b38831d0a88f97ebe6",
+    "spec": "examples/phase2/TC-0019/case-spec.yaml"
+  },
+  "TC-0002": {
+    "source_hash": "582ac61527e9336de3fa119187d4fc58c55cd6d4fb391eaf8dd8fa3d6382ca8b",
+    "spec": "examples/phase2/TC-0002/case-spec.yaml"
+  },
+  "TC-0033": {
+    "source_hash": "f6a34154705aaf89a066f4a078c51a972b034c4e5e85ead2b609be1d6a952f10",
+    "spec": "examples/phase2/TC-0033/case-spec.yaml"
+  },
+  "TC-0036": {
+    "source_hash": "ae1742541be19ca5cbd5567b9ad0f9443ab6e05514cf0c0b7d7d98ccaa96b4a5",
+    "spec": "examples/phase2/TC-0036/case-spec.yaml"
+  },
+  "TC-0055": {
+    "source_hash": "697ea7e320d8d49055296eae4ce060d773e2c655ca0e33d67f6a8b0aec016ba3",
+    "spec": "examples/phase2/TC-0055/case-spec.yaml"
+  },
+  "TC-0016": {
+    "source_hash": "7a11995b44a0e4da406d16c99e05933e7f5129c27bb3ab2a461318ca1f509523",
+    "spec": "examples/phase2/TC-0016/case-spec.yaml"
+  },
+  "TC-0004": {
+    "source_hash": "a8ebbaee11ea19d51c8babb21c777fcf446b5e97448828818c69ebe9c58c62aa",
+    "spec": "examples/phase2/TC-0004/case-spec.yaml"
+  }
+}

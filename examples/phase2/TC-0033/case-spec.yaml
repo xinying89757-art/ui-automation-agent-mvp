@@ -1,0 +1,48 @@
+schema_version: case-spec.v1
+case_id: TC-0033
+intent: FAQ有5条时全部按列表顺序输出
+automatable:
+  status: 'yes'
+  reason: 后台本机运行；公共文件交接远程检查，网络时序由拦截器提供
+required_env: []
+data_prep:
+  llms.enabled: true
+  llms.source: system
+  faq.count: 5
+  llms.overview: phase4-faq-public-overview
+mutation_scope:
+- llms.txt
+- faq
+start_page: editor
+steps:
+- id: S1
+  verb: click
+  target: txt.save
+- id: S2
+  verb: defer_public
+  target: public.llms
+read_back:
+- id: R1
+  after: S1
+  target: txt.overview
+  value: phase4-faq-public-overview
+  reopen: [settings, txt.entry]
+  save_target: network.llms.save
+assertions:
+- id: A1
+  after: S1
+  excel: 1. 页面显示保存成功提示。
+  checks:
+  - target: txt.saved
+    op: visible
+- id: A2
+  after: S2
+  excel: 2. FAQ模块显示5条问答且顺序与FAQ列表一致，每条均使用问题和答案两行格式。
+  checks:
+  - target: public.llms
+    op: remote_file
+    value:
+      op: ordered_pairs
+      section: FAQ
+      value: $fixture.faq.pairs
+questions: []

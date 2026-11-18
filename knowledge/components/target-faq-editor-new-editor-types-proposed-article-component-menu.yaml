@@ -1,0 +1,13 @@
+id: target.faq-editor.new-editor-types.proposed.article.component.menu
+kind: component
+selector: text="网页组件"
+frame: iframe[name="article"]
+nested_frames:
+- '#tiptap-iframe'
+- iframe
+source: generator:faq-editor.new-editor-types
+confirmed: false
+provenance:
+  source_run: GO-a0f244227ab4
+  verified_by: unverified
+created_at: '2026-10-23'

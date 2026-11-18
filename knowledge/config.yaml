@@ -1,0 +1,3 @@
+schema_version: uia-knowledge-config.v1
+stale_after_days: 90
+candidate_after_days: 180

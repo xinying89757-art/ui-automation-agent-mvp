@@ -1,0 +1,8 @@
+id: pattern.MENU_KEYBOARD
+kind: pattern
+description: For visible menu or listbox options that do not accept pointer clicks,
+  focus the option, type its visible label to filter when supported, then press Enter;
+  use ArrowDown then Enter as a bounded fallback.
+strategy: menu_keyboard
+retries: 1
+created_at: '2026-10-23'

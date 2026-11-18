@@ -1,0 +1,19 @@
+schema_version: case-spec.v1
+case_id: TC-0002
+intent: 无网站设置权限的账号不显示管理txt文件入口
+automatable: {status: needs-env, reason: 需词表指定的环境}
+required_env:
+- no_settings_permission
+data_prep: {}
+mutation_scope: []
+start_page: editor
+steps:
+- {id: S1, verb: assert, target: '?permission.settings_panel'}
+assertions:
+- id: A1
+  after: S1
+  excel: 1. 页面不显示“管理txt文件”，也不出现点击后提示。
+  checks:
+  - {target: txt.entry, op: hidden}
+  - {target: '?permission.denied_click_hint', op: hidden}
+questions: []

@@ -1,0 +1,429 @@
+{
+  "version": 1,
+  "root": "/home/hatch/workspace/goals/web-ui-automation-testing/custom-skills/spec-pathfinder/trial/fixtures",
+  "scriptMtimeMs": 1793261925365.2715,
+  "files": {
+    "demo/src/main/java/demo/FilesController.java": {
+      "fingerprint": "1793261350151249108:498",
+      "routes": [
+        {
+          "url": "/files/remove",
+          "httpMethods": [
+            "POST"
+          ],
+          "controller": "FilesController",
+          "method": "remove",
+          "returnType": "String",
+          "responseKind": "view-candidate",
+          "views": [
+            {
+              "name": "redirect:/settings/llms",
+              "file": "demo/src/main/java/demo/FilesController.java",
+              "line": 12,
+              "endLine": 12
+            }
+          ],
+          "file": "demo/src/main/java/demo/FilesController.java",
+          "line": 9,
+          "endLine": 13,
+          "parser": "regex-candidate"
+        },
+        {
+          "url": "/files/delete",
+          "httpMethods": [
+            "POST"
+          ],
+          "controller": "FilesController",
+          "method": "remove",
+          "returnType": "String",
+          "responseKind": "view-candidate",
+          "views": [
+            {
+              "name": "redirect:/settings/llms",
+              "file": "demo/src/main/java/demo/FilesController.java",
+              "line": 12,
+              "endLine": 12
+            }
+          ],
+          "file": "demo/src/main/java/demo/FilesController.java",
+          "line": 9,
+          "endLine": 13,
+          "parser": "regex-candidate"
+        }
+      ],
+      "actions": [
+        {
+          "url": "/files/remove",
+          "httpMethods": [
+            "POST"
+          ],
+          "controller": "FilesController",
+          "method": "remove",
+          "returnType": "String",
+          "responseKind": "view-candidate",
+          "views": [
+            {
+              "name": "redirect:/settings/llms",
+              "file": "demo/src/main/java/demo/FilesController.java",
+              "line": 12,
+              "endLine": 12
+            }
+          ],
+          "file": "demo/src/main/java/demo/FilesController.java",
+          "line": 9,
+          "endLine": 13,
+          "parser": "regex-candidate",
+          "kind": "backend-write-candidate",
+          "successSignals": [
+            {
+              "kind": "redirect",
+              "file": "demo/src/main/java/demo/FilesController.java",
+              "line": 12,
+              "endLine": 12,
+              "excerpt": "return \"redirect:/settings/llms\";",
+              "interpretation": "候选信号，必须读上下文确认分支及含义"
+            }
+          ],
+          "unresolved": [],
+          "frontendEvidence": []
+        },
+        {
+          "url": "/files/delete",
+          "httpMethods": [
+            "POST"
+          ],
+          "controller": "FilesController",
+          "method": "remove",
+          "returnType": "String",
+          "responseKind": "view-candidate",
+          "views": [
+            {
+              "name": "redirect:/settings/llms",
+              "file": "demo/src/main/java/demo/FilesController.java",
+              "line": 12,
+              "endLine": 12
+            }
+          ],
+          "file": "demo/src/main/java/demo/FilesController.java",
+          "line": 9,
+          "endLine": 13,
+          "parser": "regex-candidate",
+          "kind": "backend-write-candidate",
+          "successSignals": [
+            {
+              "kind": "redirect",
+              "file": "demo/src/main/java/demo/FilesController.java",
+              "line": 12,
+              "endLine": 12,
+              "excerpt": "return \"redirect:/settings/llms\";",
+              "interpretation": "候选信号，必须读上下文确认分支及含义"
+            }
+          ],
+          "unresolved": [],
+          "frontendEvidence": []
+        }
+      ],
+      "elements": [],
+      "warnings": []
+    },
+    "demo/src/main/java/demo/SettingsController.java": {
+      "fingerprint": "1793261350097249106:610",
+      "routes": [
+        {
+          "url": "/settings/llms",
+          "httpMethods": [
+            "GET"
+          ],
+          "controller": "SettingsController",
+          "method": "page",
+          "returnType": "String",
+          "responseKind": "view-candidate",
+          "views": [
+            {
+              "name": "settings/llms",
+              "file": "demo/src/main/java/demo/SettingsController.java",
+              "line": 12,
+              "endLine": 12,
+              "resolvedFrom": {
+                "value": "settings/llms",
+                "file": "demo/src/main/java/demo/SettingsController.java",
+                "line": 8,
+                "endLine": 8
+              }
+            }
+          ],
+          "file": "demo/src/main/java/demo/SettingsController.java",
+          "line": 10,
+          "endLine": 13,
+          "parser": "regex-candidate"
+        },
+        {
+          "url": "/prefs/llms",
+          "httpMethods": [
+            "GET"
+          ],
+          "controller": "SettingsController",
+          "method": "page",
+          "returnType": "String",
+          "responseKind": "view-candidate",
+          "views": [
+            {
+              "name": "settings/llms",
+              "file": "demo/src/main/java/demo/SettingsController.java",
+              "line": 12,
+              "endLine": 12,
+              "resolvedFrom": {
+                "value": "settings/llms",
+                "file": "demo/src/main/java/demo/SettingsController.java",
+                "line": 8,
+                "endLine": 8
+              }
+            }
+          ],
+          "file": "demo/src/main/java/demo/SettingsController.java",
+          "line": 10,
+          "endLine": 13,
+          "parser": "regex-candidate"
+        },
+        {
+          "url": "/settings/llms/save",
+          "httpMethods": [
+            "POST"
+          ],
+          "controller": "SettingsController",
+          "method": "save",
+          "returnType": "java.util.Map<String, String>",
+          "responseKind": "response-body",
+          "views": [],
+          "file": "demo/src/main/java/demo/SettingsController.java",
+          "line": 15,
+          "endLine": 21,
+          "parser": "regex-candidate"
+        },
+        {
+          "url": "/prefs/llms/save",
+          "httpMethods": [
+            "POST"
+          ],
+          "controller": "SettingsController",
+          "method": "save",
+          "returnType": "java.util.Map<String, String>",
+          "responseKind": "response-body",
+          "views": [],
+          "file": "demo/src/main/java/demo/SettingsController.java",
+          "line": 15,
+          "endLine": 21,
+          "parser": "regex-candidate"
+        }
+      ],
+      "actions": [
+        {
+          "url": "/settings/llms/save",
+          "httpMethods": [
+            "POST"
+          ],
+          "controller": "SettingsController",
+          "method": "save",
+          "returnType": "java.util.Map<String, String>",
+          "responseKind": "response-body",
+          "views": [],
+          "file": "demo/src/main/java/demo/SettingsController.java",
+          "line": 15,
+          "endLine": 21,
+          "parser": "regex-candidate",
+          "kind": "backend-write-candidate",
+          "successSignals": [
+            {
+              "kind": "status",
+              "file": "demo/src/main/java/demo/SettingsController.java",
+              "line": 19,
+              "endLine": 19,
+              "excerpt": "body.put(\"status\", \"success\");",
+              "interpretation": "候选信号，必须读上下文确认分支及含义"
+            }
+          ],
+          "unresolved": [],
+          "frontendEvidence": []
+        },
+        {
+          "url": "/prefs/llms/save",
+          "httpMethods": [
+            "POST"
+          ],
+          "controller": "SettingsController",
+          "method": "save",
+          "returnType": "java.util.Map<String, String>",
+          "responseKind": "response-body",
+          "views": [],
+          "file": "demo/src/main/java/demo/SettingsController.java",
+          "line": 15,
+          "endLine": 21,
+          "parser": "regex-candidate",
+          "kind": "backend-write-candidate",
+          "successSignals": [
+            {
+              "kind": "status",
+              "file": "demo/src/main/java/demo/SettingsController.java",
+              "line": 19,
+              "endLine": 19,
+              "excerpt": "body.put(\"status\", \"success\");",
+              "interpretation": "候选信号，必须读上下文确认分支及含义"
+            }
+          ],
+          "unresolved": [],
+          "frontendEvidence": []
+        }
+      ],
+      "elements": [],
+      "warnings": []
+    },
+    "demo/src/main/resources/freemarker/settings/llms.ftl": {
+      "fingerprint": "1793261831980267808:435",
+      "routes": [],
+      "actions": [],
+      "elements": [
+        {
+          "template": "demo/src/main/resources/freemarker/settings/llms.ftl",
+          "tag": "form",
+          "id": "llmsForm",
+          "text": "开启 llms.txt 保存 删除",
+          "i18nFallbacks": [],
+          "name": null,
+          "type": null,
+          "classes": [],
+          "attributes": {
+            "id": "llmsForm",
+            "action": "/settings/llms/save",
+            "method": "post"
+          },
+          "locatorCandidate": {
+            "strategy": "id",
+            "value": "llmsForm"
+          },
+          "dynamic": true,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "demo/src/main/resources/freemarker/settings/llms.ftl",
+          "line": 2,
+          "endLine": 2
+        },
+        {
+          "template": "demo/src/main/resources/freemarker/settings/llms.ftl",
+          "tag": "label",
+          "id": null,
+          "text": "开启 llms.txt",
+          "i18nFallbacks": [],
+          "name": null,
+          "type": null,
+          "classes": [],
+          "attributes": {
+            "for": "enabled"
+          },
+          "locatorCandidate": {
+            "strategy": "text",
+            "value": "开启 llms.txt"
+          },
+          "dynamic": false,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "demo/src/main/resources/freemarker/settings/llms.ftl",
+          "line": 3,
+          "endLine": 3
+        },
+        {
+          "template": "demo/src/main/resources/freemarker/settings/llms.ftl",
+          "tag": "input",
+          "id": "enabled",
+          "text": "",
+          "i18nFallbacks": [],
+          "name": "enabled",
+          "type": "checkbox",
+          "classes": [],
+          "attributes": {
+            "id": "enabled",
+            "name": "enabled",
+            "type": "checkbox",
+            "value": "true"
+          },
+          "locatorCandidate": {
+            "strategy": "id",
+            "value": "enabled"
+          },
+          "dynamic": false,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "demo/src/main/resources/freemarker/settings/llms.ftl",
+          "line": 4,
+          "endLine": 4
+        },
+        {
+          "template": "demo/src/main/resources/freemarker/settings/llms.ftl",
+          "tag": "input",
+          "id": "summary",
+          "text": "",
+          "i18nFallbacks": [],
+          "name": "siteSummary",
+          "type": null,
+          "classes": [],
+          "attributes": {
+            "id": "summary",
+            "name": "siteSummary",
+            "value": "${summary!''}"
+          },
+          "locatorCandidate": {
+            "strategy": "id",
+            "value": "summary"
+          },
+          "dynamic": true,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "demo/src/main/resources/freemarker/settings/llms.ftl",
+          "line": 5,
+          "endLine": 5
+        },
+        {
+          "template": "demo/src/main/resources/freemarker/settings/llms.ftl",
+          "tag": "button",
+          "id": null,
+          "text": "保存",
+          "i18nFallbacks": [],
+          "name": null,
+          "type": "submit",
+          "classes": [],
+          "attributes": {
+            "data-testid": "save-llms",
+            "type": "submit"
+          },
+          "locatorCandidate": {
+            "strategy": "data-testid",
+            "value": "save-llms"
+          },
+          "dynamic": false,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "demo/src/main/resources/freemarker/settings/llms.ftl",
+          "line": 6,
+          "endLine": 6
+        },
+        {
+          "template": "demo/src/main/resources/freemarker/settings/llms.ftl",
+          "tag": "a",
+          "id": null,
+          "text": "删除",
+          "i18nFallbacks": [],
+          "name": null,
+          "type": null,
+          "classes": [],
+          "attributes": {
+            "href": "/files/remove?id=1"
+          },
+          "locatorCandidate": {
+            "strategy": "text",
+            "value": "删除"
+          },
+          "dynamic": false,
+          "runtimeUniqueness": "未验证；检查条件分支、循环、隐藏副本与所在容器",
+          "file": "demo/src/main/resources/freemarker/settings/llms.ftl",
+          "line": 7,
+          "endLine": 7
+        }
+      ],
+      "warnings": []
+    }
+  }
+}

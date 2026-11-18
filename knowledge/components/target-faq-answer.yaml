@@ -1,0 +1,16 @@
+id: target.faq.answer
+kind: component
+frame: '#faq'
+selector: .tiptap.ProseMirror
+patterns:
+- FRAME_JOIN
+- RERENDER_RELOCATE
+- OCCLUDED_SCROLL_OR_COLLAPSE
+nested_frames:
+- '#tiptap-iframe-faq'
+- iframe.tiptap-iframe
+alias_of: target.faq.answer
+provenance:
+- source_run: GO-a0f244227ab4
+  verified_by: unverified
+created_at: '2026-10-23'

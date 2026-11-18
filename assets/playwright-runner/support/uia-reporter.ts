@@ -78,7 +78,10 @@ export default class UiaReporter implements Reporter {
       : /UIA_BUSINESS_FAILURE/u.test(message) ? 'business_failure'
       : /UIA_CLEANUP_FAILED/u.test(message) ? 'automation_failure'
       : result.status === 'interrupted' || result.status === 'skipped' ? 'interrupted' : 'automation_failure';
+    const annotations = result.annotations?.length ? result.annotations : test.annotations;
+    const rescued = annotations.filter(item => item.type === 'rescued_by_midscene').length;
     this.cases.push({ case_id: caseId, result: status, playwright_status: result.status,
+      rescued_by_midscene: rescued,
       setup_started: result.attachments.some(a => a.name === 'uia-setup-started'),
       duration_ms: result.duration, retry: result.retry, errors, lifecycle,
       assertions: this.assertions.get(test.id) ?? [],

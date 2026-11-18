@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>Editor canvas</title>
+  <style>
+    body { font-family: sans-serif; margin: 12px; }
+    .blocking-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; }
+    .blocking-overlay[hidden] { display: none; }
+    .slash-menu { display: flex; gap: 8px; margin-top: 8px; }
+    .slash-menu[hidden] { display: none; }
+    .slash-card { border: 1px solid #333; padding: 8px 12px; background: #fff; }
+    .ProseMirror { min-height: 80px; border: 1px solid #999; padding: 8px; }
+    .inserted-component { display: inline-block; border: 1px dashed #36c; margin-right: 4px; padding: 2px 6px; }
+    #persisted { margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <div class="blocking-overlay" role="dialog" data-uia-overlay="blocking">
+    <button type="button" class="close-overlay">我知道了</button>
+  </div>
+  <div id="editor-root" class="tiptap ProseMirror" contenteditable="true" role="textbox" aria-label="正文"></div>
+  <div id="slash-menu" class="slash-menu" hidden>
+    <button type="button" class="slash-card" data-component="FAQ">FAQ</button>
+    <button type="button" class="slash-card" data-component="文本">文本</button>
+  </div>
+  <div id="style-menu">
+    <button type="button" role="menuitem" data-menu-item="标题">标题</button>
+  </div>
+  <button type="button" id="save">保存</button>
+  <div id="persisted"></div>
+  <script>
+    const overlay = document.querySelector('.blocking-overlay');
+    overlay.querySelector('.close-overlay').addEventListener('click', () => { overlay.hidden = true; });
+    let root = document.getElementById('editor-root');
+    let swapped = false;
+    function currentRoot() { return document.querySelector('.ProseMirror'); }
+    currentRoot().addEventListener('focus', onFocus);
+    function onFocus() {
+      if (swapped) return;
+      swapped = true;
+      const next = document.createElement('div');
+      next.id = 'editor-root';
+      next.className = 'tiptap ProseMirror';
+      next.contentEditable = 'true';
+      next.setAttribute('role', 'textbox');
+      next.setAttribute('aria-label', '正文');
+      next.addEventListener('focus', onFocus);
+      next.addEventListener('input', onInput);
+      root.replaceWith(next);
+      root = next;
+    }
+    function onInput() {
+      const node = currentRoot();
+      const menu = document.getElementById('slash-menu');
+      menu.hidden = !String(node.innerText || '').endsWith('/');
+    }
+    root.addEventListener('input', onInput);
+    document.querySelectorAll('.slash-card').forEach(card => {
+      card.addEventListener('click', () => {
+        const editor = currentRoot();
+        const text = String(editor.innerText || '').replace(/\/\s*$/, '');
+        const chip = document.createElement('div');
+        chip.className = 'inserted-component';
+        chip.dataset.component = card.dataset.component;
+        chip.textContent = card.dataset.component;
+        editor.replaceChildren(document.createTextNode(text), chip);
+        document.getElementById('slash-menu').hidden = true;
+      });
+      // Keyboard selection is intentionally a no-op, matching the live editor.
+      card.addEventListener('keydown', event => { event.preventDefault(); });
+    });
+    document.getElementById('save').addEventListener('click', () => {
+      document.getElementById('persisted').textContent = currentRoot().innerText;
+      document.body.dataset.uiaSaved = '1';
+    });
+    document.querySelector('[data-menu-item="标题"]').addEventListener('click', event => {
+      event.currentTarget.dataset.selected = '1';
+    });
+  </script>
+</body>
+</html>

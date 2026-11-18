@@ -160,7 +160,8 @@ class CaseSpecTests(unittest.TestCase):
                 generated=specs.generate(base,manifest,'T1')
                 body=(base/generated['script']).read_text()
                 self.assertNotIn('TODO explore:',body)
-                self.assertIn('page.locator("text=',body)
+                self.assertIn('editor.actVerified("click", "markdown.dialog.confirm"', body)
+                self.assertNotRegex(body, r'\.(?:locator|getByText|getByRole)\(')
 
     def test_menu_option_clicks_get_keyboard_pattern_automatically(self):
         self.assertIn('MENU_KEYBOARD', specs.interaction_patterns_for_target({'role':'option'}, 'click'))
@@ -250,11 +251,11 @@ class CaseSpecTests(unittest.TestCase):
                     patch.object(specs, 'register_script', return_value={'script':'runner/tests/generated/T1.spec.ts'}):
                 specs.generate(base, manifest, 'T1')
             generated = (base / 'runner/tests/generated/T1.spec.ts').read_text()
-            self.assertIn('verifyPersisted(page, caseContext', generated)
-            self.assertIn('readFieldValue(', generated)
-            self.assertIn('await page.reload()', generated)
-            self.assertIn('performWithPatterns(page, () =>', generated)
-            self.assertIn("target => target.click()", generated)
+            self.assertIn('editor.readBack(', generated)
+            self.assertIn('editor.actVerified("fill", "txt.overview"', generated)
+            self.assertIn('editor.actVerified("click", "txt.save"', generated)
+            self.assertIn('RERENDER_RELOCATE', generated)
+            self.assertNotRegex(generated, r'\.(?:locator|getByText|getByRole)\(')
 
     def test_lint_records_true_first_pass_and_cross_case_duplicates(self):
         import yaml

@@ -74,10 +74,10 @@ export default class UiaReporter implements Reporter {
     const judged = passed ? { result: 'passed', failure_class: null }
       : classifyFailure(message, result.status, this.locatorNeverResolved(message));
     const status = judged.result;
-    this.cases.push({ case_id: caseId, result: status, failure_class: judged.failure_class, playwright_status: result.status,
     const annotations = result.annotations?.length ? result.annotations : test.annotations;
     const rescued = annotations.filter(item => item.type === 'rescued_by_midscene').length;
-    this.cases[this.cases.length - 1].rescued_by_midscene = rescued;
+    this.cases.push({ case_id: caseId, result: status, failure_class: judged.failure_class, playwright_status: result.status,
+      rescued_by_midscene: rescued,
       setup_started: result.attachments.some(a => a.name === 'uia-setup-started'),
       duration_ms: result.duration, retry: result.retry, errors, lifecycle,
       assertions: this.assertions.get(test.id) ?? [],

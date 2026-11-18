@@ -3,6 +3,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { checkEnvironment, contextOptions, loadConfig, launchOptions, resolveConfig, WorkflowError } from '../support/environment.mjs';
 import { authenticatedSession, openSiteArea, privateWrite, snapshotSession } from '../support/auth.mjs';
+import { createContentEditor, openSession as openSkeletonSession } from '../support/editor-skeleton.mjs';
 import { scrubText } from '../support/redact.mjs';
 
 function safeError(error, cfg) {
@@ -37,14 +38,18 @@ async function publicTarget(browser, cfg) {
 
 export async function runPreflight(cfg, browser, { force = false, manual = false } = {}) {
   const started = Date.now();
-  const session = await authenticatedSession(browser, cfg, { force, allowLogin: true, manual });
+  // Use the editor skeleton's shared session-first login, site selection, and editor entry.
+  // authenticatedSession loads saved storage state first and allows one password fallback.
+  const session = await openSkeletonSession(browser, { cfg, force, manual });
   const authenticatedMs = Date.now() - started;
   const editorStarted = Date.now();
   try {
-    await openSiteArea(session.page, cfg, '编辑网站');
+    const editor = createContentEditor(session.page, { cfg });
+    const selected = await editor.enterSite();
+    await editor.openContentEditor();
     const editorMs = Date.now() - editorStarted;
     const targets = { admin: { url: cfg.targets.admin, reachable: true, target_visible: true, authenticated: true,
-      selected_site: session.site?.host ?? null, selection: session.site?.kind ?? null } };
+      selected_site: session.site?.host ?? null, selection: selected?.kind ?? session.site?.kind ?? null } };
     const publicResult = await publicTarget(browser, cfg);
     if (publicResult) targets.public = publicResult;
     return { status: 'authenticated', environment: session.environment, targets,

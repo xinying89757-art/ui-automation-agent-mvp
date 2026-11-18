@@ -154,12 +154,14 @@ class PhaseThreeTests(unittest.TestCase):
                 common.save(path, m)
         with patch.object(profiles, 'invoke_login', return_value={}), patch('uia_core.runtime.preflight', side_effect=preflight), patch.object(experience, '_run_ready', side_effect=run_existing) as run, patch.object(reports, 'make_report', return_value={}):
             first = experience.go(workbook, 'offline', 'TC-0004,NEW-2')
-            self.assertEqual(first['question_count'], 0)
+            self.assertGreaterEqual(first['question_count'], 1)
+            self.assertEqual(first['pathfinder']['stage'], 'v1')
             self.assertEqual(run.call_args.args[1], ['TC-0004'])
             second = experience.go(workbook, 'offline', 'TC-0004,NEW-2')
             self.assertEqual(first['run_id'], second['run_id'])
             self.assertEqual(run.call_count, 1)
-            self.assertEqual(second['spec_tasks'][0]['case_id'], 'NEW-2')
+            self.assertEqual(second['spec_tasks'], [])
+            self.assertTrue((self.root / 'runs' / first['run_id'] / 'spec-pathfinder').is_dir())
 
     def test_go_prefers_source_matched_generated_case_spec_before_legacy_binding(self):
         auth = self.root / 'private.json'

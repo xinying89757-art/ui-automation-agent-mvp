@@ -20,7 +20,7 @@ RESOLUTIONS = 'pathfinder-resolutions.v1'
 COMPILED = 'pathfinder-compile.v1'
 VAGUE = {'正常', '成功', '正确', '符合预期', '无异常', '通过', 'ok', 'OK', '显示', '生效', '没问题', '可以'}
 FRONTEND = ('富文本', 'tiptap', 'TipTap', 'contenteditable', '正文编辑器', '所见即所得')
-PAGE_SUFFIX = re.compile(r'(?:页面|编辑器|弹窗|面板|列表|后台|详情页|详情)$')
+PAGE_SUFFIX = re.compile(r'(?:页面|编辑器|弹窗|面板|列表|后台|详情页|详情|管理|维护|设置|查询)$')
 CODEISH = re.compile(
     r'(?:'
     r'[\w./\\-]+\.(?:java|ftl|ftlh|jsp|html|js|mjs|vue|tsx|css)\b'
@@ -116,6 +116,11 @@ def _known_page(label, pages):
     hint = resolve(label)
     if not hint:
         return None
+    if hint.get('source') == 'page-map':
+        page_id = _page_in_catalog(label, pages)
+        if not page_id:
+            return None
+        return {**hint, 'key': page_id, 'open_target': page_id}
     if hint.get('open_target') in pages.get('pages', {}):
         return hint
     if hint.get('key') in pages.get('pages', {}):
@@ -123,7 +128,7 @@ def _known_page(label, pages):
     hinted = navigation_hint(dict(hint))
     if hinted.get('node') in pages.get('pages', {}):
         return hinted
-    if hint.get('path_text'):
+    if hint.get('path_text') and hint.get('source') != 'page-map':
         return hint
     return None
 
@@ -139,6 +144,42 @@ def _page_phrases(text):
         if len(name) >= 3 and name not in GENERIC_PAGES and name not in found:
             found.append(name)
     return list(dict.fromkeys(found))
+
+
+def _page_in_catalog(name, pages):
+    """Resolve an entry name only against pages, never the control/target catalog."""
+    if not name:
+        return None
+    from .preconditions import normalize
+    want = normalize(name)
+    hits = []
+    for ident, row in pages.get('pages', {}).items():
+        labels = [ident, row.get('label', ''), row.get('name', ''), row.get('entry', ''), *row.get('aliases', [])]
+        if any(normalize(str(label)) == want for label in labels if label):
+            hits.append(ident)
+    return hits[0] if len(hits) == 1 else None
+
+
+def _entry_candidate(source, steps):
+    """Prefer an explicit step/precondition page, then the workbook's named module."""
+    for step in steps:
+        names = _page_phrases(step['text'])
+        if names:
+            return names[0]
+    for field in ('preconditions',):
+        names = _page_phrases(str(source.get(field) or ''))
+        if names:
+            return names[0]
+    # The module/sheet is the stable page context in many workbooks whose steps
+    # begin with an action (for example “新增” or “搜索”) rather than “进入 X 页面”.
+    from .entries import GENERIC_PAGES
+    for field in ('module', 'sheet'):
+        candidate = str(source.get(field) or '').strip()
+        if (len(candidate) >= 2 and candidate not in GENERIC_PAGES
+                and candidate not in {'其他', '通用', '未分类', '测试用例'}
+                and not re.search(r'(?:需求|用例|测试|说明)$', candidate)):
+            return candidate
+    return ''
 
 
 def _split_steps(cells):
@@ -291,10 +332,7 @@ def build_case(cid, case, source, pages):
         expected_lines.extend(lines)
     claims, doubts = [], []
     rendered = []
-    pages_named = []
-    for step in steps:
-        pages_named.extend(_page_phrases(step['text']))
-    entry_page = pages_named[0] if pages_named else ''
+    entry_page = _entry_candidate(source, steps)
     known = _known_page(entry_page, pages) if entry_page else None
     if known and known.get('path_text'):
         entry_text = entry_page + '：' + known['path_text']
@@ -315,10 +353,13 @@ def build_case(cid, case, source, pages):
     for index, step in enumerate(steps):
         verb, value = _verb(step['text'])
         control = _control(step['text'])
-        catalog = _target_in_catalog(control, pages)
-        target = catalog or _slug_target(control or (entry_page if verb == 'open' else ''), '操作' + step['id'])
-        if verb == 'open' and entry_page and not control:
-            target = catalog or _slug_target(entry_page, 'start')
+        if verb == 'open':
+            # Opening a page must never bind to a similarly named KB control ID.
+            opened_page = _page_in_catalog(control or entry_page, pages)
+            target = opened_page or _slug_target(control or entry_page, 'start')
+        else:
+            catalog = _target_in_catalog(control, pages)
+            target = catalog or _slug_target(control, '操作' + step['id'])
         step_claims = []
         operation = _claim(cid, step['id'], 1, 'operation', step['text'], '中')
         step_claims.append(operation)

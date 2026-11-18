@@ -179,3 +179,19 @@ class PathfinderStageTests(unittest.TestCase):
     def test_go_accepts_optional_code_path(self):
         args = cli.parser().parse_args(['go', 'cases.xlsx', '--code', 'project/src'])
         self.assertEqual(args.code, 'project/src')
+
+    def test_module_context_supplies_named_entry_when_steps_omit_page_suffix(self):
+        source = {'module': '产品管理', 'sheet': '产品用例', 'steps': ['点击新增'], 'expected': '显示成功'}
+        model = pathfinder.build_case('TC-SYN-ENTRY', {}, source, {'pages': {}, 'targets': {}})
+        self.assertEqual(model['entry_page'], '产品管理')
+        self.assertEqual(model['doubts'][0]['kind'], 'entry')
+
+    def test_open_entry_resolves_page_id_not_colliding_control_id(self):
+        pages = {
+            'pages': {'page-product-admin': {'label': '产品管理', 'entry': '产品管理'}},
+            'targets': {'target-product-admin': {'label': '产品管理'}},
+        }
+        source = {'module': '产品管理', 'sheet': '产品用例', 'steps': ['进入「产品管理」'], 'expected': '页面已打开'}
+        model = pathfinder.build_case('TC-SYN-PAGE', {}, source, pages)
+        self.assertEqual(model['steps'][0]['target'], 'page-product-admin')
+        self.assertNotEqual(model['steps'][0]['target'], 'target-product-admin')

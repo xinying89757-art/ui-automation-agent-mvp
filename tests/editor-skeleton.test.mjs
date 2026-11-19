@@ -136,6 +136,18 @@ test('save accepts the product editor success dialog when no automation marker e
   });
 });
 
+test('save detects a success dialog rendered in the authenticated opener page', async () => {
+  await withBrowser(async shell => {
+    await shell.setContent('<div hidden>保存成功</div><div id="result" hidden></div>');
+    const popupReady = shell.context().waitForEvent('page');
+    await shell.evaluate(() => window.open('about:blank'));
+    const popup = await popupReady;
+    await popup.setContent(`<button id="save" onclick="window.opener.document.querySelector('#result').innerHTML = '<h2>保存成功</h2>'; window.opener.document.querySelector('#result').hidden = false">保存</button>`);
+    const result = await saveEditor(popup);
+    assert.deepEqual(result, { ok: true, signal: 'success-body-text' });
+  });
+});
+
 test('guided exploration converts visible editor controls into stable locators', async () => {
   await withBrowser(async page => {
     await page.goto(fixtureUrl() + '?autodrive=1');

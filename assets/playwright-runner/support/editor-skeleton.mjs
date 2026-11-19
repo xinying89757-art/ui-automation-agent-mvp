@@ -404,16 +404,44 @@ export async function saveEditor(page, options = {}) {
   }
   const timeout = options.timeout ?? 8000;
   const waits = [];
-  for (const frame of page.frames()) {
-    waits.push(frame.locator('[data-uia-saved="1"], .save-ok').first()
+  // Some editors submit from a popup but render the completion layer in the
+  // authenticated opener. Search that page and every nested frame as one scope.
+  const pages = [...new Set([page, ...page.context().pages()])].filter(current => !current.isClosed());
+  const searched = [];
+  for (const [pageIndex, current] of pages.entries()) {
+    for (const frame of current.frames()) {
+      let location = { page: pageIndex, main: frame === current.mainFrame(), name: frame.name() || null, path: null };
+      try { location.path = new URL(frame.url()).pathname; } catch {}
+      searched.push(location);
+      waits.push(frame.locator('[data-uia-saved="1"], .save-ok').first()
       .waitFor({ state: 'visible', timeout }).then(() => 'editor-marker'));
-    waits.push(frame.getByText(/保存成功|保存完成|已保存/u).first()
+      waits.push(frame.getByText(/保存成功|保存完成|已保存/u).first()
       .waitFor({ state: 'visible', timeout }).then(() => 'success-notice'));
-    waits.push(frame.waitForFunction(() => document.body?.getAttribute('data-uia-saved') === '1', null, { timeout })
+      waits.push(frame.waitForFunction(() => /保存成功|保存完成|已保存/u.test(document.body?.innerText || ''), null, { timeout })
+        .then(() => 'success-body-text'));
+      waits.push(frame.waitForFunction(() => document.body?.getAttribute('data-uia-saved') === '1', null, { timeout })
       .then(() => 'editor-marker'));
+    }
   }
   try { return { ok: true, signal: await Promise.any(waits) }; }
-  catch { throw new SkeletonError('SAVE_FAILED', '保存没有完成信号'); }
+  catch {
+    const observed = await Promise.all(pages.flatMap((current, pageIndex) => current.frames().map(async frame => {
+      let path = null;
+      try { path = new URL(frame.url()).pathname; } catch {}
+      const location = { page: pageIndex, main: frame === current.mainFrame(), name: frame.name() || null, path };
+      const success = await frame.getByText(/保存成功|保存完成|已保存/u).all().then(async nodes => {
+        for (const node of nodes) if (await node.isVisible().catch(() => false)) return true;
+        return false;
+      }).catch(() => false);
+      const validation = await frame.getByText(/请输入|不能为空|必填|请选择|保存失败|操作失败|错误/u).all().then(async nodes => {
+        for (const node of nodes) if (await node.isVisible().catch(() => false)) return true;
+        return false;
+      }).catch(() => false);
+      const bodySuccess = await frame.evaluate(() => /保存成功|保存完成|已保存/u.test(document.body?.innerText || '')).catch(() => false);
+      return { ...location, success_visible: success, success_body_text: bodySuccess, validation_visible: validation };
+    })));
+    throw new SkeletonError('SAVE_FAILED', '保存没有完成信号', { searched, observed });
+  }
 }
 
 export async function readBack(page, record = {}, options = {}) {

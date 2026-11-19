@@ -35,7 +35,9 @@ async function stage(name, fn) {
     steps.push({ name, ok: true, ms: Date.now() - started });
     return value;
   } catch (error) {
-    steps.push({ name, ok: false, ms: Date.now() - started, code: error?.code || 'NAV_FAILED', reason: error?.details?.reason || null });
+    steps.push({ name, ok: false, ms: Date.now() - started, code: error?.code || 'NAV_FAILED', reason: error?.details?.reason || null,
+      ...(error?.details?.searched ? { searched: error.details.searched } : {}),
+      ...(error?.details?.observed ? { observed: error.details.observed } : {}) });
     throw error;
   }
 }

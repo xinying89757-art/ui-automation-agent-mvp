@@ -510,6 +510,25 @@ entries:
   observed_runs:
   - EXPORT
   failure_runs: []
+- id: target.editor.component-panel
+  page: editor
+  route: 内容管理 › 产品详情 › 产品描述
+  frame: iframe[name="prod"]
+  tags:
+  - editor.component-panel
+  - faq.insert
+  version: unknown
+  status: verified
+  last_verified: '2026-11-19'
+  last_hit: '2026-11-19'
+  summary: 组件添加弹窗入口：产品描述编辑区「+」(button.placeholder-plus)，备选输入「/」
+  path: components/target-editor-component-panel.yaml
+  hit_count: 1
+  pass_count: 1
+  fail_count: 0
+  observed_runs:
+  - live-editor-smoke-FAQ-2026-11-19
+  failure_runs: []
 - id: target.faq.entry
   page: content-admin
   route: ''

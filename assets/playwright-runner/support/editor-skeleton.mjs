@@ -16,7 +16,9 @@ import { locateControl, midsceneEnabled, setMidsceneAdapter, visualAssert as mid
 export { SkeletonError, midsceneEnabled, setMidsceneAdapter };
 export { CODES } from './skeleton-errors.mjs';
 
-const EDITABLE = '.tiptap.ProseMirror, [contenteditable="true"]';
+const EDITABLE = '.tiptap.ProseMirror, [contenteditable="true"]:not(.cm-content)';
+// Rich-text editors win over any other editable (e.g. a hidden CodeMirror HTML-source pane in the same page).
+const RICH_EDITABLE = '.tiptap.ProseMirror';
 const CLOSE_LABEL = /^(关闭|我知道了|知道了|×)$/u;
 
 function sessionOf(options = {}) {
@@ -200,13 +202,15 @@ export async function resolveEditor(page, options = {}) {
     const score = frame => (preferred && frame.name() === preferred ? 0 : frame.url().includes('canvas') ? 1 : 2);
     return score(a) - score(b);
   });
-  for (const frame of ordered) {
-    const editable = frame.locator(EDITABLE).first();
-    if (!await editable.count().catch(() => 0)) continue;
-    if (!await editable.isVisible().catch(() => false)) continue;
-    await dismissOverlays(frame);
-    const chain = await frameChain(frame);
-    return { frame, editable: frame.locator(EDITABLE).first(), chain };
+  for (const selector of [RICH_EDITABLE, EDITABLE]) {
+    for (const frame of ordered) {
+      const editable = frame.locator(selector).first();
+      if (!await editable.count().catch(() => 0)) continue;
+      if (!await editable.isVisible().catch(() => false)) continue;
+      await dismissOverlays(frame);
+      const chain = await frameChain(frame);
+      return { frame, editable: frame.locator(selector).first(), chain };
+    }
   }
   return null;
 }
@@ -289,10 +293,13 @@ async function findCard(page, name, selector = '.slash-card, [data-component]') 
 
 async function findPlusButton(page) {
   const selectors = [
-    'button[aria-label="添加组件"]', 'button[title="添加组件"]', '[data-action="add-component"]',
+    'button.placeholder-plus', 'button[aria-label="添加组件"]', 'button[title="添加组件"]', '[data-action="add-component"]',
     '[data-testid*="add-component"]', '.add-component-button', '.tiptap-plus-button',
   ];
   for (const frame of page.frames()) {
+    // Block-insert buttons are often revealed only while the pointer is over the editor body.
+    const surface = frame.locator('.tiptap-editor-wrapper, .tiptap.ProseMirror').first();
+    if (await surface.isVisible().catch(() => false)) await surface.hover({ timeout: 2000 }).catch(() => {});
     for (const selector of selectors) {
       const button = frame.locator(selector).first();
       if (await button.isVisible().catch(() => false)) return button;
@@ -322,6 +329,22 @@ async function componentPresent(page, name) {
   for (const frame of page.frames()) {
     const node = frame.locator(`[data-component="${name}"].inserted-component, .inserted-component`).filter({ hasText: name }).first();
     if (await node.isVisible().catch(() => false)) return true;
+  }
+  // Live editors often answer a card click with the component's own setup dialog/form (FAQ form,
+  // Markdown paste dialog) or a node whose type/class names the component, not a fixture marker.
+  const key = name.toLowerCase().replace(/[^a-z0-9]/gu, '');
+  for (const frame of page.frames()) {
+    const opened = await frame.locator('body').evaluate((body, { name, key }) => {
+      const visible = node => node.getBoundingClientRect().height > 0 && getComputedStyle(node).visibility !== 'hidden';
+      const menuOpen = [...body.querySelectorAll('.slash-menu, .slash-card')].some(visible);
+      const dialogs = [...body.querySelectorAll('[role="dialog"], .el-dialog, .modal, [class*="dialog" i], [class*="popup" i], [class*="modal" i]')]
+        .filter(visible).filter(node => !node.closest('.slash-menu'));
+      if (dialogs.some(node => (node.innerText || '').includes(name))) return true;
+      if (!key || menuOpen) return false;
+      return [...body.querySelectorAll('[data-type], [class]')].filter(visible).some(node =>
+        !node.closest('.slash-menu') && `${node.getAttribute('data-type') || ''} ${node.getAttribute('class') || ''}`.toLowerCase().replace(/[^a-z0-9 ]/gu, '').split(/\s+/u).some(token => token.includes(key)));
+    }, { name, key }).catch(() => false);
+    if (opened) return true;
   }
   return false;
 }

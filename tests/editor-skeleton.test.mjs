@@ -7,6 +7,7 @@ import path from 'node:path';
 import { chromium } from '../assets/playwright-runner/node_modules/@playwright/test/index.mjs';
 import { dismissShellNotices, openSiteArea } from '../assets/playwright-runner/support/auth.mjs';
 import {
+  resolveEditor,
   CODES, SkeletonError, collectEditorControls, createContentEditor, fixtureUrl, insertComponent,
   saveEditor, visualAssert, waitForEditorReady,
 } from '../assets/playwright-runner/support/editor-skeleton.mjs';
@@ -168,6 +169,35 @@ test('save detects a success dialog rendered in the authenticated opener page', 
     await popup.setContent(`<button id="save" onclick="window.opener.document.querySelector('#result').innerHTML = '<h2>保存成功</h2>'; window.opener.document.querySelector('#result').hidden = false">保存</button>`);
     const result = await saveEditor(popup);
     assert.deepEqual(result, { ok: true, signal: 'success-body-text' });
+  });
+});
+
+test('rich-text editor wins over a code-source editable and a placeholder plus opens the panel', async () => {
+  await withBrowser(async page => {
+    await page.setContent(`<main>
+      <div class="cm-content" contenteditable="true" style="display:block">source</div>
+      <div class="tiptap-editor-wrapper"><button class="placeholder-plus" onclick="document.getElementById('menu').hidden=false">+</button>
+        <div class="tiptap ProseMirror" contenteditable="true" style="min-height:40px"><p>x</p></div></div>
+      <div id="menu" class="slash-menu" hidden><div class="slash-section-title">网页组件</div>
+        <div class="slash-card" onclick="document.querySelector('.ProseMirror').insertAdjacentHTML('beforeend','<div class=&quot;inserted-component&quot; data-component=&quot;FAQ&quot;>FAQ</div>')"><div class="slash-card-label">FAQ</div></div></div>
+    </main>`);
+    const resolved = await resolveEditor(page);
+    assert.match(await resolved.editable.getAttribute('class'), /ProseMirror/u);
+    const inserted = await insertComponent(page, 'FAQ', { allowKeyboardFallback: false });
+    assert.equal(inserted.strategy, 'plus');
+  });
+});
+
+test('a card click that opens the component setup dialog counts as inserted', async () => {
+  await withBrowser(async page => {
+    await page.setContent(`<main>
+      <div class="tiptap-editor-wrapper"><button class="placeholder-plus" onclick="document.getElementById('menu').hidden=false">+</button>
+        <div class="tiptap ProseMirror" contenteditable="true" style="min-height:40px"><p>x</p></div></div>
+      <div id="menu" class="slash-menu" hidden><div class="slash-card" onclick="document.getElementById('menu').hidden=true;document.getElementById('dlg').hidden=false"><div class="slash-card-label">FAQ</div></div></div>
+      <div id="dlg" class="faq-dialog" role="dialog" hidden><h3>FAQ</h3><p>快速录入FAQ</p></div>
+    </main>`);
+    const inserted = await insertComponent(page, 'FAQ', { allowKeyboardFallback: false });
+    assert.equal(inserted.ok, true);
   });
 });
 

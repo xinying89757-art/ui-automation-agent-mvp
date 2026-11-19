@@ -123,7 +123,7 @@ try {
   const shared = { rescues: [], keyboardFallbacks: 0, lastReadBack: null };
   let inserted = false;
   try {
-    await stage('insert-component-card-click', () => insertComponent(page, 'Markdown', {
+    await stage('insert-component-card-click', () => insertComponent(page, option('--component') || process.env.UIA_SMOKE_COMPONENT || 'Markdown', {
       session: shared, allowKeyboardFallback: false,
     }));
     inserted = true;

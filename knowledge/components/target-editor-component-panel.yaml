@@ -1,0 +1,24 @@
+id: target.editor.component-panel
+kind: component
+selector: button.placeholder-plus
+frame: iframe[name="prod"]
+nested_frames:
+- '#tiptap-iframe'
+- iframe
+fallback:
+  action: type
+  value: /
+  note: focus the .tiptap.ProseMirror editable (not the hidden CodeMirror .cm-content source pane) and type "/"
+cards:
+  selector: .slash-card
+  label: .slash-card-label
+  sections: [基本组件, 媒体组件, 网页组件, 嵌入型组件]
+  faq: 网页组件 → FAQ
+source: human-confirmed
+confirmed: true
+confirmed_by: 需求方确认（产品描述编辑区的「+」或输入「/」唤起组件添加弹窗）
+provenance:
+  source_run: editor-smoke live 2026-11-19
+  verified_by:
+  - live-editor-smoke-FAQ-2026-11-19
+created_at: '2026-11-19'

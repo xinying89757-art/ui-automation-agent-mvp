@@ -402,17 +402,18 @@ export async function saveEditor(page, options = {}) {
       if (!rescued) throw new SkeletonError('SAVE_FAILED', '保存按钮点击失败');
     }
   }
-  const deadline = Date.now() + (options.timeout ?? 8000);
-  while (Date.now() < deadline) {
-    for (const frame of page.frames()) {
-      const marked = await frame.locator('[data-uia-saved="1"], .save-ok').count().catch(() => 0);
-      if (marked) return { ok: true };
-      const body = await frame.locator('body').getAttribute('data-uia-saved').catch(() => null);
-      if (body === '1') return { ok: true };
-    }
-    await page.waitForTimeout(150);
+  const timeout = options.timeout ?? 8000;
+  const waits = [];
+  for (const frame of page.frames()) {
+    waits.push(frame.locator('[data-uia-saved="1"], .save-ok').first()
+      .waitFor({ state: 'visible', timeout }).then(() => 'editor-marker'));
+    waits.push(frame.getByText(/保存成功|保存完成|已保存/u).first()
+      .waitFor({ state: 'visible', timeout }).then(() => 'success-notice'));
+    waits.push(frame.waitForFunction(() => document.body?.getAttribute('data-uia-saved') === '1', null, { timeout })
+      .then(() => 'editor-marker'));
   }
-  throw new SkeletonError('SAVE_FAILED', '保存没有完成信号');
+  try { return { ok: true, signal: await Promise.any(waits) }; }
+  catch { throw new SkeletonError('SAVE_FAILED', '保存没有完成信号'); }
 }
 
 export async function readBack(page, record = {}, options = {}) {

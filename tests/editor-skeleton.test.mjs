@@ -1,13 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { createServer } from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { chromium } from '../assets/playwright-runner/node_modules/@playwright/test/index.mjs';
-import { dismissShellNotices } from '../assets/playwright-runner/support/auth.mjs';
+import { dismissShellNotices, openSiteArea } from '../assets/playwright-runner/support/auth.mjs';
 import {
   CODES, SkeletonError, collectEditorControls, createContentEditor, fixtureUrl, insertComponent,
-  visualAssert, waitForEditorReady,
+  saveEditor, visualAssert, waitForEditorReady,
 } from '../assets/playwright-runner/support/editor-skeleton.mjs';
 
 function credentialsConfig(url) {
@@ -99,6 +100,39 @@ test('site entry dismisses the observed acknowledgement modal without clicking u
     assert.equal(await page.locator('.announcement-overlay').count(), 0);
     assert.equal(await page.locator('body').getAttribute('data-details'), null);
     assert.equal(await page.getByText('内容管理', { exact: true }).isVisible(), true);
+  });
+});
+
+test('site area hovers a hidden card entry, dismisses known notices, and follows a cross-origin popup', async () => {
+  await withBrowser(async page => {
+    const server = createServer((_request, response) => {
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      response.end('<main id="topNavigator">内容管理后台</main>');
+    });
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    try {
+      const address = server.address();
+      await page.setContent(`<main>
+        <div class="member-warning-box"><button class="member-warning-close" onclick="this.parentElement.remove()">关闭</button></div>
+        <div class="contentShow"><a href="https://site.test/">site</a>
+          <a class="contentShow-des-a userEditSite" href="http://127.0.0.1:${address.port}/management" target="_blank">内容管理</a>
+        </div></main><style>.contentShow-des-a{display:none}.contentShow:hover .contentShow-des-a{display:inline}</style>`);
+      const destination = await openSiteArea(page, { site: 'site.test' }, '内容管理');
+      assert.equal(new URL(destination.url()).origin, `http://127.0.0.1:${address.port}`);
+      assert.equal(await destination.locator('#topNavigator').isVisible(), true);
+      assert.equal(await page.locator('.member-warning-box').count(), 0);
+    } finally {
+      await new Promise(resolve => server.close(resolve));
+    }
+  });
+});
+
+test('save accepts the product editor success dialog when no automation marker exists', async () => {
+  await withBrowser(async page => {
+    await page.setContent(`<button id="save" onclick="document.querySelector('#result').hidden = false">保存</button>
+      <div id="result" class="layui-layer" hidden><h2>保存成功</h2><p>产品保存成功！</p></div>`);
+    const result = await saveEditor(page);
+    assert.deepEqual(result, { ok: true, signal: 'success-notice' });
   });
 });
 

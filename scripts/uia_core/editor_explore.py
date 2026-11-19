@@ -28,6 +28,8 @@ def write_candidates(dest, controls, run_id='editor-explore'):
         name = scrub_text(str(item.get('name') or '')).strip()
         if not name or any(token in name for token in ('[email]', '[phone]', '[REDACTED]')):
             continue
+        if re.fullmatch(r'(?:demo|test|user)[-_][A-Za-z0-9_-]{4,}', name, re.I):
+            continue
         selector = item.get('selector') if isinstance(item.get('selector'), str) else ''
         role = item.get('role') if isinstance(item.get('role'), str) else ''
         if not selector and not role:

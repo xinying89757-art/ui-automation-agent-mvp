@@ -221,7 +221,6 @@ export async function openSiteArea(page, cfg, area) {
   const root = selected.kind === 'card' ? page.locator('.contentShow').nth(selected.cardIndex) : page;
   const label = selected.kind === 'card' || area === '内容管理' ? area : '网页编辑';
   const action = root.getByText(label, { exact: true }).first();
-  if (!(await visible(action))) fail('SITE_PERMISSION_DENIED', '当前账号没有所需站点管理入口', ['切换有权限账号', '暂停相关用例']);
   await dismissShellNotices(page);
   if (selected.kind === 'card') {
     // Site cards reveal their administration links on hover in the current cloud shell.
@@ -229,6 +228,7 @@ export async function openSiteArea(page, cfg, area) {
     await action.scrollIntoViewIfNeeded().catch(() => {});
     await action.waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
   }
+  if (!(await visible(action))) fail('SITE_PERMISSION_DENIED', '当前账号没有所需站点管理入口', ['切换有权限账号', '暂停相关用例']);
   if (selected.kind === 'platform') {
     const popupPromise = page.context().waitForEvent('page', { timeout: 30000 });
     await action.click();

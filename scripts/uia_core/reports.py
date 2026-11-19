@@ -44,6 +44,29 @@ def opening(m, metrics, review):
                     f"计划外人工介入 {metrics['unplanned_interventions']}，会话轮次 {metrics['session_turns']}；"
                     f"脚本实际执行覆盖率 {metrics['script_coverage']['ratio']:.1%}；"
                     f"越权 {metrics['scope_violations']}，泄露 {metrics['leak_hits']}，未审核断言变更 {metrics['unreviewed_assertion_changes']}。")
+    if metrics.get('time_to_first_result_seconds') is not None:
+        metrics_text += f"首个结果耗时 {metrics['time_to_first_result_seconds']:.1f} 秒。"
+    if metrics.get('pass_rate') is not None:
+        metrics_text += f"通过率 {metrics['pass_rate']:.1%}。"
+    shares = metrics.get('failure_class_shares') or {}
+    if shares:
+        metrics_text += "失败分类占比：" + "，".join(
+            f"{name} {shares.get(name, 0):.1%}" for name in ("environment", "automation", "product", "suspended")) + "。"
+    if metrics.get('human_interventions_per_case') is not None:
+        metrics_text += f"每条用例人工介入 {metrics['human_interventions_per_case']:.2f}。"
+    hit = metrics.get('kb_hit_rate') or {}
+    if hit.get('rate') is not None:
+        metrics_text += f"知识命中率 {hit['rate']:.1%}（{hit.get('used', 0)}/{hit.get('retrieved', 0)}）。"
+    if metrics.get('rescued_by_midscene') is not None:
+        metrics_text += f"Midscene 挽救 {metrics['rescued_by_midscene']}。"
+    smoke = m.get('smoke') or {}
+    if smoke:
+        rate = smoke.get('pass_rate')
+        rate_text = '无结果' if rate is None else f"{rate:.0%}"
+        metrics_text += f"冒烟 {smoke.get('status')}，通过率 {rate_text}，门槛 {smoke.get('bar')}。"
+    abort = m.get('abort') or {}
+    if abort.get('reason') == 'first_result_budget':
+        metrics_text += f"已停止：首个结果超过 {abort.get('budget_minutes')} 分钟。"
     if metrics.get('re_explored_known_pages', 0):
         metrics_text += f"流程问题：已知页面重复探索 {metrics['re_explored_known_pages']} 次（re_explored_known_pages）。"
     if metrics.get('exploration_for_missing_controls', 0):
@@ -93,11 +116,13 @@ def make_report(base, m):
         for attempt in c.get("attempts") or []:
             attempt["errors"] = [scrub_text(item, m["config"]) for item in (attempt.get("errors") or [])]
             attempt["attachments"] = [item for item in (attempt.get("attachments") or []) if not unsafe_attachment(item)]
+    from .failures import failure_class_for_case
     records = []
     for c in m["cases"].values():
         records.append({k: c.get(k) for k in ("case_id", "original_id", "title", "module", "priority",
                        "sheet", "rows", "stage", "work_status", "result", "stability", "pass_streak",
                        "flow_ids", "fixture_ids", "repair_rounds", "attempts", "feedback", "classification", "case_spec", "spec_first_lint", "spec_lint", "remote_status")})
+        records[-1]['failure_class'] = failure_class_for_case(c)
         records[-1]['result_label'] = zh(c.get('result'))
         records[-1]['script_binding'] = c.get('script_binding')
         records[-1]['read_back'] = (c.get('attempts') or [{}])[-1].get('read_back')

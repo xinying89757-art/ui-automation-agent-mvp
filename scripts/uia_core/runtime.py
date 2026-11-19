@@ -362,7 +362,10 @@ def consume_batch(base, m, exit_code=None):
             row.setdefault("errors", []).append("Source/dependency changed during execution")
         if result == "passed" and (not prepared or not (clean or cleanup_pending) or lifecycle.get("batch_id") != batch["id"] or row.get("retry") != 0):
             result = "automation_failure"
+        from .failures import judge_result
+        result, failure_class = judge_result(result, row.get("errors") or [])
         attempt = {"batch_id": batch["id"], "at": now(), "version": version, "result": result,
+                   "failure_class": failure_class,
                    "script": batch.get("scripts", {}).get(cid),
                    "evidence": batch["report"], "evidence_sha256": file_hash(report_path),
                    "executed": cid in by_id and row.get("playwright_status") not in {"skipped", None},
@@ -391,6 +394,8 @@ def consume_batch(base, m, exit_code=None):
         if attempt["executed"] and not m.get("first_result_at"):
             m["first_result_at"] = now()
         c["result"] = result
+        if failure_class:
+            c["failure_class"] = failure_class
         if result == "save_not_persisted":
             c["classification"] = {"reason": "保存未生效（后台读回不一致）", "suspected_product_defect": True, "at": now()}
         if result == "passed" and cleanup_pending:

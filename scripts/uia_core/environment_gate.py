@@ -135,6 +135,26 @@ def preflight_run(base, m):
     """Login, select the site, and open the editor. Block the run on failure."""
     from . import runtime
     from .profiles import invoke_login
+    from .common import elapsed, file_hash
+    # Reuse only a recent passed proof whose evidence, configuration and auth
+    # state are unchanged. Any failure falls through to a fresh live check.
+    recorded = m.get('preflight') or {}
+    evidence = recorded.get('evidence')
+    proof_path = Path(base) / evidence if evidence else None
+    auth = (m.get('config', {}).get('auth') or {}).get('storage_state')
+    try:
+        fresh = recorded.get('status') == 'passed' and recorded.get('config_hash') == m.get('config_hash') \
+            and recorded.get('auth_sha256') == (file_hash(auth) if auth else None) \
+            and proof_path and proof_path.is_file() and file_hash(proof_path) == recorded.get('sha256') \
+            and elapsed(recorded.get('checked_at')) <= 300
+        if fresh:
+            enforce_editor(base, evidence)
+            proof = read_json(proof_path)
+            summary = public_preflight_result(proof, 0)
+            if summary['status'] == 'passed':
+                return {**summary, 'evidence': evidence, 'cached': True}
+    except (OSError, ValueError, TypeError):
+        pass
     evidence = "evidence/go-environment-" + now().replace(":", "-") + ".json"
     try:
         invoke_login(m["config"], base / "runner", evidence=base / evidence, open_editor=True)

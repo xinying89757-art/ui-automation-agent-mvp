@@ -508,6 +508,9 @@ def dispatch(args, path, m):
                 from .preconditions import set_prep_method
                 result['preparation'] = set_prep_method(base, m, args.key, args.prep_method, args.api_list)
             return {**result, **sync_preconditions(base, m)}
+        require(not any([args.key, args.classification, args.label, args.page, args.match,
+                         args.prep_method, args.api_list]),
+                "preconditions options require the classify action")
         return sync_preconditions(base, m)
     if cmd == "absorb-locators":
         return workflow.absorb_locators(base, m)

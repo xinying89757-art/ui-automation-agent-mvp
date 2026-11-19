@@ -1,8 +1,9 @@
 """Cross-round run creation and per-environment comparison."""
 import copy
 import shutil
+from pathlib import Path
 
-from .common import ROOT, atomic_write, event, load_run, now, read_json, read_yaml, require, safe_id
+from .common import ROOT, atomic_write, digest, event, load_run, now, read_json, read_yaml, require, safe_id
 
 
 def create(previous_run, round_number, run_id, profile, excel=None):
@@ -18,9 +19,13 @@ def create(previous_run, round_number, run_id, profile, excel=None):
         workflow.scaffold(new_base)
         manifest_path = new_base / 'run.json'
         current = read_json(manifest_path)
+        source = (current.get('sources') or [{}])[0]
         current['round'] = {'number': 1, 'requirement_id': run_id,
                             'environment': current['config'].get('environment', {}).get('id', 'legacy'),
                             'previous_run': None, 'created_from': None}
+        current.update(interaction_mode='once', go_source=source.get('path'),
+                       go_profile=str(profiles.profile_path(profile).resolve()),
+                       go_key=digest([str(Path(excel).resolve()), str(profiles.profile_path(profile))])[:12])
         imported = workflow.import_excel(new_base, current, excel)
         from .preconditions import sync_preconditions
         sync_preconditions(new_base, current)

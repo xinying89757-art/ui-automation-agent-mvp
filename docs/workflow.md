@@ -69,9 +69,15 @@ owner marker 准备独有数据，验证起点后才执行业务操作；无论�
 每日交付把 `stability_passes` 设为 1。夜间回归设为 2，不能用重试、同一批里的页面复用
 或历史 PASS 凑够第二次。一批内部可以复用编辑器会话，那只减少打开编辑器的时间。
 
+`uia go` 的第一步是环境预检：登录、目标网站可选、内容编辑器能打开。失败则整批
+`environment_blocked` 并停止，不执行用例。`SITE_NOT_ACCESSIBLE`、未找到目标网站、登录失败和站点加载超时属于
+`environment`，与 automation、product、suspended 分开；报告给出各类占比。
+
 业务断言通过 `businessAssertion` 标识，失败保留为 business_failure。准备、定位、
 等待或生成错误为 automation_failure，保存诊断后最多两轮修复。修复不修改业务期望。
 环境与产品问题进入问题队列；不能继续的用例最终明确分类。
+
+全量 go 先跑 3 条代表用例作为冒烟，达到通过率门槛后才跑剩余用例。首个结果超过 26 分钟则中止后续批次。两项都可用命令行改。
 
 清理失败写入共享 fixture 污染标记，同批后续依赖用例也在准备前检查标记；独立
 fixtures 可继续。清理恢复需要实际证据，通过 `resolve-fixture` 清除对应标记。

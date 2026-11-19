@@ -205,10 +205,16 @@ HTML 支持筛选；脚本 ZIP 排除依赖、凭证与运行日志。只有源�
 ## 一步提测与一次清单（Phase 3）
 
 ```bash
-.venv/bin/python scripts/uia.py go /path/to/cases.xlsx --profile my-prod --cases TC-0004,TC-0016
+.venv/bin/python scripts/uia.py preflight --profile my-prod
+.venv/bin/python scripts/uia.py go /path/to/cases.xlsx --profile my-prod --cases TC-0004,TC-0016 \
+  --smoke-size 3 --smoke-pass-rate 1 --first-result-budget-minutes 26
 .venv/bin/python scripts/uia.py answer --run GO-xxx "A 除 TC-0002 缺少外其余可用，B 同意，C 无歧义"
 .venv/bin/python scripts/uia.py session-turn --run GO-xxx --id conversation-turn-1 --kind 发起
 ```
+
+`uia preflight` 不带 `--evidence` 时现场检查登录、目标网站是否可选、内容编辑器是否打开。凭据只来自环境变量或 `.auth/`。失败时把整个 run 标为 `environment_blocked` 并停止，不执行用例。`--run` 加 `--evidence` 仍只校验已有浏览器证据。
+
+`uia go` 在执行用例前固定做同一次预检。全量（未传 `--cases`）且用例数大于 `--smoke-size`（默认 3）时，先跑按优先级和模块分散的代表用例；通过率达到 `--smoke-pass-rate`（默认 1）才继续其余用例。首个结果耗时超过 `--first-result-budget-minutes`（默认 26）时中止后续批次。
 
 `--cases` 以逗号分隔；不传则保留全部用例。未知 ID 直接报错。省略 profile 时仅在恰有一份
 私有配置时自动选择。相同工作簿路径、profile、用例范围恢复同一个 run；工作簿内容变化仍做来源对齐。
@@ -230,8 +236,14 @@ C 有多项时须逐项给选项；不会把“默认”当作业务答案。旧
 没有接入会话轮次记录的调用者，无法从终端自动推断真实聊天轮次；指标只统计已记录事件。
 
 报告的 Markdown/HTML/Excel 首先展示“结论、需要你处理、流程指标”，可见状态使用中文。
-JSON 保留兼容的机器状态码，并附同样中文开头。metrics.json 记录清单问题数、回答数、会话轮次、
-中途提问和计划外介入。review.json 包含复现、原始期望、实际失败、证据和受限脱敏截图。
+JSON 保留兼容的机器状态码，并附同样中文开头。`results.json` 的 `metrics` 与 `flow_metrics`，以及
+`metrics.json`，都包含：`time_to_first_result_seconds`、`pass_rate`、`failure_class_counts`、
+`failure_class_shares`（environment / automation / product / suspended，在已分类失败中的占比）、
+`human_interventions_per_case`、`kb_hit_rate`（检索到且被规格或脚本实际引用的条目占比）、
+`re_explored_known_pages`、`knowledge_injected_tokens` 的 p50/p95，以及 `rescued_by_midscene`
+（计数字段，由并行改动写入 run；缺省为 0）。逐条结果带 `failure_class`。
+`SITE_NOT_ACCESSIBLE`、未找到目标网站、登录失败和站点加载超时归入 `environment`，不再记为自动化失败。
+review.json 包含复现、原始期望、实际失败、证据和受限脱敏截图。
 只有公共控件文字白名单保留的弹窗截图可保留；任意输入、自由文字及媒体均遮罩，未采集时明确标注，
 不替代成原始全页截图。截图不进入 scripts.zip。
 

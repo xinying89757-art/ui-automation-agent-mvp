@@ -9,7 +9,7 @@ import re
 import shutil
 import datetime as dt
 from pathlib import Path
-from .common import (ROOT, UiaError, atomic_write, config, digest, event, file_hash,
+from .common import (ROOT, UiaError, atomic_write, config, digest, elapsed, event, file_hash,
                      locked_run, now, read_json, read_yaml, require, save)
 from .secrets import scrub_text
 
@@ -408,8 +408,15 @@ def checklist_notice(checklist):
     return '清单全部来自环境记忆（' + str(entries) + ' 项），本次 0 问' if entries == checklist.get('memory_answer_count', 0) else None
 
 
-def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_minutes=10, hints=None, code_root=None):
+def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_minutes=10, hints=None,
+       smoke_size=3, smoke_pass_rate=1.0, first_result_budget_minutes=26, code_root=None):
     from . import workflow, specs, profiles, runtime, reports
+    started_at = now()
+    require(type(smoke_size) is int and smoke_size >= 1, "smoke size must be a positive integer")
+    require(isinstance(smoke_pass_rate, (int, float)) and not isinstance(smoke_pass_rate, bool) and 0 <= float(smoke_pass_rate) <= 1,
+            "smoke pass rate must be between 0 and 1")
+    require(isinstance(first_result_budget_minutes, (int, float)) and not isinstance(first_result_budget_minutes, bool)
+            and first_result_budget_minutes > 0, "first-result budget must be positive")
     source = Path(excel).resolve()
     require(source.is_file(), '工作簿不存在')
     selected = sorted(set(cid.strip() for cid in cases.split(','))) if cases is not None else None
@@ -522,20 +529,28 @@ def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_m
                 compile_run(base, m, code_root=str(Path(code_root).expanduser()) if code_root else None)
                 project_specs(base, m)
                 checklist = sync_checklist(base, m)
-        # Runtime environment evidence is refreshed each invocation; memory is not a preflight.
-        evidence = 'evidence/go-environment-' + now().replace(':', '-') + '.json'
-        try:
-            profiles.invoke_login(m['config'], base / 'runner', evidence=base / evidence)
-            runtime.preflight(base, m, evidence)
-        except UiaError as error:
-            workflow.question(m, 'environment', 'preflight', scrub_text(str(error), m['config']), list(m['cases']), reopen=True)
+        # Environment preflight is the first execution gate: login, site, and the content editor.
+        m['gates'] = {'smoke_size': smoke_size, 'smoke_pass_rate': float(smoke_pass_rate),
+                      'first_result_budget_minutes': float(first_result_budget_minutes)}
+        m['go_started_at'] = started_at
+        from .environment_gate import preflight_run
+        gate = preflight_run(base, m)
         save(manifest, m)
+        if gate.get('status') == 'blocked':
+            output = reports.make_report(base, m)
+            save(manifest, m)
+            return {'run_id': m['run_id'], 'run_reused': bool(matches), 'environment_blocked': True,
+                    'failure_class': 'environment', 'reason': gate.get('reason'), 'preflight': m.get('preflight'),
+                    'report': output, 'spec_tasks': [],
+                    'next': {'action': 'environment_blocked', 'instruction': '环境预检未通过，未执行用例。'}}
         ready = [cid for cid, c in m['cases'].items() if c['work_status'] == 'runnable' and not c.get('case_spec')]
         armed = _arm_requested_watches(base, m, arm_watch, lead_minutes, watch_minutes)
         save(manifest, m)
     # Existing runnable scripts get the first batch, before new generation.
     if ready:
-        _run_ready(manifest, ready)
+        _execute_ready(manifest, ready, full_batch=selected is None, smoke_size=smoke_size,
+                       smoke_pass_rate=float(smoke_pass_rate), budget_minutes=float(first_result_budget_minutes),
+                       started_at=started_at)
     with locked_run(manifest) as (manifest, m):
         base = manifest.parent
         if not checklist['question_count']:
@@ -563,7 +578,9 @@ def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_m
         save(manifest, m)
         ready = [cid for cid, c in m['cases'].items() if c['work_status'] == 'runnable'] if not checklist['question_count'] else []
     if ready:
-        _run_ready(manifest, ready)
+        _execute_ready(manifest, ready, full_batch=selected is None, smoke_size=smoke_size,
+                       smoke_pass_rate=float(smoke_pass_rate), budget_minutes=float(first_result_budget_minutes),
+                       started_at=started_at)
     with locked_run(manifest) as (manifest, m):
         output = reports.make_report(manifest.parent, m)
         save(manifest, m)
@@ -577,6 +594,7 @@ def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_m
                                'requirements': [row.get('name') for row in (m.get('pathfinder') or {}).get('requirements') or []],
                                'guided': (m.get('pathfinder') or {}).get('guided') or [],
                                'output_dir': (m.get('pathfinder') or {}).get('output_dir')},
+                'smoke': m.get('smoke'), 'abort': m.get('abort'),
                 'next': {'action': 'classify_preconditions' if checklist['unclassified'] else 'complete_spec_tasks' if checklist['draft'] else 'answer_checklist' if checklist['question_count'] else 'continue_spec_tasks_or_review', 'unclassified': checklist['unclassified'], 'ai_tasks': checklist['ai_tasks'], 'mid_run_questions': 0,
                          **({'process_issue': {'code': 're_explored_known_pages', 'count': exploration_metric['re_explored_known_pages']}} if exploration_metric['re_explored_known_pages'] else {}),
                          'exploration_for_missing_controls': exploration_metric['exploration_for_missing_controls'],
@@ -601,6 +619,92 @@ def _arm_requested_watches(base, m, arm_watch, lead_minutes, watch_minutes):
     # go blocks until the save window; the hand-off must be visible before that.
     print(json.dumps({'armed_watches': armed}, ensure_ascii=False), file=sys.stderr, flush=True)
     return armed
+
+
+def representative_cases(cases, size):
+    """Spread a smoke sample across modules, preferring higher priority."""
+    priority = {"P0": 0, "P1": 1, "P2": 2, "P3": 3}
+    ordered = sorted(cases, key=lambda case: (priority.get(str(case.get("priority") or "P9").upper(), 9), str(case.get("case_id"))))
+    picked, seen = [], set()
+    for case in ordered:
+        group = case.get("module") or case.get("sheet") or case.get("case_id")
+        if group in seen:
+            continue
+        seen.add(group)
+        picked.append(case["case_id"])
+        if len(picked) == size:
+            return picked
+    for case in ordered:
+        if case["case_id"] not in picked:
+            picked.append(case["case_id"])
+        if len(picked) == size:
+            break
+    return picked
+
+
+def split_smoke(ready, cases, smoke_size, full_batch, smoke_state):
+    """Return ``(first_batch, remainder)``. Remainder runs only after the smoke bar is met."""
+    ready = list(ready)
+    if not ready:
+        return [], []
+    state = smoke_state or {}
+    if not full_batch or len(cases) <= smoke_size or state.get("status") == "accepted":
+        return ready, []
+    if state.get("status") in {"rejected", "aborted"}:
+        return [], []
+    chosen = [cid for cid in representative_cases(cases, smoke_size) if cid in set(ready)]
+    for cid in ready:
+        if len(chosen) >= min(smoke_size, len(ready)):
+            break
+        if cid not in chosen:
+            chosen.append(cid)
+    chosen = chosen[:smoke_size]
+    return chosen, [cid for cid in ready if cid not in chosen]
+
+
+def _smoke_rate(m, ids):
+    rows = [m["cases"][cid] for cid in ids if cid in m["cases"] and m["cases"][cid].get("result")]
+    if not rows:
+        return None
+    return sum(case.get("result") == "passed" for case in rows) / len(rows)
+
+
+def first_result_exceeded(m, budget_minutes, started_at):
+    finished = m.get("first_result_at")
+    if not finished or not budget_minutes:
+        return False
+    sources = m.get("sources") or []
+    start = next((row.get("imported_at") for row in sources if row.get("imported_at")), None) or started_at or m.get("created_at")
+    if not start:
+        return False
+    return elapsed(start, finished) > float(budget_minutes) * 60
+
+
+def _execute_ready(manifest, ready, *, full_batch, smoke_size, smoke_pass_rate, budget_minutes, started_at):
+    with locked_run(manifest) as (_path, m):
+        first, rest = split_smoke(ready, list(m["cases"].values()), smoke_size, full_batch, m.get("smoke"))
+    if not first:
+        return
+    _run_ready(manifest, first)
+    with locked_run(manifest) as (path, m):
+        aborted = bool(m.get("abort"))
+        if rest:
+            rate = _smoke_rate(m, first)
+            if aborted:
+                status = "aborted"
+            elif rate is None or rate + 1e-9 >= smoke_pass_rate:
+                status = "accepted"
+            else:
+                status = "rejected"
+            m["smoke"] = {"case_ids": list(first), "pass_rate": rate, "bar": smoke_pass_rate,
+                          "status": status, "at": now()}
+            save(path, m)
+            if status != "accepted":
+                return
+        elif aborted:
+            return
+    if rest:
+        _run_ready(manifest, rest)
 
 
 def _run_ready(manifest, ready):
@@ -653,7 +757,18 @@ def _run_ready(manifest, ready):
             wait_for_watch(path.parent, row, heartbeat=beat)
         code = runtime.execute_process(path.parent, batch, cfg)
         with locked_run(manifest) as (path, m):
-            runtime.consume_batch(path.parent, m, code); save(path, m)
+            runtime.consume_batch(path.parent, m, code)
+            budget_minutes = (m.get("gates") or {}).get("first_result_budget_minutes")
+            started_at = m.get("go_started_at")
+            if first_result_exceeded(m, budget_minutes, started_at):
+                sources = m.get("sources") or []
+                start = next((row.get("imported_at") for row in sources if row.get("imported_at")), None) or started_at
+                m["abort"] = {"reason": "first_result_budget", "budget_minutes": budget_minutes,
+                              "elapsed_seconds": elapsed(start, m["first_result_at"]) if start and m.get("first_result_at") else None,
+                              "at": now()}
+                save(path, m)
+                return
+            save(path, m)
     if has_deferred:
         with locked_run(manifest) as (path, m):
             from .remote_checks import finalize

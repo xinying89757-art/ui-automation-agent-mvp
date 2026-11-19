@@ -176,6 +176,35 @@ class PathfinderStageTests(unittest.TestCase):
         real_after = {path.name: path.read_bytes() for path in (SOURCE / 'skills/spec-pathfinder/trial/real').rglob('*') if path.is_file()}
         self.assertEqual(real_before, real_after)
 
+    def test_precondition_entry_is_human_and_ignores_control_ids(self):
+        page_map = common.read_yaml(self.root / 'knowledge/page-map.yaml')
+        page_map['targets']['widget.route.4'] = {'name': '编辑器', 'role': 'textbox'}
+        for relative in ('knowledge/page-map.yaml', 'assets/playwright-runner/knowledge/page-map.yaml'):
+            common.atomic_write(self.root / relative, page_map, as_yaml=True)
+        self.workbook([
+            ['TC-PF-9', '演示', '从编辑器开始', '已进入新版内容编辑器', '点击「保存」', '页面提示“已保存”'],
+            ['TC-PF-10', '演示', '弹窗内确认', '已打开演示弹窗', '点击「确认」', '页面提示“已保存”'],
+        ])
+        pathfinder.compile_run(self.base, self.m)
+        human = next((self.base / 'spec-pathfinder').rglob('SPEC-human-v1.md')).read_text(encoding='utf-8')
+        self.assertIn('从「新版内容编辑器」开始', human)
+        self.assertIn('从「演示弹窗」开始', human)
+        self.assertNotIn('widget.route.4', human)
+        self.assertNotIn('用例没有写明入口页面', human)
+        pathfinder.project_specs(self.base, self.m)
+        checklist = experience.checklist_text({'entries': experience.rows(self.base, self.m), 'answer': {'entries': {}}})
+        self.assertIn('新版内容编辑器', checklist)
+        self.assertIn('演示弹窗', checklist)
+
+    def test_markdown_sample_lines_stay_inside_the_paste_step(self):
+        source = {'title': '粘贴标题', 'steps': ['1. 粘贴以下内容：\n###### 标题\n第二行\n2. 点击确认'],
+                  'expected': ['页面提示“已保存”'], 'preconditions': '已打开演示弹窗'}
+        model = pathfinder.build_case('TC-PF-11', {}, source, {'pages': {}, 'targets': {}})
+        self.assertEqual([step['id'] for step in model['steps']], ['S1', 'S2'])
+        self.assertIn('###### 标题', model['steps'][0]['text'])
+        self.assertIn('第二行', model['steps'][0]['text'])
+        self.assertNotIn('######', model['steps'][1]['text'])
+
     def test_go_accepts_optional_code_path(self):
         args = cli.parser().parse_args(['go', 'cases.xlsx', '--code', 'project/src'])
         self.assertEqual(args.code, 'project/src')

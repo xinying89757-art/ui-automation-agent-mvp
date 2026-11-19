@@ -111,38 +111,107 @@ def _pages_catalog():
     return {'pages': {}, 'targets': {}}
 
 
+def _human_path(text):
+    """Keep a route a person can read. Drop control ids, frames and selectors."""
+    text = str(text or '')
+    text = re.sub(r'#[\w.-]+', '', text)
+    text = re.sub(r'iframe(?:\[[^\]]*\])?(?:\.[\w-]+)*', '', text, flags=re.I)
+    text = re.sub(r'>>', ' ', text)
+    text = re.sub(r'\binternal:control=\S+', '', text)
+    text = re.sub(r'\b(?:click|hover|fill|goto):[^\s，,。；;]+', '', text)
+    text = re.sub(r'\b[\w-]+(?:\.[\w-]+){2,}\b', '', text)
+    text = re.sub(r'\s+', ' ', text).strip(' ，,。；;')
+    if not re.search(r'[\u4e00-\u9fff]', text) or CODEISH.search(text):
+        return ''
+    return text
+
+
+def _name_fits(label, names):
+    """Do not treat a 3-character fragment such as 编辑器 as the same page."""
+    from .entries import key
+    query = key(label)
+    if len(query) < 4:
+        return False
+    for name in names:
+        other = key(str(name or ''))
+        if not other:
+            continue
+        if query == other:
+            return True
+        if len(other) >= 4 and (other in query or query in other):
+            return True
+    return False
+
+
 def _known_page(label, pages):
-    from .entries import resolve, navigation_hint
-    hint = resolve(label)
-    if not hint:
+    """A known entry is a human route in entries.yaml or a named page, never a control id."""
+    if not label:
         return None
-    if hint.get('source') == 'page-map':
-        page_id = _page_in_catalog(label, pages)
-        if not page_id:
-            return None
-        return {**hint, 'key': page_id, 'open_target': page_id}
-    if hint.get('open_target') in pages.get('pages', {}):
+    from .entries import key, load, matches, literal_route, navigation_hint
+    choices = []
+    for name, hint in (load().get('entries') or {}).items():
+        names = [name, hint.get('label'), *hint.get('aliases', [])]
+        if not _name_fits(label, names) or not any(matches(label, item) for item in names if item):
+            continue
+        path = _human_path(hint.get('path_text'))
+        if not path:
+            continue
+        exact = any(key(label) == key(item) for item in names if item)
+        chosen = dict(hint, path_text=path, key=name)
+        choices.append((exact, len(key(name)), chosen))
+    if choices:
+        hint = literal_route(max(choices)[2])
+        hinted = navigation_hint(dict(hint))
+        if hinted.get('node') in (pages.get('pages') or {}):
+            hint['node'] = hinted['node']
         return hint
-    if hint.get('key') in pages.get('pages', {}):
-        return hint
-    hinted = navigation_hint(dict(hint))
-    if hinted.get('node') in pages.get('pages', {}):
-        return hinted
-    if hint.get('path_text') and hint.get('source') != 'page-map':
-        return hint
+    for name, row in (pages.get('pages') or {}).items():
+        names = [name, row.get('label'), row.get('entry'), *row.get('aliases', [])]
+        if not _name_fits(label, names) or not any(matches(label, item) for item in names if item):
+            continue
+        path = _human_path(row.get('path') or row.get('entry') or row.get('label') or '')
+        if not path:
+            continue
+        return {'key': name, 'label': label, 'path_text': path, 'open_target': name,
+                'source': 'page-map', 'confirmed': True}
     return None
+
+
+SKIP_PLACES = {'实现页面', '当前页面', '该页面', '此页面', '目标页面', '测试页面', '编辑页面', '新页面'}
+_LEADING_VERB = re.compile(r'^(?:已经|已)?(?:打开|进入|访问|使用|位于|通过|在|到|从)+')
+_INNER_VERB = re.compile(r'(?:已经|已)?(?:打开|进入|访问|使用|位于|通过)')
+
+
+def _clean_place(name):
+    name = _LEADING_VERB.sub('', str(name or '').strip())
+    name = _INNER_VERB.split(name)[-1]
+    name = name.split('的')[-1].strip(' ，,。；;：:')
+    if len(name) < 4 or name in SKIP_PLACES:
+        return ''
+    return name
 
 
 def _page_phrases(text):
     from .entries import phrases, GENERIC_PAGES
-    found = list(phrases(text or ''))
+    found = []
+    for name in list(phrases(text or '')):
+        cleaned = _clean_place(name)
+        if cleaned and cleaned not in GENERIC_PAGES:
+            found.append(cleaned)
     for match in PAGE_SUFFIX.finditer(text or ''):
-        start = max(0, match.start() - 24)
-        chunk = (text or '')[start:match.end()]
-        name = re.sub(r'^.*(?:打开|进入|访问|在|到|从)', '', chunk).strip()
-        name = name[-30:]
-        if len(name) >= 3 and name not in GENERIC_PAGES and name not in found:
-            found.append(name)
+        start = match.end()
+        while start > 0 and re.match(r'[\u4e00-\u9fffA-Za-z0-9]', (text or '')[start - 1]):
+            start -= 1
+        cleaned = _clean_place((text or '')[start:match.end()])
+        if cleaned and cleaned not in GENERIC_PAGES and cleaned not in found:
+            found.append(cleaned)
+    return list(dict.fromkeys(found))
+
+
+def _entry_places(*texts):
+    found = []
+    for text in texts:
+        found.extend(_page_phrases(text))
     return list(dict.fromkeys(found))
 
 
@@ -160,26 +229,9 @@ def _page_in_catalog(name, pages):
     return hits[0] if len(hits) == 1 else None
 
 
-def _entry_candidate(source, steps):
-    """Prefer an explicit step/precondition page, then the workbook's named module."""
-    for step in steps:
-        names = _page_phrases(step['text'])
-        if names:
-            return names[0]
-    for field in ('preconditions',):
-        names = _page_phrases(str(source.get(field) or ''))
-        if names:
-            return names[0]
-    # The module/sheet is the stable page context in many workbooks whose steps
-    # begin with an action (for example “新增” or “搜索”) rather than “进入 X 页面”.
-    from .entries import GENERIC_PAGES
-    for field in ('module', 'sheet'):
-        candidate = str(source.get(field) or '').strip()
-        if (len(candidate) >= 2 and candidate not in GENERIC_PAGES
-                and candidate not in {'其他', '通用', '未分类', '测试用例'}
-                and not re.search(r'(?:需求|用例|测试|说明)$', candidate)):
-            return candidate
-    return ''
+def _is_payload(line):
+    """A markdown sample line is part of the previous action, not its own step."""
+    return bool(re.match(r'^(?:#{1,6}\s?|[|>]|[-*+]\s|\|)', line))
 
 
 def _split_steps(cells):
@@ -190,19 +242,30 @@ def _split_steps(cells):
         text = str(cell or '')
         logical = text.replace('\\n', '\n')
         lines = [line.strip() for line in logical.splitlines() if line.strip()] or ([text.strip()] if text.strip() else [])
-        numbered = []
+        numbered, intact = [], True
         for line in lines:
             match = STEP_NO.match(line)
-            if match:
-                numbered.append((int(match.group(1)), match.group(2).strip() or line.strip()))
+            if match and match.group(2).strip():
+                numbered.append([int(match.group(1)), match.group(2).strip()])
+            elif numbered:
+                # Sample text between numbered actions stays in the previous step.
+                numbered[-1][1] += '\n' + line
             else:
-                numbered = []
+                intact = False
                 break
-        if numbered:
-            pieces.extend(numbered)
-        else:
-            for line in lines:
-                pieces.append((None, line))
+        if numbered and intact:
+            pieces.extend((number, body) for number, body in numbered)
+            continue
+        buffer = None
+        for line in lines:
+            if buffer is not None and _is_payload(line):
+                buffer += '\n' + line
+            else:
+                if buffer is not None:
+                    pieces.append((None, buffer))
+                buffer = line
+        if buffer is not None:
+            pieces.append((None, buffer))
     steps, seen = [], set()
     auto = 1
     for number, text in pieces:
@@ -332,18 +395,24 @@ def build_case(cid, case, source, pages):
         expected_lines.extend(lines)
     claims, doubts = [], []
     rendered = []
-    entry_page = _entry_candidate(source, steps)
+    # Preconditions say where the case already is. Steps are next.
+    # A module name is used only when it itself looks like a place (for example 产品管理).
+    places = (_entry_places(source.get('preconditions') or '')
+              or _entry_places(*(step['text'] for step in steps))
+              or _entry_places(source.get('module') or ''))
+    entry_page = places[0] if places else ''
     known = _known_page(entry_page, pages) if entry_page else None
-    if known and known.get('path_text'):
-        entry_text = entry_page + '：' + known['path_text']
-    elif known:
-        entry_text = '从知识库已有页面「' + entry_page + '」进入'
+    remembered_entry = remembered('entry', entry_page) if entry_page else None
+    if remembered_entry:
+        entry_text = '从「' + entry_page + '」开始。已确认路径：' + remembered_entry['answer'] + '。'
+    elif known and known.get('path_text'):
+        entry_text = '从「' + entry_page + '」开始。到达方式：' + known['path_text'] + '。'
     elif entry_page:
-        entry_text = '尚未知道「' + entry_page + '」从哪里进入'
+        entry_text = '从「' + entry_page + '」开始。知识库没有这条入口的自然语言路径。'
     else:
         noted = remembered('entry_missing', '入口未写明')
         entry_text = '人工确认：' + noted['answer'] if noted else '用例没有写明入口页面'
-    if entry_page and not known and not remembered('entry', entry_page):
+    if entry_page and not known and not remembered_entry:
         doubt = _new_doubt('entry', entry_page, [cid], [], '知识库没有「' + entry_page + '」的入口', 'D')
         doubts.append(doubt)
     elif not entry_page and not remembered('entry_missing', '入口未写明'):
@@ -364,7 +433,7 @@ def build_case(cid, case, source, pages):
         operation = _claim(cid, step['id'], 1, 'operation', step['text'], '中')
         step_claims.append(operation)
         if entry_page and index == 0:
-            confidence = '中' if known or remembered('entry', entry_page) else '低'
+            confidence = '中'
             entry_claim = _claim(cid, step['id'], 2, 'entry', '入口页面是' + entry_page, confidence,
                                  doubts[0]['id'] if doubts and doubts[0]['kind'] == 'entry' else None)
             step_claims.append(entry_claim)
@@ -721,8 +790,8 @@ def compile_run(base, m, code_root=None):
                 continue
             for doubt in model['doubts']:
                 if doubt['kind'] == 'entry':
-                    from .entries import resolve, key
-                    if resolve(doubt['subject']) or remembered('entry', doubt['subject']):
+                    from .entries import key
+                    if _known_page(doubt['subject'], _pages_catalog()) or remembered('entry', doubt['subject']):
                         continue
                     row = {'key': 'entry:' + key(doubt['subject']), 'block': 'D', 'page': doubt['subject'],
                            'label': doubt['subject'], 'cases': list(doubt['cases']), 'options': ['大概路径即可'],
@@ -788,11 +857,13 @@ def generation_brief(base, cid):
 
 
 def checklist_rows(m, existing):
-    from .entries import matches, resolve
+    from .entries import matches
+    pages = _pages_catalog()
     rows = []
     for row in (m.get('pathfinder') or {}).get('checklist') or []:
         if row['block'] == 'D':
-            if resolve(row.get('page', '')) or any(existing_row['block'] == 'D' and matches(row.get('page', ''), existing_row.get('page', '')) for existing_row in existing):
+            # A control whose name is a short fragment is not an entry route.
+            if _known_page(row.get('page', ''), pages) or any(existing_row['block'] == 'D' and matches(row.get('page', ''), existing_row.get('page', '')) for existing_row in existing):
                 continue
         elif remembered(row.get('kind') or 'expected', row.get('subject', '')):
             continue

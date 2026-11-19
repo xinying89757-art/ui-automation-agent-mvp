@@ -39,12 +39,15 @@ def sync_layout(pages=None, entries=None, patterns=None, experience=None):
     entries = entries if entries is not None else catalog('entries.yaml')
     patterns = patterns if patterns is not None else catalog('patterns.yaml')
     experience = experience if experience is not None else catalog('experience.yaml')
-    previous = {x['id']: x for x in (catalog('index.yaml').get('entries') or [])}
+    previous_rows = catalog('index.yaml').get('entries') or []
+    previous = {x['id']: x for x in previous_rows}
     rows, files = [], []
     known_pages = set(pages.get('pages', {}))
     def put(ident, kind, page, value, labels, route='', frame=None):
         old_index = previous.get(ident, {})
-        filename = kind + 's/' + _slug(ident.replace('.', '-')) + '.yaml'
+        # Chinese-only IDs all collapsed to ``item.yaml`` in the old slugger.
+        slug = _slug(ident.replace('.', '-'))
+        filename = kind + 's/' + (slug if slug != 'item' else slug + '-' + common.digest(ident)[:10]) + '.yaml'
         old_path = _root() / old_index.get('path', filename)
         old_body = read_yaml(old_path) if old_path.is_file() else {}
         verified = []
@@ -92,6 +95,24 @@ def sync_layout(pages=None, entries=None, patterns=None, experience=None):
         put('pattern.' + name, 'pattern', row.get('page') or '*', row, [name, row.get('description')], row.get('route'), row.get('frame'))
     for name, row in experience.get('entries', {}).items():
         put('experience.' + name, 'flow', row.get('page') or '*', row, [name, row.get('summary')], row.get('route'), row.get('frame'))
+    # Preserve index entries whose source record is not in a compatibility
+    # catalog. They can still be referenced by older specs.
+    present_ids = {row['id'] for row in rows}
+    rows.extend(copy.deepcopy(row) for row in previous_rows if row.get('id') not in present_ids)
+    indexed_paths = {row['path'] for row in rows}
+    indexed_ids = {row['id'] for row in rows}
+    for kind_dir in ('pages', 'components', 'flows', 'patterns'):
+        folder = _root() / kind_dir
+        if not folder.is_dir():
+            continue
+        for stale in folder.glob('*.yaml'):
+            if stale.relative_to(_root()).as_posix() in indexed_paths:
+                continue
+            old = read_yaml(stale) or {}
+            # Remove only duplicate projections whose logical record is still
+            # represented in the new index; unrelated files remain for lint.
+            if old.get('id') in indexed_ids:
+                stale.unlink()
     for relative, payload in files:
         atomic_write(_root() / relative, payload, as_yaml=True)
     atomic_write(_root() / 'index.yaml', {'schema_version': 'uia-knowledge-index.v2', 'entries': rows}, as_yaml=True)
@@ -445,7 +466,7 @@ def exploration_knowledge(purpose=None, entry=None):
             'exploration_for_missing_controls': bool(missing)}
 
 
-def writeback(base, m):
+def _writeback_unchecked(base, m):
     """Persist only entries backed by successful execution and repeated use."""
     pages = catalog('page-map.yaml') or {'schema_version': 'page-map.v1', 'pages': {}, 'targets': {}}
     experience = catalog('experience.yaml') or {'schema_version': 'uia-experience.v1', 'entries': {}}
@@ -602,7 +623,8 @@ def writeback(base, m):
         existing = experience['entries'].get(key)
         if existing != item: experience['entries'][key] = item; changes.append({'kind': 'experience', 'name': key, 'case_ids': sorted(case_ids)})
     atomic_write(_root() / 'page-map.yaml', pages, as_yaml=True)
-    atomic_write(common.ROOT / 'assets/playwright-runner/knowledge/page-map.yaml', pages, as_yaml=True)
+    if _root().resolve() == (common.ROOT / 'knowledge').resolve():
+        atomic_write(common.ROOT / 'assets/playwright-runner/knowledge/page-map.yaml', pages, as_yaml=True)
     atomic_write(_root() / 'experience.yaml', experience, as_yaml=True)
     sync_layout(pages=pages, experience=experience)
     if any(row.get('kind') == 'partial_route' for row in changes):
@@ -612,6 +634,138 @@ def writeback(base, m):
               'partial_count': sum(row.get('kind', '').startswith('partial_') for row in changes), 'at': now()}
     m['knowledge_writeback'] = result
     return result
+
+
+def writeback(base, m):
+    """Write knowledge transactionally; restore catalogs if validation fails."""
+    import shutil
+    import subprocess
+    root = _root()
+    had_index = (root / 'index.yaml').is_file()
+    mirror = common.ROOT / 'assets/playwright-runner/knowledge'
+    roots = list(dict.fromkeys([root, mirror]))
+    snapshots = {}
+    for folder in roots:
+        if folder.exists():
+            snapshots[folder] = {p.relative_to(folder): p.read_bytes() for p in folder.rglob('*') if p.is_file()}
+        else:
+            snapshots[folder] = None
+    try:
+        result = _writeback_unchecked(base, m)
+        if had_index:
+            validate()
+        checker = common.ROOT / 'scripts/check_knowledge.py'
+        if had_index and checker.is_file() and root.resolve() == (common.ROOT / 'knowledge').resolve():
+            check = subprocess.run(['python3', str(checker)],
+                                   cwd=common.ROOT, capture_output=True, text=True, timeout=30)
+            require(check.returncode == 0, 'Knowledge check failed after write-back; changes rolled back')
+        return result
+    except Exception:
+        for folder, files in snapshots.items():
+            if folder.exists():
+                shutil.rmtree(folder)
+            if files is not None:
+                folder.mkdir(parents=True, exist_ok=True)
+                for relative, content in files.items():
+                    target = folder / relative
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_bytes(content)
+        raise
+
+
+def bind_spec_placeholders(base, m):
+    """Bind uniquely named spec placeholders to deterministic known targets."""
+    import unicodedata
+    from .common import atomic_write, file_hash
+    pages = catalog('page-map.yaml') or {'schema_version': 'page-map.v1', 'pages': {}, 'targets': {}}
+    targets = pages.get('targets', {})
+    index = load_index()
+    known = {}
+    for item in index:
+        if not item.get('id', '').startswith('target.'):
+            continue
+        body = load_item(item) or {}
+        known[item['id'].removeprefix('target.')] = (item, body)
+    def norm(value):
+        return re.sub(r'[^a-z0-9\u4e00-\u9fff]+', '', unicodedata.normalize('NFKC', str(value or '')).casefold())
+    bound = []
+    for cid, case in m.get('cases', {}).items():
+        rel = case.get('case_spec')
+        path = Path(base) / rel if rel else None
+        if not path or not path.is_file():
+            continue
+        spec = read_yaml(path) or {}
+        bindings = case.setdefault('kb_bindings', [])
+        changed = False
+        def replace(value, preceding=''):
+            nonlocal changed
+            if not isinstance(value, str) or not value.startswith('?'):
+                return value
+            needle = norm(value[1:])
+            if len(needle) < 2:
+                return value
+            alias = None
+            if any(token in needle for token in ('组件选择面板', '组件添加弹窗', 'componentpanel')):
+                alias = 'editor.component-panel'
+            elif needle in {'网页组件', '网页组件菜单'}:
+                alias = 'faq-editor.group-controls.faqwebcomponents'
+            elif needle == 'faq':
+                alias = 'faq-editor.entry.faq.component.entry'
+            if alias and alias in known and alias not in targets:
+                item, body = known[alias]
+                targets[alias] = {k: body[k] for k in ('selector', 'role', 'name', 'text', 'frame', 'nested_frames', 'scope', 'label', 'aliases', 'tags') if k in body}
+                targets[alias].update(page=item.get('page'), route=item.get('route', ''), source='confirmed-knowledge')
+                pages['targets'] = targets
+                atomic_write(_root() / 'page-map.yaml', pages, as_yaml=True)
+                runner_pages = common.ROOT / 'assets/playwright-runner/knowledge/page-map.yaml'
+                if runner_pages.is_file() and _root().resolve() == (common.ROOT / 'knowledge').resolve():
+                    atomic_write(runner_pages, pages, as_yaml=True)
+            if alias and alias in targets:
+                record = {'placeholder': value, 'target': alias, 'score': 100, 'source': 'knowledge-alias'}
+                if record not in bindings: bindings.append(record)
+                bound.append({'case_id': cid, **record})
+                changed = True
+                return alias
+            scored = []
+            for name, row in targets.items():
+                labels = [name, row.get('label'), row.get('name'), row.get('text'), row.get('selector'),
+                          *(row.get('aliases') or []), *(row.get('tags') or [])]
+                if name in known:
+                    item, body = known[name]
+                    labels.extend([item.get('summary'), *(item.get('tags') or []), body.get('selector'),
+                                   body.get('label'), body.get('name'), body.get('text'), body.get('faq')])
+                score = max((100 if needle == norm(label) else
+                             80 if norm(label) and (needle in norm(label) or norm(label) in needle) else 0
+                             for label in labels), default=0)
+                if score >= 80:
+                    scored.append((score, name))
+            scored.sort(key=lambda item: (-item[0], item[1]))
+            if not scored or (len(scored) > 1 and scored[0][0] == scored[1][0]):
+                return value
+            name, score = scored[0][1], scored[0][0]
+            record = {'placeholder': value, 'target': name, 'score': score, 'source': 'knowledge'}
+            if record not in bindings:
+                bindings.append(record)
+            bound.append({'case_id': cid, **record})
+            changed = True
+            return name
+        previous = ''
+        for step in spec.get('steps', []):
+            if isinstance(step, dict):
+                step['target'] = replace(step.get('target'), previous)
+                previous = str(step.get('target') or '')
+        for assertion in spec.get('assertions', []):
+            for check in assertion.get('checks', []):
+                check['target'] = replace(check.get('target'))
+        if changed:
+            atomic_write(path, spec, as_yaml=True)
+            case['spec_hash'] = file_hash(path)
+    if pages != catalog('page-map.yaml'):
+        atomic_write(_root() / 'page-map.yaml', pages, as_yaml=True)
+        runner_pages = common.ROOT / 'assets/playwright-runner/knowledge/page-map.yaml'
+        if runner_pages.is_file() and _root().resolve() == (common.ROOT / 'knowledge').resolve(): atomic_write(runner_pages, pages, as_yaml=True)
+    m['kb_reused_bindings'] = bound
+    return {'bound': bound, 'count': len(bound)}
 
 
 def _spec_targets(base, case):

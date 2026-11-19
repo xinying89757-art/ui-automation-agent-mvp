@@ -20,6 +20,16 @@ def memory_path(m):
     return ROOT / '.auth/environment-memory' / (digest(connection_settings(m['config'])) + '.json')
 
 
+def requirement_memory_path(m):
+    """Answers scoped to one workbook requirement and one environment."""
+    from .profiles import connection_settings
+    from . import common
+    source = (m.get('sources') or [{}])[0]
+    requirement = (m.get('round') or {}).get('requirement_id') or source.get('sha256') or m.get('run_id')
+    key = digest([requirement, connection_settings(m['config'])])
+    return common.ROOT / '.auth/environment-memory' / ('requirement-' + key + '.json')
+
+
 def load_memory(m):
     path = memory_path(m)
     return read_json(path) if path.is_file() else {'answers': {}}
@@ -92,6 +102,30 @@ def rows(base, m):
                        'cases': [case_id] if case_id else [],
                        'options': ['按原文可观察', '挂起'], 'kind': 'missing_control',
                        'missing_controls': [marker]})
+    # Compile the final E block from every spec before asking anything. A later
+    # generator pass must not reveal a second wave of placeholder questions.
+    for case_id, case in m.get('cases', {}).items():
+        spec_path = base / case.get('case_spec', f'cases/{case_id}/case-spec.yaml')
+        if not spec_path.is_file():
+            continue
+        spec = read_yaml(spec_path) or {}
+        placeholders = []
+        for step in spec.get('steps', []):
+            if isinstance(step, dict) and isinstance(step.get('target'), str) and step['target'].startswith('?'):
+                placeholders.append(step['target'])
+        for assertion in spec.get('assertions', []):
+            for check in assertion.get('checks', []):
+                if isinstance(check.get('target'), str) and check['target'].startswith('?'):
+                    placeholders.append(check['target'])
+        for target in dict.fromkeys(placeholders):
+            key = 'missing-control:' + digest([case_id, target])
+            if any(row.get('key') == key or (row.get('block') == 'E' and row.get('subject') == target)
+                   for row in result):
+                continue
+            result.append({'key': key, 'block': 'E', 'label': '待补控件：' + target,
+                           'subject': target, 'cases': [case_id],
+                           'options': ['按原文可观察', '挂起'], 'kind': 'missing_control',
+                           'missing_controls': [{'case_id': case_id, 'target': target}]})
     guided = [row.get('subject', '') for row in result if row.get('kind') == 'guided_exploration']
     result = [row for row in result if row.get('block') != 'D' or not any(
         subject and (subject in row.get('page', '') or row.get('page', '') in subject) for subject in guided)]
@@ -107,7 +141,9 @@ def sync_checklist(base, m):
     unclassified = [r for r in m.get('precondition_triage', []) if r['classification'] == 'unclassified']
     spec_draft = any(not (base / c.get('case_spec', f'cases/{cid}/case-spec.yaml')).is_file() and not c.get('registration') for cid, c in m['cases'].items())
     m['checklist_draft'] = bool(unclassified or spec_draft)
-    memory_answers = {**load_memory(m)['answers'], **m.get('round_memory', {}).get('user_preset_answers', {})}
+    requirement_answers = read_json(requirement_memory_path(m)) if requirement_memory_path(m).is_file() else {'answers': {}}
+    memory_answers = {**load_memory(m)['answers'], **requirement_answers.get('answers', {}),
+                      **m.get('round_memory', {}).get('user_preset_answers', {})}
     answers = memory_answers
     old = m['questions'].get(QUESTION_KEY)
     # Run answers are immutable evidence; environment memory supplies only unseen runs.
@@ -202,6 +238,22 @@ def apply_checklist(m, q, extra_entries=()):
             others = [x for x in m['questions'].values() if x is not q and x['status'] in {'open', 'deferred'} and cid in x['case_ids']]
             if not others:
                 c['work_status'] = 'runnable' if c.get('registration') and c['stage'] == 'execution' else 'pending'
+    # "Observe as written" authorizes the agent to explore unknown controls.
+    for row in [*q.get('entries', []), *extra_entries]:
+        if row.get('block') != 'E' or row.get('kind') != 'missing_control':
+            continue
+        if answers.get(row['key']) != '按原文可观察':
+            continue
+        for marker in row.get('missing_controls') or []:
+            case = m.get('cases', {}).get(marker.get('case_id'))
+            if not case or case.get('result') is not None:
+                continue
+            case['work_status'] = 'pending'
+            case['stage'] = 'discovery'
+            case.setdefault('exploration_required', [])
+            if marker.get('target') and marker['target'] not in case['exploration_required']:
+                case['exploration_required'].append(marker['target'])
+            case.pop('checklist_wait', None)
 
 
 def checklist_text(q):
@@ -318,6 +370,7 @@ def answer_sentence(base, m, sentence, finalizing=False):
         answers[row['key']] = value
         newly_answered.append(row['key'])
     memory = load_memory(m)
+    requirement_memory = read_json(requirement_memory_path(m)) if requirement_memory_path(m).is_file() else {'answers': {}}
     if entry_answers:
         store(m, entry_answers, 'checklist')
         memory['answers'].update({'entry:' + entry_key(h['label']): h['path_text'] for h in entry_answers})
@@ -325,10 +378,13 @@ def answer_sentence(base, m, sentence, finalizing=False):
     save_checklist_answers(m, [r for r in q['entries'] if r['key'] in newly_answered], answers)
     memory['answers'].update(answers)
     memory['updated_at'] = now()
+    requirement_memory.setdefault('answers', {}).update(answers)
+    requirement_memory['updated_at'] = now()
     private = memory_path(m).parent
     private.mkdir(parents=True, exist_ok=True, mode=0o700)
     private.chmod(0o700)
     atomic_write(memory_path(m), memory)
+    atomic_write(requirement_memory_path(m), requirement_memory)
     q.update(status='answered', answer={'entries': answers}, answered_at=now())
     q['locally_answered_keys'] = sorted(set(q.get('locally_answered_keys', [])) | set(newly_answered))
     q['memory_answer_keys'] = sorted(set(q.get('memory_answer_keys', [])) - set(newly_answered))
@@ -453,8 +509,11 @@ def checklist_notice(checklist):
 
 def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_minutes=10, hints=None,
        smoke_size=3, smoke_pass_rate=1.0, first_result_budget_minutes=26, code_root=None):
+    import time
     from . import workflow, specs, profiles, runtime, reports
     started_at = now()
+    call_clock = time.perf_counter()
+    phase_ms = {}
     require(type(smoke_size) is int and smoke_size >= 1, "smoke size must be a positive integer")
     require(isinstance(smoke_pass_rate, (int, float)) and not isinstance(smoke_pass_rate, bool) and 0 <= float(smoke_pass_rate) <= 1,
             "smoke pass rate must be between 0 and 1")
@@ -479,7 +538,9 @@ def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_m
         if candidate.get('go_key') == key or (same_source and same_profile and candidate.get('interaction_mode') == 'once'):
             matches.append(manifest)
     if matches:
-        manifest = sorted(matches)[0]
+        # An explicitly created requirement round is the run go should resume.
+        matches.sort(key=lambda item: (not bool(read_json(item).get('round')), str(item)))
+        manifest = matches[0]
     else:
         run_id = 'GO-' + key
         manifest = ROOT / 'runs' / run_id / 'run.json'
@@ -524,7 +585,9 @@ def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_m
                     matched.append(cid)
         # Retrieval is a fixed pre-generation step, including source-only matches.
         from .knowledge import match_run
+        phase_clock = time.perf_counter()
         match_run(base, m)
+        phase_ms['kb_match_ms'] = round((time.perf_counter() - phase_clock) * 1000)
         # Lint and compile matched contracts before legacy scripts claim imported cases.
         if matched:
             lint = specs.lint(base, m, matched)
@@ -540,8 +603,12 @@ def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_m
         from .pathfinder import compile_run, project_specs
         if code_root:
             require(Path(code_root).expanduser().is_dir(), '项目代码路径不是目录')
+        phase_clock = time.perf_counter()
         compile_run(base, m, code_root=str(Path(code_root).expanduser()) if code_root else None)
         project_specs(base, m)
+        from .knowledge import bind_spec_placeholders
+        binding_result = bind_spec_placeholders(base, m)
+        phase_ms['spec_compile_ms'] = round((time.perf_counter() - phase_clock) * 1000)
         # A legacy script that substitutes editor values for a public-file assertion is
         # incompatible with the source-matched deferred contract. Preserve its history,
         # then compile the contract instead of silently running the partial legacy test.
@@ -577,7 +644,10 @@ def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_m
                       'first_result_budget_minutes': float(first_result_budget_minutes)}
         m['go_started_at'] = started_at
         from .environment_gate import preflight_run
+        phase_clock = time.perf_counter()
         gate = preflight_run(base, m)
+        phase_ms['preflight_ms'] = round((time.perf_counter() - phase_clock) * 1000)
+        phase_ms['preflight_cached'] = bool(gate.get('cached'))
         save(manifest, m)
         if gate.get('status') == 'blocked':
             output = reports.make_report(base, m)
@@ -590,10 +660,12 @@ def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_m
         armed = _arm_requested_watches(base, m, arm_watch, lead_minutes, watch_minutes)
         save(manifest, m)
     # Existing runnable scripts get the first batch, before new generation.
+    execution_clock = time.perf_counter()
     if ready:
         _execute_ready(manifest, ready, full_batch=selected is None, smoke_size=smoke_size,
                        smoke_pass_rate=float(smoke_pass_rate), budget_minutes=float(first_result_budget_minutes),
                        started_at=started_at)
+    phase_ms['execution_ms'] = round((time.perf_counter() - execution_clock) * 1000)
     with locked_run(manifest) as (manifest, m):
         base = manifest.parent
         if not checklist['question_count']:
@@ -625,6 +697,8 @@ def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_m
                        smoke_pass_rate=float(smoke_pass_rate), budget_minutes=float(first_result_budget_minutes),
                        started_at=started_at)
     with locked_run(manifest) as (manifest, m):
+        phase_ms['go_call_ms'] = round((time.perf_counter() - call_clock) * 1000)
+        m.setdefault('go_phase_timings', []).append({'at': started_at, **phase_ms})
         output = reports.make_report(manifest.parent, m)
         save(manifest, m)
         memory_note = checklist_notice(checklist)
@@ -634,6 +708,7 @@ def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_m
                 'run_selection': '复用同一工作簿与环境的 run；用例子集已更新' if matches else '新建 run；当前环境和工作簿没有匹配的既有 run',
                 'checklist_message': memory_note, **checklist, 'spec_tasks': tasks, 'report': output, 'armed_watches': armed,
                 'smoke': m.get('smoke'), 'abort': m.get('abort'),
+                'kb_reused_bindings': binding_result.get('bound', []),
                 'pathfinder': {'stage': (m.get('pathfinder') or {}).get('stage'),
                                'requirements': [row.get('name') for row in (m.get('pathfinder') or {}).get('requirements') or []],
                                'guided': (m.get('pathfinder') or {}).get('guided') or [],

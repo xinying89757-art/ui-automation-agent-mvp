@@ -22,6 +22,8 @@
 - `scripts/read-cases.py`：读测试用例 Excel（Python 标准库）
 - `trial/`：真实 trial（llms.txt 功能 TC-0008~TC-0011）：`real/SPEC-human.md` 人审版样例、`real/SPEC.md` agent 版、`real/SPEC-evidence.md` 证据附录、`SELFCHECK.md` 验收记录
 
+流水线由 `uia go` 调用本目录脚本。人审版、存疑清单、执行版和代码索引只写到 gitignore 的 `runs/<id>/spec-pathfinder/`，不写回本目录。
+
 ## 状态
 
 已在真实项目代码 + 真实测试环境上完整验证过一轮（live 执行 4 轮：人审版充分性、探索成本度量、G-01 格式缺口修复验证、非空夹具全链路）。

@@ -126,7 +126,10 @@ def schema_errors(spec, source, env, data, pages):
             kind = entry.get('type')
             fail((kind == 'integer' and type(value) is int and value >= 0) or (kind == 'boolean' and type(value) is bool) or
                  (kind == 'string' and isinstance(value, str)) or (kind == 'array' and isinstance(value, list)), 'wrong data-prep type: ' + key)
-    fail(spec['start_page'] in pages['pages'], 'unknown start_page')
+    if isinstance(spec.get('start_page'), str) and re.fullmatch(r'\?[\w.\-\u4e00-\u9fff]+', spec.get('start_page')):
+        unknown.add(spec['start_page'])
+    else:
+        fail(spec.get('start_page') in pages['pages'], 'unknown start_page')
     entry_doc = read_yaml(ROOT / 'knowledge/entries.yaml') or {}
     entry_routes = entry_doc.get('entries', {})
     if spec.get('entry_route'):
@@ -479,6 +482,18 @@ def generate(base, m, cid):
     result = lint(base, m, [cid], check_scripts=False)
     require(not result['errors'] and not result['cases'][cid]['errors'], 'case-spec lint failed', result)
     case = m['cases'][cid]; spec = read_yaml(spec_path(base, case)); _, catalog, pages = catalogs()
+    pathfinder_note = []
+    if case.get('spec_origin') == 'pathfinder':
+        from .pathfinder import generation_brief
+        brief = generation_brief(base, cid)
+        require(brief, 'pathfinder 确认稿缺失，不能从 Excel 重新推导步骤')
+        require([step['id'] for step in spec['steps']] == [step['id'] for step in brief['steps']],
+                'case-spec 步骤必须与 spec-pathfinder 确认稿一致')
+        require([item['excel'] for item in spec['assertions']] == list(brief.get('expected_lines') or []),
+                'case-spec 预期必须与 spec-pathfinder 确认稿一致')
+        pathfinder_note = ['// spec-pathfinder ' + str(brief.get('stage') or 'v1') + ' entry: ' + ' '.join(str(brief.get('entry') or '').split()),
+                           '// spec-pathfinder steps: ' + ' | '.join(step['id'] + ' ' + ' '.join(str(step.get('action') or '').split()) for step in brief['steps']),
+                           '// spec-pathfinder expected: ' + ' | '.join(' '.join(str(line).split()) for line in brief.get('expected_lines') or [])]
     scopes = set(spec['mutation_scope'])
     for key in spec['data_prep']:
         require(catalog[key].get('scope') in scopes, 'data-prep scope must be declared: ' + key)
@@ -492,7 +507,7 @@ def generate(base, m, cid):
     if not (base / 'knowledge-match.json').is_file():
         match_run(base, m)
     knowledge_context = matched_context(base, m, cid)
-    lines = ["// Generated deterministically from case-spec.v1 and shared interaction patterns.",
+    lines = ["// Generated deterministically from case-spec.v1 and shared interaction patterns.", *pathfinder_note,
              '// Knowledge targets: ' + ', '.join(sorted(item['id'] for item in knowledge_context.get('selected', []))),
              "import { test, expect, businessAssertion } from '../../support/fixtures.js';",
              "import { openTarget } from '../../support/case-spec.js';",

@@ -535,7 +535,9 @@ def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_m
         source_rows = candidate.get('sources') or []
         same_source = bool(source_rows and Path(source_rows[0].get('path', '')).resolve() == source and source_rows[0].get('sha256') == file_hash(source))
         same_profile = candidate.get('config_path') and Path(candidate['config_path']).resolve() == path.resolve()
-        if candidate.get('go_key') == key or (same_source and same_profile and candidate.get('interaction_mode') == 'once'):
+        explicit_round = bool((candidate.get('round') or {}).get('number'))
+        if candidate.get('go_key') == key or (same_source and same_profile and
+                (candidate.get('interaction_mode') == 'once' or explicit_round)):
             matches.append(manifest)
     if matches:
         # An explicitly created requirement round is the run go should resume.

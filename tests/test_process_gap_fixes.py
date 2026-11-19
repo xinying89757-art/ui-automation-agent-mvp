@@ -70,6 +70,29 @@ class ProcessGapFixTests(unittest.TestCase):
         with self.assertRaisesRegex(common.UiaError, 'require the classify action'):
             cli.dispatch(args, base / 'run.json', {'cases': {}, 'questions': {}, 'config': {}})
 
+    def test_round1_run_has_go_identity_for_later_resume(self):
+        from uia_core import rounds
+        run_root = self.root / 'runs'
+        profile = self.root / 'prod.local.json'
+        profile.write_text('{}', encoding='utf-8')
+        def init(run_id, _profile):
+            base = run_root / run_id
+            (base / 'state').mkdir(parents=True)
+            common.atomic_write(base / 'run.json', {
+                'run_id': run_id, 'config': {'environment': {'id': 'production'}}, 'cases': {}, 'history': []})
+        def imported(_base, manifest, _excel):
+            manifest['cases'] = {'C1': {'case_id': 'C1'}}
+            manifest['sources'] = [{'path': str(self.root / 'cases.xlsx'), 'sha256': 'abc'}]
+            return {'total': 1}
+        with patch.object(rounds, 'ROOT', self.root), patch('uia_core.workflow.init', side_effect=init), \
+             patch('uia_core.workflow.scaffold'), patch('uia_core.workflow.import_excel', side_effect=imported), \
+             patch('uia_core.profiles.profile_path', return_value=profile), \
+             patch('uia_core.preconditions.sync_preconditions'):
+            rounds.create(None, 1, 'R1', 'prod', str(self.root / 'cases.xlsx'))
+        manifest = common.read_json(run_root / 'R1/run.json')
+        self.assertEqual(manifest['go_profile'], str(profile.resolve()))
+        self.assertTrue(manifest['go_key'])
+
     def test_preflight_reuses_recent_proof_without_login(self):
         base = self.root / 'run'
         (base / 'evidence').mkdir(parents=True)

@@ -21,13 +21,13 @@ python3 scripts/uia.py kb writeback --run GO-id
 
 ### `explore` action
 
-`next` 返回 `explore` 时不提问。它按入口/frame 聚合 `case_ids` 和 `targets_by_case`；在同一入口会话中处理每个 case 的全部目标。使用 `snapshot --run R --node editor --entry PAGE --purpose TARGET --save-as evidence/CASE-TARGET-1.json`，或 `generator --run R --purpose TARGET --entry PAGE --plan PLAN`（编辑器内保存时允许加 `--draft`）。快照证据只保存脱敏后的入口、frame、失败步骤等结果元数据，不保存 DOM。生成器报告文件本身可用作 `--evidence`。每次尝试后必须记录结果及现存证据文件：
+`next` 返回 `explore` 时不提问。它先选择占位目标最少、优先级最高的 case，每次最多 8 个目标；同入口/frame 的其他 case 仅在共享同一目标时加入 `case_ids` 和 `targets_by_case`。推荐执行 action 返回的 `generator_command`：它包含 `--cases` 和 `--targets`，generator 会把 step ID/占位目标清单写入 prompt，并输出逐目标的 `step_targets` 映射。快照可用 `snapshot --run R --node editor --entry PAGE --purpose TARGET --evidence evidence/CASE-TARGET-1.json` 保存脱敏后的入口、frame、失败步骤等结果元数据，不保存 DOM。
 
 ```bash
-python3 scripts/uia.py exploration-log --run R --case CASE --target TARGET --method snapshot --purpose TARGET --result failed --evidence evidence/CASE-TARGET-1.json --note '到达入口后控件仍不可见'
+python3 scripts/uia.py exploration-log --run R --case CASE --target TARGET --method snapshot --purpose TARGET --result failed --evidence evidence/CASE-TARGET-1.json --duration-ms 1234 --note '到达入口后控件仍不可见'
 ```
 
-成功同样用 `--result ok` 记录，再通过 `hints target --name catalog.target --locator 'JSON' --evidence evidence/FILE --for '?placeholder'` 或 `hints promote --report exploration/generator-SLUG.json --for '?placeholder'` 写入实际观察到的控件、绑定该运行的规格占位符并重写 case-spec；多占位符用逗号分隔。只写入但未绑定的占位符仍算未解决，并消耗一次失败上限。每个 case/target 最多两次失败；此后 `next` 返回 `classify`，按返回的 `reason` 与 `evidence` 执行 `uia.py classify --run R --case CASE --result suspended --reason REASON --evidence PATH`。报告必须引用本次实际生成的证据路径。不要自行增加重试或向用户提问。
+成功的 snapshot 同样用 `--result ok` 记录。Generator session 自动记录各 case/target 的结果与耗时；运行 `hints promote --run R --report exploration/generator-SLUG.json` 后，promote 仅接受 `verified: true` 且 `match_count: 1` 的 step locator，通过唯一 catalog 写入路径保存控件、绑定 run 内占位符并重写 case-spec；通常不需要手动 `--for`。手动 `hints target`/`hints promote --for '?placeholder'` 仍可用于精确绑定。一次探索没有绑定目标时，每个任务占位符计一次失败；每个 case/target 最多两次失败，此后 `next` 返回 `classify`，按返回的 `reason` 与 `evidence` 执行 `uia.py classify --run R --case CASE --result suspended --reason REASON --evidence PATH`，再继续其他 case。报告中的 exploration_duration_ms 记录次数、总时长和 p50/p95。不要自行增加重试或向用户提问。
 
 每完成探索、绑定、lint/gen、批次或恢复动作后都重新调用 `next`，继续处理 runnable 用例和其他 AI action，直至所有用例均已结论并生成最终报告；不能以中间摘要结束。
 
@@ -68,6 +68,8 @@ python3 scripts/uia.py profile set --profile my-prod --mutation-allowed --scope 
 旧 `init --config` 接口继续兼容。配置格式仍为 `uia-config.v1`，新增 `environment`、`network`、`site` 及 `auth.provider/credentials_file/identity`。
 
 ```bash
+python3 scripts/uia.py go /path/to/cases.xlsx --profile my-prod
+python3 scripts/uia.py go /path/to/cases.xlsx --profile my-prod --code /path/to/project
 python3 scripts/uia.py init --run-id REQ-001 --config config/uia.local.yaml
 python3 scripts/uia.py import --run REQ-001 --excel /path/to/cases.xlsx
 python3 scripts/uia.py bind-specs --run REQ-001
@@ -75,6 +77,8 @@ python3 scripts/uia.py status --run REQ-001
 python3 scripts/uia.py next --run REQ-001
 python3 scripts/uia.py bind --run REQ-001 --cases TC-01 TC-02 --flows product-create --fixtures products
 ```
+
+`go` 在导入和 bind-specs 之后运行 spec-pathfinder。默认只做无代码 v1，写出 `runs/<id>/spec-pathfinder/<需求>/SPEC-human-v1.md` 与 `DOUBTS-v1.md`。`--code` 额外运行索引器并写出执行版、证据附录和 v1→v2 升级记录；索引 JSON 只留在该 run 目录。存疑并入同一次 `checklist.md`（D 为未知入口，E 为路径/预期/前端控件）。答复写入知识库后不再询问。随后的 `spec gen` 消费确认稿中的入口、步骤和预期。
 
 导入响应会提示先运行 `bind-specs`，索引 `tests/*.spec.ts` 并优先回放已有脚本。页面探索使用
 `python3 scripts/uia.py snapshot --run REQ-001 --node page|content-admin|editor`：登录、打开目标页面、
@@ -201,10 +205,16 @@ HTML 支持筛选；脚本 ZIP 排除依赖、凭证与运行日志。只有源�
 ## 一步提测与一次清单（Phase 3）
 
 ```bash
-.venv/bin/python scripts/uia.py go /path/to/cases.xlsx --profile my-prod --cases TC-0004,TC-0016
+.venv/bin/python scripts/uia.py preflight --profile my-prod
+.venv/bin/python scripts/uia.py go /path/to/cases.xlsx --profile my-prod --cases TC-0004,TC-0016 \
+  --smoke-size 3 --smoke-pass-rate 1 --first-result-budget-minutes 26
 .venv/bin/python scripts/uia.py answer --run GO-xxx "A 除 TC-0002 缺少外其余可用，B 同意，C 无歧义"
 .venv/bin/python scripts/uia.py session-turn --run GO-xxx --id conversation-turn-1 --kind 发起
 ```
+
+`uia preflight` 不带 `--evidence` 时现场检查登录、目标网站是否可选、内容编辑器是否打开。凭据只来自环境变量或 `.auth/`。失败时把整个 run 标为 `environment_blocked` 并停止，不执行用例。`--run` 加 `--evidence` 仍只校验已有浏览器证据。
+
+`uia go` 在执行用例前固定做同一次预检。全量（未传 `--cases`）且用例数大于 `--smoke-size`（默认 3）时，先跑按优先级和模块分散的代表用例；通过率达到 `--smoke-pass-rate`（默认 1）才继续其余用例。首个结果耗时超过 `--first-result-budget-minutes`（默认 26）时中止后续批次。
 
 `--cases` 以逗号分隔；不传则保留全部用例。未知 ID 直接报错。省略 profile 时仅在恰有一份
 私有配置时自动选择。相同工作簿路径、profile、用例范围恢复同一个 run；工作簿内容变化仍做来源对齐。
@@ -226,8 +236,14 @@ C 有多项时须逐项给选项；不会把“默认”当作业务答案。旧
 没有接入会话轮次记录的调用者，无法从终端自动推断真实聊天轮次；指标只统计已记录事件。
 
 报告的 Markdown/HTML/Excel 首先展示“结论、需要你处理、流程指标”，可见状态使用中文。
-JSON 保留兼容的机器状态码，并附同样中文开头。metrics.json 记录清单问题数、回答数、会话轮次、
-中途提问和计划外介入。review.json 包含复现、原始期望、实际失败、证据和受限脱敏截图。
+JSON 保留兼容的机器状态码，并附同样中文开头。`results.json` 的 `metrics` 与 `flow_metrics`，以及
+`metrics.json`，都包含：`time_to_first_result_seconds`、`pass_rate`、`failure_class_counts`、
+`failure_class_shares`（environment / automation / product / suspended，在已分类失败中的占比）、
+`human_interventions_per_case`、`kb_hit_rate`（检索到且被规格或脚本实际引用的条目占比）、
+`re_explored_known_pages`、`knowledge_injected_tokens` 的 p50/p95，以及 `rescued_by_midscene`
+（计数字段，由并行改动写入 run；缺省为 0）。逐条结果带 `failure_class`。
+`SITE_NOT_ACCESSIBLE`、未找到目标网站、登录失败和站点加载超时归入 `environment`，不再记为自动化失败。
+review.json 包含复现、原始期望、实际失败、证据和受限脱敏截图。
 只有公共控件文字白名单保留的弹窗截图可保留；任意输入、自由文字及媒体均遮罩，未采集时明确标注，
 不替代成原始全页截图。截图不进入 scripts.zip。
 

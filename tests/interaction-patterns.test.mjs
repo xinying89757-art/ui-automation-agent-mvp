@@ -38,11 +38,35 @@ test('scrolls and collapses an expanded covering panel after an intercepted clic
 test('uses typeahead and Enter after a menu option visibility timeout without focusing the option', async () => {
   const keys = [];
   let focused = false;
+  let clicks=0;
   const target = { waitFor: async () => { throw new Error('Timeout 5000ms exceeded waiting for locator to be visible'); },
-    click: async () => {}, textContent: async () => 'Markdown', getAttribute: async () => null,
+    click: async () => { clicks++; throw new Error('Timeout 5000ms exceeded waiting for click to become actionable'); }, textContent: async () => 'Markdown', getAttribute: async () => null,
     focus: async () => { focused = true; } };
   const page = { keyboard: { type: async value => keys.push(value), press: async value => keys.push(value) } };
   await clickWithPatterns(page, () => target, ['MENU_KEYBOARD']);
   assert.deepEqual(keys, ['Markdown', 'Enter']);
+  assert.equal(clicks,1);
   assert.equal(focused, false);
+});
+
+test('tries a scrolled pointer click and collapse before MENU_KEYBOARD fallback', async () => {
+  const order=[];
+  let attempts=0;
+  const target=()=>({
+    waitFor:async()=>{},
+    scrollIntoViewIfNeeded:async()=>order.push('scroll'),
+    click:async()=>{order.push('click');attempts++;throw new Error('intercepts pointer events');},
+    getAttribute:async()=>null,
+    textContent:async()=> 'Markdown'
+  });
+  const collapse={count:async()=>1,click:async()=>order.push('collapse')};
+  const covering={last(){return this;},count:async()=>1,locator(selector){
+    return selector==='..'?this:{first:()=>collapse};
+  }};
+  const page={locator:()=>covering,keyboard:{
+    type:async value=>order.push('type:'+value),press:async value=>order.push('key:'+value)
+  }};
+  await clickWithPatterns(page,target,['MENU_KEYBOARD','OCCLUDED_SCROLL_OR_COLLAPSE']);
+  assert.equal(attempts,2);
+  assert.deepEqual(order,['scroll','click','collapse','scroll','click','type:Markdown','key:Enter']);
 });

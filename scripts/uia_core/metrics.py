@@ -81,6 +81,52 @@ def leak_scan(base, cfg):
     return hits
 
 
+def knowledge_hit_rate(base, m):
+    """Share of retrieved knowledge entries that the case spec or script actually references."""
+    path = Path(base) / (m.get("knowledge_match") or {}).get("file", "knowledge-match.json")
+    empty = {"retrieved": 0, "used": 0, "rate": None}
+    if not path.is_file():
+        return empty
+    try:
+        import json
+        matched = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return empty
+    retrieved = used = 0
+    for cid, selected in (matched.get("matched") or {}).items():
+        if not isinstance(selected, dict):
+            continue
+        case = (m.get("cases") or {}).get(cid) or {}
+        blobs = []
+        spec_rel = case.get("case_spec")
+        if spec_rel and (Path(base) / spec_rel).is_file():
+            try:
+                blobs.append((Path(base) / spec_rel).read_text(encoding="utf-8"))
+            except OSError:
+                pass
+        script = (case.get("registration") or {}).get("script")
+        if script and (Path(base) / script).is_file():
+            try:
+                body = (Path(base) / script).read_text(encoding="utf-8")
+            except OSError:
+                body = ""
+            blobs.append(re.sub(r"^// Knowledge targets:.*$", "", body, flags=re.M))
+        explicit = {item for item in (case.get("knowledge_used") or []) if isinstance(item, str)}
+        blob = "\n".join(blobs)
+        for kid, item in selected.items():
+            retrieved += 1
+            if kid in explicit:
+                used += 1
+                continue
+            needles = [kid]
+            if isinstance(item, dict):
+                needles.extend(value for key in ("id", "name", "page", "target", "label")
+                               if isinstance((value := item.get(key)), str) and value)
+            if any(needle and needle in blob for needle in needles):
+                used += 1
+    return {"retrieved": retrieved, "used": used, "rate": (used / retrieved) if retrieved else None}
+
+
 def exploration_counts(m):
     known_count = 0
     missing_count = 0
@@ -95,8 +141,18 @@ def exploration_counts(m):
             missing_count += bool(state['exploration_for_missing_controls'])
         else:
             known_count += bool(item.get('re_explored'))
+    durations = [attempt['duration_ms'] for case in m.get('cases', {}).values()
+                 for attempt in case.get('explore_attempts', [])
+                 if type(attempt.get('duration_ms')) is int and attempt['duration_ms'] >= 0]
+    if not durations:
+        durations = [item['duration_ms'] for item in m.get('exploration', [])
+                     if type(item.get('duration_ms')) is int and item['duration_ms'] >= 0]
+    ordered = sorted(durations)
+    percentile = lambda p: ordered[max(0, min(len(ordered) - 1, int((len(ordered) - 1) * p + .5)))] if ordered else None
     return {'re_explored_known_pages': known_count,
-            'exploration_for_missing_controls': missing_count}
+            'exploration_for_missing_controls': missing_count,
+            'exploration_duration_ms': {'count': len(ordered), 'total': sum(ordered),
+                                        'p50': percentile(.50), 'p95': percentile(.95)}}
 
 
 def calculate(base, m, final_report_at=None):
@@ -131,6 +187,17 @@ def calculate(base, m, final_report_at=None):
         if not values: return None
         ordered = sorted(values); index = max(0, min(len(ordered)-1, int((len(ordered)-1)*p + .5)))
         return ordered[index]
+    from .failures import class_shares
+    classes = class_shares(cases)
+    executed_cases = [case for case in cases if any(attempt.get("executed") for attempt in case.get("attempts", []))]
+    passed_cases = [case for case in executed_cases if case.get("result") == "passed"]
+    interventions = (sum(x.get("kind") == "checklist_answer" for x in m.get("interaction_events", []))
+                     + sum(x.get("kind") == "mid_run_question" for x in m.get("interaction_events", []))
+                     + sum(x.get("kind") == "session_turn" and x.get("category") == "计划外" for x in m.get("interaction_events", [])))
+    hit = knowledge_hit_rate(base, m)
+    rescued = m.get("rescued_by_midscene", 0)
+    rescued_count = rescued if type(rescued) is int else 0
+    first_start = imported_at or m.get("created_at")
     first_lints = [c["spec_first_lint"] for c in cases if c.get("spec_first_lint") and c["spec_first_lint"].get("automatable") != "manual"]
     first_passed = sum(bool(row.get("passed")) for row in first_lints)
     return {
@@ -142,14 +209,23 @@ def calculate(base, m, final_report_at=None):
         "checklist_questions": m.get('checklist_question_count', 0),
         "entry_question_count": m.get('entry_question_count', 0),
         "mid_run_questions": sum(x.get('kind') == 'mid_run_question' for x in m.get('interaction_events', [])),
+        "time_to_first_result_seconds": elapsed(first_start, first_at) if first_start and first_at else None,
         "import_to_first_result_seconds": elapsed(imported_at, first_at) if imported_at and first_at else None,
+        "pass_rate": (len(passed_cases) / len(executed_cases)) if executed_cases else None,
         "import_to_final_report_seconds": elapsed(imported_at, review_at) if imported_at and review_at else None,
         "script_coverage": {"scripted": len(scripted), "executed": len(executed), "eligible": len(eligible),
                             "ratio": len(executed) / len(eligible) if eligible else 0.0},
         "new_scripts_generated": len(new_scripts), "new_script_paths": new_scripts,
         "re_explored_known_pages": explored_known,
         "exploration_for_missing_controls": missing_control_explorations,
+        "exploration_duration_ms": exploration_metric['exploration_duration_ms'],
+        "failure_class_counts": classes["counts"],
+        "failure_class_shares": classes["shares"],
+        "human_interventions": interventions,
+        "human_interventions_per_case": (interventions / len(cases)) if cases else None,
+        "kb_hit_rate": hit,
         "knowledge_injected_tokens": {"count": len(injected), "p50": percentile(injected, .50), "p95": percentile(injected, .95)},
+        "rescued_by_midscene": rescued_count,
         "scope_violations": int(m.get("scope_violations", 0)),
         "leak_hits": len(m.get("leak_hits", [])),
         "unreviewed_assertion_changes": max(int(m.get("unreviewed_assertion_changes", 0)), assertion_changes),

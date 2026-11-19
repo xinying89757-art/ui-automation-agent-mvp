@@ -31,16 +31,26 @@ class ReleaseAndRefineTests(unittest.TestCase):
         entries.add(self.m, '新版内容编辑器=内容管理 → 产品 → 编辑')
         workflow.question(self.m, 'environment', 'faq-editor-entry', '入口没到', ['C1', 'C2'], page='新版内容编辑器')
 
-    def test_deferred_item_parks_until_entry_confirmed_then_releases(self):
+    def test_deferred_agent_review_item_does_not_park_case(self):
         q = self.m['questions']['environment:faq-editor-entry'] if 'environment:faq-editor-entry' in self.m['questions'] \
             else next(iter(self.m['questions'].values()))
         self.assertEqual((q['status'], q['page']), ('deferred', '新版内容编辑器'))
         self.assertEqual(workflow.release_resolved(self.m), [])
-        self.assertEqual(self.m['cases']['C1']['work_status'], 'waiting_human')
+        self.assertEqual(self.m['cases']['C1']['work_status'], 'pending')
         entries.confirm(self.m, '新版内容编辑器', ['click:content-admin', 'click:text=产品'])
         self.assertEqual(workflow.release_resolved(self.m), [q['id']])
         self.assertEqual(q['status'], 'closed')
         self.assertEqual(self.m['cases']['C1']['work_status'], 'pending')
+
+    def test_deferred_product_environment_process_reviews_do_not_park_active_cases(self):
+        for kind in ('product', 'environment', 'process'):
+            m={'interaction_mode':'once','cases':{'C1':{'case_id':'C1','work_status':'runnable',
+                'stage':'execution','result':None}},'questions':{},'history':[]}
+            q=workflow.question(m,kind,'defect-'+kind,'Agent review item', ['C1'],key='review-'+kind)
+            self.assertEqual(q['status'],'deferred')
+            self.assertEqual(m['cases']['C1']['work_status'],'runnable')
+            workflow.park_cases_with_open_questions(m)
+            self.assertEqual(m['cases']['C1']['work_status'],'runnable')
 
     def test_next_batches_missing_targets_for_cases_sharing_entry_and_frame(self):
         entries.confirm(self.m, '新版内容编辑器', ['click:content-admin', 'click:text=产品'])
@@ -48,9 +58,40 @@ class ReleaseAndRefineTests(unittest.TestCase):
         with patch.object(workflow, 'refresh'), patch('uia_core.preconditions.triage', return_value=[]):
             task = workflow.next_task(self.base, self.m)
         self.assertEqual(task['action'], 'explore')
-        self.assertEqual(task['case_ids'], ['C1', 'C2'])
-        self.assertEqual(task['targets_by_case'], {'C1': ['?faq_state_C1'], 'C2': ['?faq_state_C2']})
+        self.assertEqual(task['case_ids'], ['C1'])
+        self.assertEqual(task['targets_by_case'], {'C1': ['?faq_state_C1']})
         self.assertEqual(task['entry'], 'content-admin')
+
+    def test_case_first_exploration_limits_targets_and_only_includes_shared_cases(self):
+        # Thirty cases with a close-to-runnable case, a shared target, and many unrelated gaps.
+        entries.confirm(self.m, '新版内容编辑器', ['click:content-admin', 'click:text=产品'])
+        workflow.release_resolved(self.m)
+        shared='?faq_state_C1'
+        common.atomic_write(self.base/'C2/case-spec.yaml', {'start_page':'content-admin',
+            'steps':[{'id':'S1','target':'?faq_state_C2'},{'id':'S2','target':'?faq_state_C2_extra'}]}, as_yaml=True)
+        for index in range(3,31):
+            cid=f'C{index}'
+            folder=self.base/cid; folder.mkdir(parents=True,exist_ok=True)
+            targets=[shared] if index==3 else []
+            targets += [f'?case_{index}_target_{number}' for number in range(10)]
+            common.atomic_write(folder/'case-spec.yaml', {'start_page':'content-admin',
+                'steps':[{'id':f'S{number}','target':target} for number,target in enumerate(targets)]}, as_yaml=True)
+            self.m['cases'][cid]={'case_id':cid,'case_spec':cid+'/case-spec.yaml','priority':'P1',
+                'work_status':'pending','stage':'discovery','result':None,'attempts':[]}
+        with patch.object(workflow,'refresh'),patch('uia_core.preconditions.triage',return_value=[]):
+            task=workflow.next_task(self.base,self.m)
+        self.assertEqual(task['action'],'explore')
+        self.assertEqual(task['case_ids'],['C1','C3'])
+        self.assertLessEqual(len(task['targets']),8)
+        self.assertEqual(task['targets_by_case'],{'C1':[shared],'C3':[shared]})
+        self.assertIn('--cases C1 C3',task['generator_command'])
+        self.assertIn("--targets '?faq_state_C1'",task['generator_command'])
+        self.assertEqual(task['promote_command'],
+            'python3 scripts/uia.py hints promote --run R --report exploration/generator-case-C1-controls.json')
+        self.assertNotIn('--for',task['promote_command'])
+        self.assertIn(task['generator_command'],task['instruction'])
+        self.assertIn(task['promote_command'],task['instruction'])
+        self.assertIn('step_targets',task['instruction'])
 
     def test_ready_runnable_cases_precede_batched_exploration(self):
         ready = {'case_id':'C3','priority':'P1','work_status':'runnable','stage':'finished','result':None,
@@ -86,7 +127,7 @@ class ReleaseAndRefineTests(unittest.TestCase):
     def test_open_questions_do_not_reopen_concluded_cases(self):
         m={'cases':{'C1':{'case_id':'C1','result':'automation_failure','stage':'finished','work_status':'finished'},
                     'C2':{'case_id':'C2','result':None,'stage':'spec','work_status':'pending'}},
-           'questions':{'Q':{'status':'open','case_ids':['C1','C2']}}}
+           'questions':{'Q':{'status':'open','kind':'preconditions','case_ids':['C1','C2']}}}
         workflow.park_cases_with_open_questions(m)
         self.assertEqual(m['cases']['C1']['work_status'],'finished')
         self.assertEqual(m['cases']['C2']['work_status'],'waiting_human')
@@ -129,13 +170,16 @@ class ReleaseAndRefineTests(unittest.TestCase):
             rel=f'exploration/{cid}-unbound-{number}.json'; path=self.base/rel
             path.parent.mkdir(parents=True,exist_ok=True); path.write_text('{"result":"ok"}')
             exploration.log(self.m,'snapshot',target,'ok','explored but did not bind',base=self.base,
-                case_id=cid,target=target,evidence=rel)
+                case_id=cid,target=target,evidence=rel,duration_ms=250)
             with patch.object(workflow,'refresh'),patch('uia_core.preconditions.triage',return_value=[]):
                 task=workflow.next_task(self.base,self.m)
             if number==1: self.assertEqual(task['action'],'explore')
             else:
                 self.assertEqual(task['action'],'classify')
                 self.assertEqual(task['reason'],'缺控件：faq_state_C1')
+        from uia_core.metrics import exploration_counts
+        self.assertEqual(exploration_counts(self.m)['exploration_duration_ms'],
+                         {'count':2,'total':500,'p50':250,'p95':250})
 
     def test_snapshot_evidence_stores_only_bounded_outcome_metadata(self):
         args = SimpleNamespace(node='content-admin', entry='content-admin', purpose='faq.cancel', goto=None, frame='#backstage-innerpage')

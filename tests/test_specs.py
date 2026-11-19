@@ -72,6 +72,53 @@ class CaseSpecTests(unittest.TestCase):
             body = (base / generated['script']).read_text()
             self.assertEqual(body.count('page = await openTarget(page, "article-editor-markdown-import")'), 1)
 
+    def test_entry_route_click_steps_replay_route_instead_of_raw_locators(self):
+        self.spec['entry_route'] = 'article-editor-markdown-import'
+        self.spec['steps'] = [{'id':'S1','verb':'click','target':'content-admin-nav'},
+                              {'id':'S2','verb':'click','target':'articles-nav'},
+                              {'id':'S3','verb':'click','target':'edit-nav'},
+                              {'id':'S4','verb':'click','target':'import-nav'},
+                              {'id':'S5','verb':'click','target':'markdown-nav'}]
+        self.spec['assertions'] = [{'id':'A1','after':'S5','excel':self.source['expected'][0],
+                                    'checks':[{'target':'txt.dialog','op':'visible'}]}]
+        pages=copy.deepcopy(self.pages)
+        pages['targets']['content-admin-nav']={'role':'link','name':'内容管理'}
+        pages['targets']['articles-nav']={'role':'link','name':'文章'}
+        pages['targets']['edit-nav']={'role':'link','name':'编辑'}
+        pages['targets']['import-nav']={'role':'link','name':'导入'}
+        pages['targets']['markdown-nav']={'role':'link','name':'Markdown'}
+        with tempfile.TemporaryDirectory() as temp:
+            base=Path(temp); folder=base/'cases/T1'; folder.mkdir(parents=True)
+            shutil.copytree(Path(__file__).resolve().parents[1]/'assets/playwright-runner',base/'runner',
+                            ignore=shutil.ignore_patterns('node_modules','results'))
+            (base/'runner/tests/generated').mkdir(parents=True,exist_ok=True)
+            common.atomic_write(folder/'source.json',self.source)
+            common.atomic_write(folder/'case-spec.yaml',self.spec,as_yaml=True)
+            common.atomic_write(base/'knowledge-match.json',{'matched':{'T1':{}}})
+            manifest={'cases':{'T1':{'case_id':'T1','source':'cases/T1/source.json',
+                'case_spec':'cases/T1/case-spec.yaml','source_hash':'hash','intent':'cases/T1/source.json',
+                'reuse_plan':'cases/T1/source.json','fixture_ids':[],'flow_ids':[],'attempts':[]}},
+                'config':{'mutation':{'allowed':False,'scope':[]},'execution':{'workers':1,'timeout_ms':60000}},
+                'questions':{},'history':[]}
+            with patch.object(specs,'catalogs',return_value=(self.env,self.data,pages)):
+                generated=specs.generate(base,manifest,'T1')
+                body=(base/generated['script']).read_text()
+                self.assertIn('page = await openTarget(page, "article-editor-markdown-import")',body)
+                self.assertNotRegex(body,r'getBy(?:Text|Role)\([^\n]*(?:内容管理|文章|编辑|导入|Markdown)[^\n]*\.click\(')
+                self.assertIn('Navigation replayed by openTarget',body)
+                broken=body.replace('// Navigation replayed by openTarget("article-editor-markdown-import").',
+                                     'await page.getByText("文章", { exact: true }).click();')
+                self.assertTrue(any('entry route step must use navigation replay' in error
+                                    for error in specs.entry_route_locator_errors(broken,self.spec,pages)))
+
+    def test_equivalent_entry_alias_prefers_confirmed_descriptive_route_id(self):
+        route={'confirmed':True,'steps':['click:text=文章'],'frame':'iframe[name="article"]'}
+        entries={'markdown弹窗':dict(route,label='markdown弹窗'),
+                 'article-editor-markdown-import':dict(route,label='article-editor-markdown-import',
+                     aliases=['markdown弹窗'])}
+        self.assertEqual(specs.canonical_entry_route('markdown弹窗',entries),
+                         'article-editor-markdown-import')
+
     def test_exploration_write_binding_rewrites_placeholder_and_generates_without_todo(self):
         repo = Path(__file__).resolve().parents[1]
         with tempfile.TemporaryDirectory() as temp:
@@ -122,6 +169,10 @@ class CaseSpecTests(unittest.TestCase):
         self.assertIn('MENU_KEYBOARD', specs.interaction_patterns_for_target({}, 'click', 'article.slash-command-menu'))
         self.assertIn('MENU_KEYBOARD', specs.interaction_patterns_for_target({'selector':'[role="listbox"]'}, 'click'))
         self.assertNotIn('MENU_KEYBOARD', specs.interaction_patterns_for_target({'role':'option'}, 'fill'))
+        ordered=specs.interaction_patterns_for_target(
+            {'role':'option','patterns':['MENU_KEYBOARD','OCCLUDED_SCROLL_OR_COLLAPSE','RERENDER_RELOCATE']},'click')
+        self.assertEqual(ordered[-1],'MENU_KEYBOARD')
+        self.assertLess(ordered.index('OCCLUDED_SCROLL_OR_COLLAPSE'),ordered.index('MENU_KEYBOARD'))
 
     def test_extensible_env_and_data_vocabulary(self):
         self.spec['required_env'] = ['new_permission']

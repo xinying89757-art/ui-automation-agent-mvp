@@ -4,8 +4,9 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+from unittest.mock import patch
 
-from uia_core import common, entries
+from uia_core import common, entries, workflow
 
 REPORT = {'purpose': 'faq-editor.entry', 'entry': '新版内容编辑器', 'reached': True, 'reached_entry': True,
           'route': {'reached': True, 'reached_entry': True,
@@ -68,6 +69,19 @@ class PromoteTests(unittest.TestCase):
         result = entries.promote(self.base, self.m, 'exploration/generator-t.json')
         self.assertEqual(result['route_steps'][-1], 'type:faq-editor.entry.route.2=/')
 
+    def test_equivalent_confirmed_route_is_reused_with_alias_and_frame(self):
+        steps=['click:text=内容管理','click:text=文章','click:text=编辑']
+        entries.confirm(self.m,'新版内容编辑器',steps,'iframe[name="article"]')
+        entries.add(self.m,'Markdown 弹窗=内容管理 → 文章 → 编辑')
+        entries.confirm(self.m,'Markdown 弹窗',steps,'iframe[name="article"]')
+        catalog=common.read_yaml(self.tmp/'assets/playwright-runner/knowledge/entries.yaml')['entries']
+        confirmed=[(name,row) for name,row in catalog.items() if row.get('confirmed')]
+        self.assertEqual(len(confirmed),1)
+        name,row=confirmed[0]
+        self.assertIn('Markdown 弹窗',row['aliases'])
+        self.assertEqual(row['steps'],steps)
+        self.assertEqual(row['frame'],'iframe[name="article"]')
+
     def test_unreached_report_is_refused(self):
         bad = dict(REPORT, route={'reached': False, 'reached_entry': False})
         (self.base / 'exploration/generator-x.json').write_text(json.dumps(bad), encoding='utf-8')
@@ -87,6 +101,53 @@ class PromoteTests(unittest.TestCase):
         (self.base / 'exploration/generator-route-ambiguous.json').write_text(json.dumps(report, ensure_ascii=False), encoding='utf-8')
         with self.assertRaisesRegex(common.UiaError, 'UIA_LOCATOR_AMBIGUOUS.*12'):
             entries.promote(self.base, self.m, 'exploration/generator-route-ambiguous.json')
+
+    def test_promote_automatically_binds_verified_spec_steps_and_schedules_case(self):
+        case_dir=self.base/'cases/C1'; case_dir.mkdir(parents=True)
+        runner_dir=self.base/'runner'; runner_dir.mkdir()
+        (runner_dir/'C1.spec.ts').write_text("test('generated case');\n",encoding='utf-8')
+        (case_dir/'case-spec.yaml').write_text(
+            'start_page: content-admin\nsteps:\n  - id: S1\n    verb: click\n    target: ?markdown.dialog.confirm\n',encoding='utf-8')
+        self.m.update(run_id='R',sources=[],questions={},checklist_issued=True,
+            preflight={'status':'passed'},config={'execution':{'batch_size':10}},cases={'C1':{
+                'case_id':'C1','case_spec':'cases/C1/case-spec.yaml','priority':'P1','work_status':'runnable',
+                'stage':'finished','result':None,'attempts':[],'registration':{'script':'runner/C1.spec.ts'}}})
+        report=dict(REPORT,route=dict(REPORT['route'],route=['click:text=产品'],targets={},step_targets=[{
+            'case_id':'C1','step_id':'S1','placeholder':'?markdown.dialog.confirm','target':'markdown.dialog.confirm',
+            'locator':{'text':'确认'},'verified':True,'match_count':1},
+            {'case_id':'C1','step_id':'S2','placeholder':'?not-verified','target':'not.verified',
+             'locator':{'text':'猜测'},'verified':False,'match_count':0}]),
+            case_targets=[{'case_id':'C1','targets':['?markdown.dialog.confirm']}])
+        (self.base/'exploration/generator-auto-bind.json').write_text(json.dumps(report,ensure_ascii=False),encoding='utf-8')
+        result=entries.promote(self.base,self.m,'exploration/generator-auto-bind.json')
+        self.assertEqual(result['placeholder_bindings'],{'?markdown.dialog.confirm':'markdown.dialog.confirm'})
+        rewritten=(case_dir/'case-spec.yaml').read_text(encoding='utf-8')
+        self.assertIn('target: markdown.dialog.confirm',rewritten)
+        catalog=common.read_yaml(self.tmp/'assets/playwright-runner/knowledge/page-map.yaml')
+        self.assertEqual(catalog['targets']['markdown.dialog.confirm']['match_count'],1)
+        with patch.object(workflow,'refresh'),patch('uia_core.preconditions.triage',return_value=[]):
+            task=workflow.next_task(self.base,self.m)
+        self.assertEqual(task['action'],'run-batch')
+        self.assertEqual(task['case_ids'],['C1'])
+
+    def test_promote_is_idempotent_after_draft_rewrote_spec(self):
+        case_dir=self.base/'cases/C1'; case_dir.mkdir(parents=True)
+        (case_dir/'case-spec.yaml').write_text(
+            'start_page: content-admin\nsteps:\n  - id: S1\n    verb: click\n    target: markdown.dialog.confirm\n',encoding='utf-8')
+        self.m.update(run_id='R',sources=[],questions={},checklist_issued=True,
+            preflight={'status':'passed'},config={'execution':{'batch_size':10}},cases={'C1':{
+                'case_id':'C1','case_spec':'cases/C1/case-spec.yaml','priority':'P1','work_status':'pending',
+                'stage':'spec','result':None,'attempts':[],'registration':None}})
+        report=dict(REPORT,route=dict(REPORT['route'],route=['click:text=产品'],targets={},step_targets=[{
+            'case_id':'C1','step_id':'S1','placeholder':'?markdown.dialog.confirm','target':'markdown.dialog.confirm',
+            'locator':{'text':'确认'},'verified':True,'match_count':1}]),
+            case_targets=[{'case_id':'C1','targets':['?markdown.dialog.confirm']}])
+        (self.base/'exploration/generator-draft.json').write_text(json.dumps(report,ensure_ascii=False),encoding='utf-8')
+        result=entries.promote(self.base,self.m,'exploration/generator-draft.json')
+        self.assertEqual(result['placeholder_bindings'],{'?markdown.dialog.confirm':'markdown.dialog.confirm'})
+        self.assertEqual(self.m['cases']['C1']['target_bindings'],
+                         {'?markdown.dialog.confirm':'markdown.dialog.confirm'})
+        self.assertIn('target: markdown.dialog.confirm',(case_dir/'case-spec.yaml').read_text(encoding='utf-8'))
 
 
 if __name__ == '__main__':

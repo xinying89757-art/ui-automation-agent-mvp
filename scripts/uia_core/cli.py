@@ -11,9 +11,75 @@ from .common import (RESULTS, UiaError, atomic_write, digest, event, file_hash, 
                      locked_run, now, read_json, redact, require, save, summary)
 
 
+_HINT_VALUES = {"--name", "--locator", "--evidence", "--resource", "--saved-by", "--for", "--report",
+                "--prefix", "--run", "--page", "--step", "--frame"}
+
+
+def _reorder_hints(argv):
+    """Keep a free-text hint immediately after the action.
+
+    Python 3.12 drops an optional positional that follows options when the
+    subcommand already has a required positional.
+    """
+    action, text, rest = None, [], []
+    index = 1
+    while index < len(argv):
+        token = argv[index]
+        if action is None and not token.startswith("-"):
+            action = token
+            index += 1
+            continue
+        flag = token.split("=", 1)[0]
+        if flag in _HINT_VALUES:
+            rest.append(token)
+            if "=" not in token and index + 1 < len(argv) and not argv[index + 1].startswith("-"):
+                rest.append(argv[index + 1])
+                index += 2
+                continue
+            index += 1
+            continue
+        if token.startswith("-"):
+            rest.append(token)
+            index += 1
+            continue
+        text.append(token)
+        index += 1
+    if not action:
+        return list(argv)
+    return ["hints", action, *text, *rest]
+
+
 class JsonParser(argparse.ArgumentParser):
     def error(self, message):
         raise UiaError(message)
+
+    def parse_args(self, args=None, namespace=None):
+        if args is None:
+            args = sys.argv[1:]
+        else:
+            args = list(args)
+        if args and args[0] == "hints":
+            args = _reorder_hints(args)
+        # Python 3.12 drops a trailing positional that follows an option (nargs='?').
+        namespace, extras = super().parse_known_args(args, namespace)
+        if not extras:
+            return namespace
+        if any(str(item).startswith('-') for item in extras):
+            self.error('unrecognized arguments: ' + ' '.join(extras))
+        subparsers = next(action for action in self._actions if isinstance(action, argparse._SubParsersAction))
+        sub = subparsers.choices.get(getattr(namespace, 'command', None))
+        target = None
+        if sub is not None:
+            for action in sub._actions:
+                if action.option_strings or action.nargs not in ('?', '*'):
+                    continue
+                if getattr(namespace, action.dest, None) in (None, []):
+                    target = action
+                    break
+        if target is None or (target.nargs == '?' and len(extras) != 1):
+            self.error('unrecognized arguments: ' + ' '.join(extras))
+        setattr(namespace, target.dest, extras[0] if target.nargs == '?' else extras)
+        return namespace
 
 
 def parser():
@@ -33,6 +99,7 @@ def parser():
     go.add_argument("--profile")
     go.add_argument("--cases", help="Comma-separated case IDs")
     go.add_argument("--hints", help="Optional page=rough path lines or a UTF-8 file")
+    go.add_argument("--code", help="Optional project source root. Runs spec-pathfinder v2 and writes the agent spec under the run directory")
     hints = commands.add_parser("hints")
     hints.add_argument("action", choices=["add", "confirm", "promote", "target"])
     hints.add_argument("--name")
@@ -52,6 +119,9 @@ def parser():
     go.add_argument("--arm-watch", help="Comma-separated case IDs whose max-latency public assertion gets a pre-armed remote watch before the save")
     go.add_argument("--lead-minutes", type=int, default=20)
     go.add_argument("--watch-minutes", type=int, default=10)
+    go.add_argument("--smoke-size", type=int, default=3, help="Representative cases in the full-batch smoke gate")
+    go.add_argument("--smoke-pass-rate", type=float, default=1.0, help="Minimum smoke pass rate before the remaining cases run")
+    go.add_argument("--first-result-budget-minutes", type=float, default=26, help="Abort the rest of the run when the first result exceeds this many minutes")
     knowledge = commands.add_parser("knowledge")
     knowledge.add_argument("action", choices=["merge", "writeback", "validate", "prune"])
     knowledge.add_argument("--from", dest="source_dir")
@@ -125,7 +195,12 @@ def parser():
     source = init.add_mutually_exclusive_group(required=True)
     source.add_argument("--config")
     source.add_argument("--profile")
-    for name in ("import", "status", "next", "bind", "advance", "match", "scaffold", "register", "preflight",
+    preflight_cmd = commands.add_parser("preflight")
+    preflight_cmd.add_argument("--run")
+    preflight_cmd.add_argument("--profile")
+    preflight_cmd.add_argument("--config")
+    preflight_cmd.add_argument("--evidence", help="Existing browser evidence. Omit to run login, site selection, and the editor")
+    for name in ("import", "status", "next", "bind", "advance", "match", "scaffold", "register",
                  "question", "answer", "explore", "run-batch", "record-run", "recover", "repair", "classify",
                  "feedback", "resolve-fixture", "replay-demo", "report", "validate",
                  "bind-specs", "absorb-locators", "heal-review", "preconditions", "wait", "agent-env", "exploration-log", "generator"):
@@ -141,9 +216,12 @@ def parser():
         if name == "generator":
             cmd.add_argument("--purpose", required=True)
             cmd.add_argument("--plan", required=True)
+            cmd.add_argument("--cases", nargs="+", help="case IDs whose placeholder targets must be mapped in the report")
+            cmd.add_argument("--targets", nargs="*", help="spec placeholders to explore in this bounded task")
             cmd.add_argument("--minutes", type=int, default=20)
             cmd.add_argument("--model")
             cmd.add_argument("--entry")
+            cmd.add_argument("--frame")
             cmd.add_argument("--draft", action="store_true", help="allow in-editor/component saves and empty submits (never outer save/publish)")
         if name == "exploration-log":
             cmd.add_argument("--method", choices=["snapshot", "generator", "midscene"], required=True)
@@ -153,6 +231,7 @@ def parser():
             cmd.add_argument("--case", dest="explore_case")
             cmd.add_argument("--target")
             cmd.add_argument("--evidence")
+            cmd.add_argument("--duration-ms", type=int)
         if name == "import":
             cmd.add_argument("--excel", required=True)
             cmd.add_argument("--mapping")
@@ -167,7 +246,7 @@ def parser():
             cmd.add_argument("--isolated", action="store_true")
         if name in {"register", "feedback"}:
             cmd.add_argument("--file", required=True)
-        if name in {"preflight", "repair", "resolve-fixture", "replay-demo"}:
+        if name in {"repair", "resolve-fixture", "replay-demo"}:
             cmd.add_argument("--evidence", required=True)
         if name == "question":
             cmd.add_argument("--kind", choices=["login", "environment", "product", "demo", "record_request", "column_mapping", "preconditions"], required=True)
@@ -392,11 +471,14 @@ def dispatch(args, path, m):
         from .knowledge import match_run
         match_run(base, m)
         from .exploration import run_generator
-        return run_generator(base, m, args.purpose, args.plan, args.minutes, args.model, entry=args.entry, draft=args.draft)
+        return run_generator(base, m, args.purpose, args.plan, args.minutes, args.model,
+                             entry=args.entry, draft=args.draft, case_ids=args.cases, targets=args.targets,
+                             frame=args.frame)
     if cmd == "exploration-log":
         from .exploration import log
         return log(m, args.method, args.purpose, args.result, args.note, base=base,
-                   case_id=args.explore_case, target=args.target, evidence=args.evidence)
+                   case_id=args.explore_case, target=args.target, evidence=args.evidence,
+                   duration_ms=args.duration_ms)
     if cmd == "preconditions":
         from .preconditions import sync_preconditions, classify_precondition
         if args.action == "classify":
@@ -424,6 +506,34 @@ def dispatch(args, path, m):
         errors.extend(checks.skill_errors())
         return {"valid": not errors, "errors": errors, "warnings": warnings}
     raise UiaError("Unknown command")
+
+
+def _preflight_command(args):
+    """Live login/site/editor preflight, or the existing evidence check when --evidence is set."""
+    from .common import config
+    from .environment_gate import live_preflight, preflight_run
+    if args.evidence:
+        require(args.run, "Evidence preflight requires --run")
+        with locked_run(args.run) as (path, m):
+            workflow.refresh(path.parent, m)
+            result = runtime.preflight(path.parent, m, args.evidence)
+            save(path, m)
+            return result
+    if args.run:
+        import time
+        started = time.perf_counter()
+        with locked_run(args.run) as (path, m):
+            workflow.refresh(path.parent, m)
+            workflow.scaffold(path.parent)
+            result = preflight_run(path.parent, m)
+            result["elapsed_seconds"] = round(time.perf_counter() - started, 3)
+            if result.get("status") == "blocked":
+                reports.make_report(path.parent, m)
+            save(path, m)
+            return {key: value for key, value in result.items() if key != "evidence"}
+    require(args.profile or getattr(args, "config", None), "preflight requires --profile, --config, or --run")
+    cfg = config(profiles.profile_path(args.profile) if args.profile else args.config)
+    return live_preflight(cfg)
 
 
 def execute(args):
@@ -477,7 +587,9 @@ def execute(args):
         require(args.run, 'knowledge writeback requires --run RUN_ID')
     if args.command == "go":
         from .experience import go
-        return go(args.excel, args.profile, args.cases, arm_watch=args.arm_watch, lead_minutes=args.lead_minutes, watch_minutes=args.watch_minutes, hints=args.hints)
+        return go(args.excel, args.profile, args.cases, arm_watch=args.arm_watch, lead_minutes=args.lead_minutes,
+                  watch_minutes=args.watch_minutes, hints=args.hints, smoke_size=args.smoke_size,
+                  smoke_pass_rate=args.smoke_pass_rate, first_result_budget_minutes=args.first_result_budget_minutes, code_root=args.code)
     if args.command == "env":
         return {"environments": profiles.presets()}
     if args.command == "setup":
@@ -505,6 +617,8 @@ def execute(args):
         return result
     if args.command == "wait":
         return runtime.wait_for_batch(args.run)
+    if args.command == "preflight":
+        return _preflight_command(args)
     if args.command == "login":
         from .common import config
         if not args.run:

@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import patch
 
 import tests.test_entries as entry_tests
-from uia_core import cli, common, entries, experience, exploration, profiles
+from uia_core import cli, common, entries, experience, exploration, profiles, workflow
 
 
 class Fix3Tests(unittest.TestCase):
@@ -121,6 +121,30 @@ class Fix3Tests(unittest.TestCase):
         self.m['cases']['C1']['unknown_nodes'] = ['insert.widget']
         with self.assertRaisesRegex(common.UiaError, 'generator'):
             exploration.demo_gate(self.m, 'insert.widget', ['C1'], 'drag', page='内容编辑器')
+
+    def test_generator_attempt_without_placeholder_bindings_is_recorded_per_target_with_duration(self):
+        entries.add(self.m,'内容编辑器=内容管理 → 产品 → 编辑')
+        spec=common.read_yaml(self.base/'C1/case-spec.yaml')
+        spec['steps']=[{'id':'S1','verb':'click','target':'?markdown.dialog.confirm'}]
+        common.atomic_write(self.base/'C1/case-spec.yaml',spec,as_yaml=True)
+        final={'reached':True,'reached_entry':True,'route':['click:text=产品'],'step_targets':[]}
+        output=json.dumps({'type':'item.completed','item':{'type':'agent_message','text':'```json\n'+json.dumps(final)+'\n```'}})
+        seen={}
+        def runner(command,timeout):
+            seen['prompt']=command[-1]
+            return argparse.Namespace(stdout=output,returncode=0)
+        for _ in range(2):
+            with patch.object(profiles,'agent_env',return_value={'cwd':'/runner','env':{}}), \
+                 patch.object(exploration,'codex_binary',return_value='/bin/codex'):
+                exploration.run_generator(self.base,self.m,'case-C1-controls','map placeholder',runner=runner,
+                    entry='内容编辑器',case_ids=['C1'],targets=['?markdown.dialog.confirm'])
+        state=workflow.target_exploration_state(self.m['cases']['C1'],'?markdown.dialog.confirm')
+        self.assertEqual(len(state['failed']),2)
+        self.assertTrue(all(type(row['duration_ms']) is int for row in state['failed']))
+        self.assertEqual(state['failed'][-1]['evidence'],'exploration/generator-case-C1-controls.json')
+        self.assertIn('"step_id": "S1"',seen['prompt'])
+        self.assertIn('"placeholder": "?markdown.dialog.confirm"',seen['prompt'])
+        self.assertIn('match_count',seen['prompt'])
 
 
 class BlanketBusinessAnswerTests(unittest.TestCase):

@@ -82,11 +82,14 @@ test('openTarget replays a confirmed knowledge entry route', async () => {
   const labels = ['内容管理', '文章', '编辑', '导入', 'Markdown'];
   const nodes = labels.map((text, index) => ({ text, role: 'link', visible: true,
     routeInfo: { navigation: true, destination: '/route/' + index, enabled: true } }));
-  const page = document(nodes);
+  const contentArticle = { text: '文章', role: 'link', visible: true,
+    routeInfo: { navigation: false, destination: '/article/body', enabled: true } };
+  const page = document([...nodes, contentArticle]);
   page.mainFrame = () => page;
   page.context = () => ({ on() {}, off() {} });
   await openTarget(page, 'article-editor-markdown-import', { map: {}, cfg: { environment: { entry_url: 'https://backend.test/' } } });
   assert.deepEqual(nodes.map(node => Boolean(node.clicked)), labels.map(() => true));
+  assert.equal(contentArticle.clicked, undefined);
 });
 
 test('hidden row action is revealed by hover and step reports matched frame', async () => {

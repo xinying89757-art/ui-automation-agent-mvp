@@ -19,6 +19,7 @@ rather than hardcoding case branches. Unsupported data handlers remain TODO.
 Use named targets from assets/playwright-runner/knowledge/page-map.yaml; unknowns are
 ?name. No selectors in case-spec. Steps use open/click/fill/hover/select/check/uncheck/
 press/upload/wait/close/assert, each with its own target and unique S-number.
+A step whose wording is “press Enter” or “按回车” uses verb `press` and value `Enter`. Never generate that step as a click.
 Before writing a case-spec or generating Playwright, consume the automatic per-case
 knowledge match from `uia go` (or query `uia.py kb query --case CASE_ID`). The index
 filters page/frame/version/status before BM25 ranking and loads only relevant files;

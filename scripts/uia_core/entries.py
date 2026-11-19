@@ -5,6 +5,7 @@ import shlex
 from pathlib import Path
 
 from . import common
+from .actions import CATALOG_NAME, keyboard_step, normalize_route_step
 from .common import atomic_write, now, read_yaml, require
 from .preconditions import normalize
 from .secrets import scrub_text
@@ -121,13 +122,21 @@ def store(m, hints, source='handoff', confirmed=False):
     for hint in hints:
         hint = dict(hint, not_a_page=bool(re.search(r'不是(?:后台)?页面|非页面', hint['path_text'])))
         existing = resolve(hint['label'])
+        if hint.get('steps') and not hint.get('not_a_page'):
+            equivalent = [(name, row) for name, row in data['entries'].items()
+                          if row.get('confirmed') and not row.get('not_a_page') and
+                          row.get('steps') == hint.get('steps') and row.get('frame') == hint.get('frame')]
+            if equivalent:
+                name, row = max(equivalent, key=lambda item: (len(re.split(r'[.-]', item[0])), item[0]))
+                existing = literal_route(dict(row, key=name))
         name = existing['key'] if existing and existing['source'] != 'page-map' else key(hint['label'])
         old = data['entries'].get(name, {})
         aliases = list(dict.fromkeys([*old.get('aliases', []), *hint.get('aliases', []),
                                      *([hint['label']] if old and old['label'] != hint['label'] else [])]))
         # A repeated handoff must not discard an already confirmed route.
+        same_route = old.get('confirmed') and old.get('steps') == hint.get('steps') and old.get('frame') == hint.get('frame')
         route = ({k: old[k] for k in ('steps', 'frame') if k in old}
-                 if old.get('confirmed') and old.get('path_text') == hint['path_text'] and not confirmed else {})
+                 if old.get('confirmed') and (old.get('path_text') == hint['path_text'] or same_route) and not confirmed else {})
         inherited = ({k: v for k, v in old.items() if k not in {'steps', 'frame'}}
                      if old.get('confirmed') and not confirmed and not route else old)
         data['entries'][name] = {**inherited, **hint, **route, 'label': old.get('label', hint['label']), 'aliases': aliases,
@@ -252,7 +261,7 @@ def navigation_hint(hint):
         if not known or not known.get('open_target'):
             return hint
         hint['open_target'] = known['open_target']
-    hint['steps'] = ['click:text=' + label(p) for p in parts[1:] if label(p)]
+    hint['steps'] = [keyboard_step(label(p)) or 'click:text=' + label(p) for p in parts[1:] if label(p)]
     hint['route_source'] = 'path_text'
     return hint
 
@@ -382,7 +391,7 @@ def same_locator(targets, row, name):
                  and {k: existing.get(k) for k in keys} == ident), None)
 
 
-def bind_placeholders(base, m, placeholders, target_name):
+def bind_placeholders(base, m, placeholders, target_name, case_ids=None, allow_rewritten=False):
     """Bind spec placeholders to a verified catalog target and rewrite run-local specs."""
     if not placeholders:
         return {}
@@ -394,6 +403,8 @@ def bind_placeholders(base, m, placeholders, target_name):
             'binding target is not in the page-map catalog: ' + str(target_name))
     mapping = {}
     for cid, case in m.get('cases', {}).items():
+        if case_ids is not None and cid not in case_ids:
+            continue
         path = spec_path(base, case)
         if not path.is_file():
             continue
@@ -409,10 +420,24 @@ def bind_placeholders(base, m, placeholders, target_name):
             elif isinstance(value, list):
                 for item in value: collect(item)
         collect(spec)
-        if not found:
+        already_rewritten = set()
+        if allow_rewritten and case_ids is not None and cid in case_ids:
+            def collect_rewritten(value):
+                if isinstance(value, dict):
+                    for key, item in value.items():
+                        if key in {'target', 'start_page'} and item == target_name:
+                            already_rewritten.update(normalized)
+                        else:
+                            collect_rewritten(item)
+                elif isinstance(value, list):
+                    for item in value:
+                        collect_rewritten(item)
+            collect_rewritten(spec)
+        if not found and not already_rewritten:
             continue
+        bound = found | already_rewritten
         bindings = case.setdefault('target_bindings', {})
-        for placeholder in found:
+        for placeholder in bound:
             bindings[placeholder] = target_name
             mapping[placeholder] = target_name
         def rewrite(value):
@@ -424,9 +449,10 @@ def bind_placeholders(base, m, placeholders, target_name):
                         rewrite(item)
             elif isinstance(value, list):
                 for item in value: rewrite(item)
-        rewrite(spec)
-        from .common import atomic_write
-        atomic_write(path, spec, as_yaml=True)
+        if found:
+            rewrite(spec)
+            from .common import atomic_write
+            atomic_write(path, spec, as_yaml=True)
     require(mapping, '--for placeholders were not found in any run case-spec')
     return mapping
 
@@ -450,6 +476,57 @@ def promote(base, m, report, prefix=None, page=None, overwrite=False, for_placeh
     added, skipped = [], []
     source = 'generator:' + path.stem.replace('generator-', '')
 
+    # Generator step mappings are accepted only when they point back to a real spec
+    # step/placeholder and carry unique-match evidence. They then flow through the same
+    # page-map writer as ordinary promoted targets.
+    auto_bindings = []
+    auto_targets = {}
+    requested_by_case = {row.get('case_id'): set(row.get('targets') or [])
+                         for row in data.get('case_targets', []) if isinstance(row, dict)}
+    step_targets = route.get('step_targets') or data.get('step_targets') or []
+    require(isinstance(step_targets, list), 'Generator step_targets must be a list')
+    from .specs import spec_path
+    for item in step_targets:
+        if not isinstance(item, dict) or item.get('verified') is not True:
+            continue
+        evidence_count = item.get('match_count', item.get('count')) if isinstance(item, dict) else None
+        if type(evidence_count) is not int or evidence_count != 1:
+            continue
+        cid, step_id, placeholder, target_name = (item.get('case_id'), item.get('step_id'),
+                                                   item.get('placeholder'), item.get('target'))
+        require(cid in m.get('cases', {}) and isinstance(step_id, str) and step_id and
+                isinstance(placeholder, str) and placeholder and
+                CATALOG_NAME.fullmatch(target_name or ''),
+                'Invalid generator case/step/placeholder/catalog target mapping')
+        require(placeholder.startswith(('?', '？')) or target_name == placeholder,
+                'Concrete missing spec targets must keep their catalog name')
+        if requested_by_case:
+            require(placeholder in requested_by_case.get(cid, set()),
+                    'Generator mapped a placeholder that was not requested for case ' + str(cid))
+        spec = read_yaml(spec_path(base, m['cases'][cid])) or {}
+        on_step = any(row.get('id') == step_id and row.get('target') in {placeholder, target_name}
+                      for row in spec.get('steps', []) if isinstance(row, dict))
+        on_assertion = any((assertion.get('after') or assertion.get('id')) == step_id and
+                           any(check.get('target') in {placeholder, target_name} for check in assertion.get('checks', [])
+                               if isinstance(check, dict))
+                           for assertion in spec.get('assertions', []) if isinstance(assertion, dict))
+        require(on_step or on_assertion,
+                'Generator mapping does not match a case-spec step and placeholder: ' + str(cid) + '/' + step_id)
+        locator_value = item.get('locator')
+        require(isinstance(locator_value, (dict, str)) and locator_value,
+                'Verified generator mapping is missing its observed locator')
+        if isinstance(locator_value, dict):
+            locator_count = locator_value.get('match_count', locator_value.get('count'))
+            require(locator_count is None or type(locator_count) is int and locator_count == 1,
+                    'UIA_LOCATOR_AMBIGUOUS: generator locator evidence is not unique')
+        locator = locator_target(locator_value)
+        locator['match_count'] = 1
+        prior = auto_bindings and next((row for row in auto_bindings if row['placeholder'] == placeholder), None)
+        require(not prior or prior['target'] == target_name,
+                'Generator maps one placeholder to different catalog targets: ' + placeholder)
+        auto_bindings.append({'case_id': cid, 'step_id': step_id, 'placeholder': placeholder, 'target': target_name})
+        auto_targets[target_name] = locator
+
     def put(name, row, evidence_count=None):
         if evidence_count is not None and 'match_count' not in row:
             row['match_count'] = evidence_count
@@ -457,20 +534,33 @@ def promote(base, m, report, prefix=None, page=None, overwrite=False, for_placeh
         require(count is None or count == 1,
                 f'UIA_LOCATOR_AMBIGUOUS: {name} evidence matched {count} elements; use a scoped or exact locator')
         if name in targets and not overwrite:
+            if name in auto_targets:
+                keys = ('selector', 'role', 'name', 'frame', 'nested_frames', 'scope')
+                existing_locator = {key: targets[name].get(key) for key in keys if key in targets[name]}
+                observed_locator = {key: row.get(key) for key in keys if key in row}
+                require(existing_locator == observed_locator,
+                        'Generator verified a different locator for existing catalog target: ' + name)
+                targets[name] = dict(targets[name], match_count=1, source=source)
+                added.append(name)
+                return
             skipped.append(name)
             return
         twin = same_locator(targets, row, name)
         targets[name] = dict(row, source=source, confirmed=False, **({'alias_of': twin} if twin else {}))
         added.append(name)
+    route_targets = dict(route.get('targets') or {})
+    route_targets.update(auto_targets)
     target_counts = route.get('target_match_counts') or route.get('locator_counts') or {}
-    for name, locator in (route.get('targets') or {}).items():
+    for name, locator in route_targets.items():
         count = locator.get('match_count', locator.get('count')) if isinstance(locator, dict) else None
         if type(count) is not int and isinstance(target_counts, dict):
             count = target_counts.get(name)
-        put(prefix + '.' + slug(name), locator_target(locator), count if type(count) is int else None)
+        catalog_name = name if name in auto_targets else prefix + '.' + slug(name)
+        put(catalog_name, locator_target(locator), count if type(count) is int else None)
     steps = []
     counts = route.get('step_match_counts') or route.get('match_counts') or {}
     for index, step in enumerate(route.get('route') or [], 1):
+        step = normalize_route_step(step)
         count = (step.get('match_count', step.get('count')) if isinstance(step, dict) else None)
         count = count if type(count) is int else counts.get(str(index), counts.get(index)) if isinstance(counts, dict) else None
         require(count is None or count == 1,
@@ -502,6 +592,10 @@ def promote(base, m, report, prefix=None, page=None, overwrite=False, for_placeh
     safe(catalog, m['config'])
     save_catalog('page-map.yaml', catalog)
     placeholder_mapping = {}
+    for binding in auto_bindings:
+        if binding['placeholder'].startswith(('?', '？')):
+            placeholder_mapping.update(bind_placeholders(base, m, [binding['placeholder']], binding['target'],
+                                                         case_ids={binding['case_id']}, allow_rewritten=True))
     placeholders = _for_values(for_placeholders)
     if placeholders:
         candidates = list(dict.fromkeys(added + skipped))
@@ -530,7 +624,7 @@ def promote(base, m, report, prefix=None, page=None, overwrite=False, for_placeh
 
 def add_target(base, m, name, locator, evidence, overwrite=False, resource=None, saved_by=None, for_placeholders=None):
     """Register one observed target (from a snapshot/generator artifact) without fabricating a report."""
-    require(re.fullmatch(r'[a-z0-9][a-z0-9.-]*', name or ''), 'target name: lowercase dotted, e.g. faq-editor.add')
+    require(CATALOG_NAME.fullmatch(name or ''), 'target name: lowercase dotted, underscores allowed, e.g. faq_editor.add')
     path = base / evidence
     require(evidence and path.is_file() and base.resolve() in path.resolve().parents, '--evidence must be an existing artifact inside the run (exploration/... or evidence/...)')
     if resource:

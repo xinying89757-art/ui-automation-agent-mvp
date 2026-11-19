@@ -10,6 +10,7 @@ import re
 import yaml
 from pathlib import Path
 
+from .actions import keyboard_step
 from .common import ROOT, UiaError, digest, event, file_hash, inside, read_json, read_yaml, require, reset_case
 
 SCHEMA = read_json(Path(__file__).resolve().parents[2] / 'schemas/case-spec.schema.json')
@@ -33,6 +34,54 @@ def catalogs():
     return (read_yaml(ROOT / 'preconditions.yaml')['preconditions'],
             read_yaml(ROOT / 'assets/playwright-runner/knowledge/data-prep.yaml')['data'],
             pages)
+
+
+def canonical_entry_route(name, entry_routes):
+    """Resolve entry aliases and prefer the most descriptive confirmed equivalent route."""
+    if not isinstance(name, str):
+        return None
+    normalized = lambda value: re.sub(r'[^\w\u4e00-\u9fff]+', '', str(value)).casefold()
+    direct = [(key, row) for key, row in entry_routes.items()
+              if name == key or normalized(name) in {normalized(row.get('label', '')),
+                  *(normalized(alias) for alias in row.get('aliases', []))}]
+    if not direct:
+        return None
+    selected_candidates = [(key, row) for key, row in direct if row.get('confirmed') and row.get('steps')]
+    _, selected = max(selected_candidates or direct,
+                      key=lambda item: (len(re.split(r'[.-]', item[0])), item[0]))
+    same = [(key, row) for key, row in entry_routes.items() if row.get('confirmed') and
+            row.get('steps') == selected.get('steps') and row.get('frame') == selected.get('frame')]
+    if not same:
+        same = direct
+    return max(same, key=lambda item: (len(re.split(r'[.-]', item[0])), item[0]))[0]
+
+
+def entry_route_step_ids(spec, entry_routes, pages):
+    """Find the leading spec clicks already covered by the selected entry route replay."""
+    route_id = canonical_entry_route(spec.get('entry_route'), entry_routes)
+    route = entry_routes.get(route_id, {}) if route_id else {}
+    route_steps = route.get('steps') or []
+    route_index, matched = 0, set()
+    for step in spec.get('steps', []):
+        if route_index >= len(route_steps) or step.get('verb') != 'click':
+            break
+        target = step.get('target')
+        row = pages.get('targets', {}).get(target, {})
+        names = [target]
+        if row.get('name'):
+            names.append(row['name'])
+        selector = row.get('selector', '')
+        text_match = re.search(r":text-is\(([\"'])(.*?)\1\)", selector)
+        if text_match:
+            names.append(text_match.group(2))
+        route_action = route_steps[route_index]
+        if any(route_action == 'click:text=' + name or route_action == 'click:role=link[name=' + name + ']'
+               for name in names):
+            matched.add(step['id'])
+            route_index += 1
+        else:
+            break
+    return matched
 
 
 def spec_path(base, case):
@@ -77,11 +126,15 @@ def schema_errors(spec, source, env, data, pages):
             kind = entry.get('type')
             fail((kind == 'integer' and type(value) is int and value >= 0) or (kind == 'boolean' and type(value) is bool) or
                  (kind == 'string' and isinstance(value, str)) or (kind == 'array' and isinstance(value, list)), 'wrong data-prep type: ' + key)
-    fail(spec['start_page'] in pages['pages'], 'unknown start_page')
+    if isinstance(spec.get('start_page'), str) and re.fullmatch(r'\?[\w.\-\u4e00-\u9fff]+', spec.get('start_page')):
+        unknown.add(spec['start_page'])
+    else:
+        fail(spec.get('start_page') in pages['pages'], 'unknown start_page')
     entry_doc = read_yaml(ROOT / 'knowledge/entries.yaml') or {}
     entry_routes = entry_doc.get('entries', {})
     if spec.get('entry_route'):
-        fail(spec['entry_route'] in entry_routes and bool(entry_routes.get(spec['entry_route'], {}).get('confirmed')),
+        route_id = canonical_entry_route(spec['entry_route'], entry_routes)
+        fail(bool(route_id and entry_routes.get(route_id, {}).get('confirmed')),
              'entry_route must reference a confirmed knowledge entry route')
     def target(value):
         if isinstance(value, str) and re.fullmatch(r'\?[\w.\-\u4e00-\u9fff]+', value):
@@ -97,7 +150,8 @@ def schema_errors(spec, source, env, data, pages):
         fail(isinstance(sid, str) and bool(re.fullmatch(r'S[1-9]\d*', sid)) and sid not in step_ids, 'unique S-number required')
         step_ids.add(str(sid))
         fail(step.get('verb') in VERBS, 'step verb is not supported')
-        if not (step.get('verb') == 'open' and step.get('target') in entry_routes and entry_routes[step.get('target')].get('confirmed')):
+        if not (step.get('verb') == 'open' and canonical_entry_route(step.get('target'), entry_routes) and
+                entry_routes[canonical_entry_route(step.get('target'), entry_routes)].get('confirmed')):
             target(step.get('target'))
         entry = pages['targets'].get(step.get('target'), {})
         if entry.get('mutation') and step.get('verb') in {'click', 'double_click', 'attempt_click', 'fill', 'select', 'check', 'uncheck', 'press', 'upload'}:
@@ -244,7 +298,8 @@ def interaction_patterns_for_target(target_row, action, target_name=''):
         bool(re.search(r'menu|listbox|suggest|command|slash|dropdown', str(target_name), re.I)) or
         bool(re.search(r'menu|listbox|suggest|command|slash|dropdown', selector, re.I)))
     if action == 'click' and menu_target:
-        patterns = list(dict.fromkeys([*patterns, 'MENU_KEYBOARD']))
+        # Menu keyboard support is a final fallback after scrolling/collapsing covers.
+        patterns = list(dict.fromkeys([p for p in patterns if p != 'MENU_KEYBOARD'] + ['MENU_KEYBOARD']))
     return patterns
 
 
@@ -295,6 +350,25 @@ def locator_errors(body, pages):
         if re.search(r'(?:取消|关闭|cancel|close)[^\n]*(?:\.click\(|Dialog\()', segment, re.I) and not re.search(r'\bexpect\([^;]+\)\.toBe(?:Hidden|Visible)\(', segment, re.S):
             errors.append('close action requires an explicit visibility assertion')
     return sorted(set(errors))
+
+
+def entry_route_locator_errors(body, spec, pages):
+    """Reject per-step locator clicks where the confirmed entry replay owns navigation."""
+    entry_routes = (read_yaml(ROOT / 'knowledge/entries.yaml') or {}).get('entries', {})
+    route_id = canonical_entry_route(spec.get('entry_route'), entry_routes)
+    if not route_id:
+        return []
+    route_steps = entry_route_step_ids(spec, entry_routes, pages)
+    errors = []
+    if route_steps and not re.search(r'openTarget\([^\n]*' + re.escape(json.dumps(route_id)) + r'\)', body):
+        errors.append('entry route navigation must use openTarget: ' + route_id)
+    segments = re.split(r'//\s*@step\s+(S\d+)\s*\n', body)
+    by_id = {segments[i]: segments[i + 1] for i in range(1, len(segments) - 1, 2)}
+    for step_id in route_steps:
+        segment = by_id.get(step_id, '')
+        if re.search(r'\b(?:getByText|getByRole|getByLabel|locator|frameLocator)\s*\([^\n]*\)\s*(?:\.\w+\([^\n]*\)\s*)*\.click\s*\(', segment):
+            errors.append('entry route step must use navigation replay, not a raw locator click: ' + step_id)
+    return errors
 
 
 def coverage(body, file):
@@ -348,6 +422,7 @@ def lint(base, m, case_ids=None, record=True, check_scripts=True):
         if script.is_file() and check_scripts:
             body = script.read_text()
             errors.extend(locator_errors(body, pages))
+            errors.extend(entry_route_locator_errors(body, spec, pages))
             try:
                 refs = coverage(body, str(script.resolve().relative_to((base / 'runner').resolve())))
                 for field in ('steps', 'assertions'):
@@ -407,6 +482,18 @@ def generate(base, m, cid):
     result = lint(base, m, [cid], check_scripts=False)
     require(not result['errors'] and not result['cases'][cid]['errors'], 'case-spec lint failed', result)
     case = m['cases'][cid]; spec = read_yaml(spec_path(base, case)); _, catalog, pages = catalogs()
+    pathfinder_note = []
+    if case.get('spec_origin') == 'pathfinder':
+        from .pathfinder import generation_brief
+        brief = generation_brief(base, cid)
+        require(brief, 'pathfinder 确认稿缺失，不能从 Excel 重新推导步骤')
+        require([step['id'] for step in spec['steps']] == [step['id'] for step in brief['steps']],
+                'case-spec 步骤必须与 spec-pathfinder 确认稿一致')
+        require([item['excel'] for item in spec['assertions']] == list(brief.get('expected_lines') or []),
+                'case-spec 预期必须与 spec-pathfinder 确认稿一致')
+        pathfinder_note = ['// spec-pathfinder ' + str(brief.get('stage') or 'v1') + ' entry: ' + ' '.join(str(brief.get('entry') or '').split()),
+                           '// spec-pathfinder steps: ' + ' | '.join(step['id'] + ' ' + ' '.join(str(step.get('action') or '').split()) for step in brief['steps']),
+                           '// spec-pathfinder expected: ' + ' | '.join(' '.join(str(line).split()) for line in brief.get('expected_lines') or [])]
     scopes = set(spec['mutation_scope'])
     for key in spec['data_prep']:
         require(catalog[key].get('scope') in scopes, 'data-prep scope must be declared: ' + key)
@@ -420,7 +507,7 @@ def generate(base, m, cid):
     if not (base / 'knowledge-match.json').is_file():
         match_run(base, m)
     knowledge_context = matched_context(base, m, cid)
-    lines = ["// Generated deterministically from case-spec.v1 and shared interaction patterns.",
+    lines = ["// Generated deterministically from case-spec.v1 and shared interaction patterns.", *pathfinder_note,
              '// Knowledge targets: ' + ', '.join(sorted(item['id'] for item in knowledge_context.get('selected', []))),
              "import { test, expect, businessAssertion } from '../../support/fixtures.js';",
              "import { openTarget } from '../../support/case-spec.js';",
@@ -428,9 +515,15 @@ def generate(base, m, cid):
              "import { performWithPatterns } from '../../support/interaction-patterns.mjs';",
              "import { deferPublic, trackSave, verifyPersisted, readFieldValue, assertSaveBusinessOk } from '../../support/remote-checks.mjs';", '',
              'test(' + json.dumps('[' + cid + '] ' + spec['intent'], ensure_ascii=False) + ', async ({ page, caseContext }) => {', '  const networks: Record<string, any> = {};', '  const observations: Record<string, any> = {};', '  try {']
-    if spec.get('entry_route') and not any(step.get('verb') == 'open' and step.get('target') == spec['entry_route']
-                                            for step in spec['steps']):
-        lines.append('  page = await openTarget(page, ' + json.dumps(spec['entry_route']) + ');')
+    entry_routes = (read_yaml(ROOT / 'knowledge/entries.yaml') or {}).get('entries', {})
+    route_id = canonical_entry_route(spec.get('entry_route'), entry_routes)
+    start = pages.get('pages', {}).get(spec['start_page'], {})
+    initial_target = route_id or (spec['start_page'] if any(key in start for key in ('entry', 'steps', 'route', 'url', 'path', 'open')) else None)
+    if initial_target and not any(step.get('verb') == 'open' and
+                                  (canonical_entry_route(step.get('target'), entry_routes) or step.get('target')) == initial_target
+                                  for step in spec['steps']):
+        lines.append('  page = await openTarget(page, ' + json.dumps(initial_target) + ');')
+    replayed_route_steps = entry_route_step_ids(spec, entry_routes, pages)
     tracked_rules = set()
     for name in dict.fromkeys(s['target'] for s in spec['steps'] if s['verb'] == 'defer_public'):
         resource = pages['targets'].get(name, {}).get('resource', {})
@@ -451,12 +544,28 @@ def generate(base, m, cid):
         todos.append(label)
         lines.append('  // TODO explore: ' + label)
         lines.append('  throw new Error(' + json.dumps('UIA_EXPLORATION_REQUIRED: ' + label) + ');')
-    for step in spec['steps']:
+    source_steps = []
+    source_file = base / case.get('source', '') if case.get('source') else None
+    if source_file and source_file.is_file():
+        try:
+            raw_steps = read_json(source_file).get('steps') or []
+        except (OSError, ValueError, TypeError):
+            raw_steps = []
+        source_steps = raw_steps if isinstance(raw_steps, list) else [raw_steps]
+    for index, step in enumerate(spec['steps']):
         sid, verb, name = step['id'], step['verb'], step['target']
         lines.append('  await test.step(' + json.dumps('uia-step:' + sid) + ', async () => {')
         lines.append('  // @step ' + sid)
+        source_text = source_steps[index] if index < len(source_steps) else ''
+        if not isinstance(source_text, str):
+            source_text = ' '.join(str(part) for part in source_text) if isinstance(source_text, list) else str(source_text or '')
+        press_enter = bool(keyboard_step(source_text) or keyboard_step(str(name or '')) or keyboard_step(str(step.get('value') or '')))
         loc = locator_expression(name, pages)
-        if verb == 'observe':
+        if press_enter:
+            lines.append('  await page.keyboard.press("Enter");')
+        elif sid in replayed_route_steps:
+            lines.append('  // Navigation replayed by openTarget(' + json.dumps(route_id) + ').')
+        elif verb == 'observe':
             lines.append('  observations[' + json.dumps(name) + '] = await observeOccurrences(page, ' + json.dumps(pages['targets'][name]['observe_text'], ensure_ascii=False) + ');')
         elif verb == 'defer_public':
             lines.append('  await assertSaveBusinessOk(caseContext);')
@@ -471,7 +580,8 @@ def generate(base, m, cid):
         elif (not loc and verb != 'open') or name.startswith('?'):
             todo(sid + ' ' + name)
         elif verb == 'open':
-            lines.append('  page = await openTarget(page, ' + json.dumps(name) + ');')
+            target = canonical_entry_route(name, entry_routes) or name
+            lines.append('  page = await openTarget(page, ' + json.dumps(target) + ');')
         elif verb in {'click', 'hover', 'check', 'uncheck', 'close'}:
             action = 'click' if verb == 'close' else verb
             target_patterns = interaction_patterns_for_target(pages['targets'].get(name, {}), action, name)
@@ -547,7 +657,8 @@ def generate(base, m, cid):
             lines.append('  await verifyPersisted(page, caseContext, ' + json.dumps(rb, ensure_ascii=False) + ', ' + json.dumps(pages['targets'][rb['save_target']]['network']) + ', async () => await readFieldValue(' + field_loc + '));')
     lines += ['  await assertSaveBusinessOk(caseContext);', '  } finally {', '    for (const network of Object.values(networks)) await network.dispose();', '    for (const observation of Object.values(observations)) await observation.dispose();', '  }', '});', '']
     body = '\n'.join(lines)
-    require(not locator_errors(body, pages), 'Generated locator lint failed', locator_errors(body, pages))
+    errors = locator_errors(body, pages) + entry_route_locator_errors(body, spec, pages)
+    require(not errors, 'Generated locator lint failed', errors)
     relative = 'tests/generated/' + cid + '.spec.ts'
     script = base / 'runner' / relative
     script.parent.mkdir(parents=True, exist_ok=True)
@@ -582,7 +693,8 @@ def register_script(base, m, cid, script_path):
     require(script.suffix == '.ts' and script.is_file(), 'Final spec must be a TypeScript file under runner/tests')
     relative = str(script.relative_to((base / 'runner').resolve()))
     body = script.read_text()
-    require(not locator_errors(body, pages), 'Final spec locator lint failed', locator_errors(body, pages))
+    locator_problems = locator_errors(body, pages) + entry_route_locator_errors(body, spec, pages)
+    require(not locator_problems, 'Final spec locator lint failed', locator_problems)
     require('TODO explore:' not in body and 'UIA_EXPLORATION_REQUIRED' not in body, 'Resolve exploration TODO before registration')
     refs = coverage(body, relative)
     for field in ('steps', 'assertions'):

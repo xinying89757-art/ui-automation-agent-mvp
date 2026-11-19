@@ -14,8 +14,9 @@ Excel 导入接受常见中英文表头别名并跳过无用例内容的行；�
 
 | 阶段 | 输入与动作 | 完成门 | 下一步 |
 |---|---|---|---|
-| Excel 导入 | CLI 保留原文，bind-specs 索引并优先执行现有脚本 | 来源与绑定可追溯 | spec |
-| case-spec | uia-case-spec 编写；spec lint 校验 Excel 原文、词表、目标和去重 | 独立目标；未知聚合 | gen |
+| Excel 导入 | CLI 保留原文，bind-specs 索引并优先执行现有脚本 | 来源与绑定可追溯 | spec-pathfinder |
+| spec-pathfinder | `go` 按需求编译人审版 v1 与存疑清单 v1；`--code` 时索引项目代码并写执行版。产物只在 run 目录 | 稳定用例/步骤/主张编号；存疑并入一次清单 | 确认稿投影为 case-spec |
+| case-spec | 已有 pathfinder 确认稿时不再从 Excel 重推入口、步骤和预期；lint 仍校验原文、词表和去重 | 独立目标；未知聚合 | gen |
 | 预检/生成 | 环境、会话、数据预检；spec gen 按模板生成单用例文件 | 统一 fixture；标记自动推出覆盖 | execution |
 | 探索 | `next` 对缺失知识目标返回 `explore`；按入口做限定快照/生成器探索 | 成功知识回写；失败须有有界尝试证据 | spec gen / execution |
 | 运行 | run-batch/wait 保留尝试；环境→会话→数据→定位/时序→业务分诊 | 每日 1 次，夜间 2 批同版本成功 | feedback |
@@ -24,6 +25,14 @@ Excel 导入接受常见中英文表头别名并跳过无用例内容的行；�
 运行总状态为 active、waiting_human、delivery_pending 或 completed。每条用例的
 阶段和工作状态分别保存；`result` 与 `stability` 分开，避免把代码已生成或一次成功
 当成稳定完成。部分结果可随时报告，但不能将尚有未知工作表或未完成用例的运行标为完成。
+
+## spec-pathfinder
+
+`uia go` 在绑定已有脚本之后、生成新脚本之前运行 spec-pathfinder。每个需求（模块，否则工作表）写一份中文人审版和存疑清单，编号在同一次编译内稳定。没有 `--code` 时置信度最高为中。`--code 代码根` 会运行 `skills/spec-pathfinder/scripts/build-index.mjs`，把索引和 agent 执行版写到 `runs/<id>/spec-pathfinder/`，不写进 skill 目录。
+
+存疑清单并进同一次执行前清单：知识库定位不到的页面在 D 块，预期看不清或只存在于前端的控件在 E 块。D 的路径写入 `entries.yaml`；E 的结论写入 `knowledge/pathfinder-resolutions.yaml`。同一主题再次出现时不再询问。富文本这类后端索引里没有的控件标记为一次性引导探索，人工把看到的现象写进 E 块后作为知识种子。
+
+生成器只读取这份确认稿里的入口、步骤和预期。确认稿会投影成 case-spec；尚未定位的起点可以是 `?名称`。已绑定的旧脚本不因这份清单重写。
 
 ## 调度和速度
 
@@ -39,7 +48,7 @@ Excel 导入接受常见中英文表头别名并跳过无用例内容的行；�
 
 提测可选 `go --hints FILE_OR_TEXT` 或 `hints add --run R "页面=路径"`；未知入口合并一次清单 D（可用 `preconditions classify --page` 注册），后发现只进异步审核。
 D 答复（页面=路径或 D1/D2）写入环境记忆及 `assets/playwright-runner/knowledge/entries.yaml`，跨需求复用；草稿答复在清单定稿时自动应用。
-探索从 `snapshot --entry PAGE` / `generator --entry PAGE` 开始；`next` 会把同入口/frame 的多例缺失目标合并为一项探索任务，按返回的 `targets_by_case` 为每例逐项采证。快照命令示例：`uia.py snapshot --run R --node editor --entry PAGE --purpose TARGET --save-as evidence/TARGET.json`；生成器示例：`uia.py generator --run R --purpose TARGET --entry PAGE --plan PLAN --draft`。每个 case/目标完成后必须调用 `uia.py exploration-log --run R --method snapshot|generator --purpose TARGET --result ok|failed --note NOTE --case CID --target '?placeholder' --evidence evidence/FILE.json`，成功与失败都记录；失败证据须是实际存在的文件。成功发现占位目标后，通过 `hints target --run R --name catalog.target --locator 'JSON' --evidence evidence/FILE.json --for '?placeholder'`，或 `hints promote --run R --report exploration/generator-SLUG.json --for '?placeholder'` 将已观察控件写入目录并绑定规格占位符；多个占位符用逗号分隔。随后运行 `spec lint` 和 `spec gen`。禁止猜测控件或在探索报告未成功时绑定。粗略路径转为 --goto/--step 后用 `hints confirm` 保存；仅已知入口到达且 generator 在指定 --interaction 失败后才可请求演示。
+探索从 `snapshot --entry PAGE` / `generator --entry PAGE` 开始；`next` 优先选择缺失占位目标最少的 case，每次最多 8 个目标，同入口/frame 的其他 case 只有在共享这些目标时才加入。按返回的 `targets_by_case` 执行 action 的精确 `generator_command`；命令带 `--cases`/`--targets`，报告包含 case spec 的 step ID 与 placeholder 对应的唯一已验证 locator。快照命令示例：`uia.py snapshot --run R --node editor --entry PAGE --purpose TARGET --evidence evidence/TARGET.json`。Generator 成功后执行返回的 `hints promote --report` 命令；它自动保存唯一 locator 并绑定 placeholder，不需要手工 `--for`。Snapshot 结果用 `uia.py exploration-log` 按 case/目标记录，并传 `--duration-ms`。两次没有绑定或失败的有证据尝试后，`next` 挂起该目标的 case 并继续其他用例。菜单交互先滚动并尝试普通 click，失败后才使用 typeahead/Enter 或 ArrowDown/Enter；保持焦点在当前编辑器或触发控件。禁止猜测控件或在探索报告未成功时绑定。粗略路径转为 --goto/--step 后用 `hints confirm` 保存；仅已知入口到达且 generator 在指定 --interaction 失败后才可请求演示。
 
 问题保存类型、影响用例、尝试记录和恢复位置。登录和凭证只接收状态/环境变量引用，
 不在对话或清单中保存密码值。同一缺口合并询问，已经确认的业务答案再次使用；
@@ -60,9 +69,15 @@ owner marker 准备独有数据，验证起点后才执行业务操作；无论�
 每日交付把 `stability_passes` 设为 1。夜间回归设为 2，不能用重试、同一批里的页面复用
 或历史 PASS 凑够第二次。一批内部可以复用编辑器会话，那只减少打开编辑器的时间。
 
+`uia go` 的第一步是环境预检：登录、目标网站可选、内容编辑器能打开。失败则整批
+`environment_blocked` 并停止，不执行用例。`SITE_NOT_ACCESSIBLE`、未找到目标网站、登录失败和站点加载超时属于
+`environment`，与 automation、product、suspended 分开；报告给出各类占比。
+
 业务断言通过 `businessAssertion` 标识，失败保留为 business_failure。准备、定位、
 等待或生成错误为 automation_failure，保存诊断后最多两轮修复。修复不修改业务期望。
 环境与产品问题进入问题队列；不能继续的用例最终明确分类。
+
+全量 go 先跑 3 条代表用例作为冒烟，达到通过率门槛后才跑剩余用例。首个结果超过 26 分钟则中止后续批次。两项都可用命令行改。
 
 清理失败写入共享 fixture 污染标记，同批后续依赖用例也在准备前检查标记；独立
 fixtures 可继续。清理恢复需要实际证据，通过 `resolve-fixture` 清除对应标记。

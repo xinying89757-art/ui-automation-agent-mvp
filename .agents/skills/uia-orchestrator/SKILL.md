@@ -13,6 +13,8 @@ The project root is three parents above this folder. Run CLI commands there usin
 API-backed agent server. Read and follow stage skills in the current conversation;
 do not invoke Claude Code `Task()` or assume a shell script can invoke the model.
 
+`uia go` and `uia preflight` check login, target-site selection, and the content editor before any case runs. A failure marks the batch `environment_blocked` and stops. Do not classify `SITE_NOT_ACCESSIBLE`, login failures, or site-load timeouts as automation failures. A full batch smokes representative cases before the rest and aborts when the first result exceeds the configured budget.
+
 Before any question, exploration planning, or spec generation, use the automatic
 per-case knowledge match written by `uia go` in `knowledge-match.json`. Retrieval
 uses the index and loads only matched page/frame/version records; never load the

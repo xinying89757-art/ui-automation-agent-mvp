@@ -563,8 +563,10 @@ def execute(args):
     if args.command == 'rounds':
         from . import rounds as round_ops
         if args.action == 'create':
-            require(args.from_run and args.round and args.run_id and args.profile,
-                    'rounds create requires --from-run --round --run-id --profile')
+            require(args.round and args.run_id and args.profile,
+                    'rounds create requires --round --run-id --profile')
+            require(args.from_run or args.round == 1,
+                    'Only round 1 may be created without --from-run')
             return round_ops.create(args.from_run, args.round, args.run_id, args.profile, args.excel)
         require(args.run, 'rounds compare requires --run')
         return round_ops.compare(args.run)

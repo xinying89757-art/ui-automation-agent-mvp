@@ -47,11 +47,27 @@ test('editor primitives use env credentials, click the slash card, and round-tri
     await editor.openContentEditor({ kind: 'product' });
     await editor.typeText('hello');
     const inserted = await editor.insertComponent('FAQ');
+    assert.equal(inserted.strategy, 'plus');
     assert.equal(inserted.keyboardFallbacks, 0);
     assert.equal(inserted.rescued, 0);
     await editor.save();
     await editor.readBack({ value: 'hello' });
     await editor.selectMenuItem('标题');
+  });
+});
+
+test('component insertion falls back to slash when the plus button is unavailable', async () => {
+  await withBrowser(async page => {
+    const url = fixtureUrl();
+    const editor = createContentEditor(() => page, { ...credentialsConfig(url), env: { UIA_MIDSCENE: '0' } });
+    await editor.login({ fixture: url });
+    await editor.enterSite();
+    await editor.openContentEditor({ kind: 'product' });
+    const canvas = page.frameLocator('iframe[name="prod"]').frameLocator('#tiptap-iframe');
+    await canvas.locator('#plus').evaluate(node => { node.hidden = true; });
+    const inserted = await editor.insertComponent('FAQ');
+    assert.equal(inserted.strategy, 'slash');
+    assert.equal(await canvas.locator('.inserted-component[data-component="FAQ"]').count(), 1);
   });
 });
 
@@ -64,6 +80,9 @@ test('missing editor, missing card, and midscene rescue have typed results', asy
     await editor.login({ fixture: url });
     await editor.enterSite();
     await editor.openContentEditor({ kind: 'product' });
+    const canvas = page.frameLocator('iframe[name="prod"]').frameLocator('#tiptap-iframe');
+    await canvas.locator('#plus').evaluate(node => { node.hidden = true; });
+    await canvas.locator('.slash-card[data-component="FAQ"]').evaluate(node => { node.hidden = true; });
     await assert.rejects(() => insertComponent(page, 'FAQ', { cardSelector: '.missing-card', env: { UIA_MIDSCENE: '0' } }),
       error => error.code === 'CONTROL_MISSING');
     const rescued = await insertComponent(page, 'FAQ', {
@@ -74,7 +93,11 @@ test('missing editor, missing card, and midscene rescue have typed results', asy
         for (const frame of current.frames()) {
           if (await frame.locator('.ProseMirror').isVisible().catch(() => false)) target = frame;
         }
-        await target.locator('#slash-menu').evaluate(node => { node.hidden = false; });
+        await target.locator('#slash-menu').evaluate(node => {
+          node.hidden = false;
+          const faq = node.querySelector('.slash-card[data-component="FAQ"]');
+          if (faq) faq.hidden = false;
+        });
         return target.locator('.slash-card[data-component="FAQ"]');
       } },
     });

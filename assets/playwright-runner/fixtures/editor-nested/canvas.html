@@ -19,6 +19,7 @@
   <div class="blocking-overlay" role="dialog" data-uia-overlay="blocking">
     <button type="button" class="close-overlay">我知道了</button>
   </div>
+  <button type="button" id="plus" aria-label="添加组件">+</button>
   <div id="editor-root" class="tiptap ProseMirror" contenteditable="true" role="textbox" aria-label="正文"></div>
   <div id="slash-menu" class="slash-menu" hidden>
     <button type="button" class="slash-card" data-component="FAQ">FAQ</button>
@@ -32,6 +33,7 @@
   <script>
     const overlay = document.querySelector('.blocking-overlay');
     overlay.querySelector('.close-overlay').addEventListener('click', () => { overlay.hidden = true; });
+    document.getElementById('plus').addEventListener('click', () => { document.getElementById('slash-menu').hidden = false; });
     let root = document.getElementById('editor-root');
     let swapped = false;
     function currentRoot() { return document.querySelector('.ProseMirror'); }

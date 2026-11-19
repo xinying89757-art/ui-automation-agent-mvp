@@ -7,13 +7,32 @@ from .common import ROOT, atomic_write, event, load_run, now, read_json, read_ya
 
 def create(previous_run, round_number, run_id, profile, excel=None):
     from . import workflow, profiles
-    previous_path, previous = load_run(previous_run)
-    require(type(round_number) is int and round_number >= 2, 'A follow-up round must be numbered 2 or greater')
-    expected_round = int((previous.get('round') or {}).get('number', 1)) + 1
-    require(round_number == expected_round, 'Round number must follow the selected prior run')
+    require(type(round_number) is int and round_number >= 1, 'Round number must be a positive integer')
     require(run_id == safe_id(run_id), 'Run ID must be a safe directory name')
     new_base = ROOT / 'runs' / run_id
     require(not (new_base / 'run.json').exists(), 'Run already exists')
+    if round_number == 1:
+        require(not previous_run, 'Round 1 cannot have a previous-round baseline')
+        require(excel, 'Round 1 requires --excel')
+        workflow.init(run_id, profiles.profile_path(profile))
+        workflow.scaffold(new_base)
+        manifest_path = new_base / 'run.json'
+        current = read_json(manifest_path)
+        current['round'] = {'number': 1, 'requirement_id': run_id,
+                            'environment': current['config'].get('environment', {}).get('id', 'legacy'),
+                            'previous_run': None, 'created_from': None}
+        imported = workflow.import_excel(new_base, current, excel)
+        from .preconditions import sync_preconditions
+        sync_preconditions(new_base, current)
+        event(current, 'round_created', previous_run=None, round=1, reused=0)
+        atomic_write(manifest_path, current)
+        return {'run': str(manifest_path), 'round': current['round'], 'reused_scripts': [],
+                'rerun_existing': [], 're_explore': list(current.get('cases', {})), 'import': imported}
+    require(previous_run, 'Follow-up rounds require --from-run')
+    previous_path, previous = load_run(previous_run)
+    require(round_number >= 2, 'A follow-up round must be numbered 2 or greater')
+    expected_round = int((previous.get('round') or {}).get('number', 1)) + 1
+    require(round_number == expected_round, 'Round number must follow the selected prior run')
     workflow.init(run_id, profiles.profile_path(profile))
     workflow.scaffold(new_base)
     manifest_path = new_base / 'run.json'

@@ -260,6 +260,23 @@ async function readEditorText(page, options = {}) {
 async function findCard(page, name, selector = '.slash-card, [data-component]') {
   const escaped = name.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
   for (const frame of page.frames()) {
+    const panels = frame.locator([
+      '[data-component-panel]', '[data-component-menu]', '.component-panel', '.component-menu',
+      '.slash-menu', '.slash-menu-list', '[role="menu"]', '[role="listbox"]', '[role="dialog"]',
+    ].join(', '));
+    const panelCount = await panels.count().catch(() => 0);
+    for (let index = 0; index < panelCount; index += 1) {
+      const panel = panels.nth(index);
+      if (!await panel.isVisible().catch(() => false)) continue;
+      const scoped = panel.locator(selector).filter({ hasText: new RegExp(`^${escaped}$`, 'u') });
+      const count = await scoped.count().catch(() => 0);
+      for (let cardIndex = 0; cardIndex < count; cardIndex += 1) {
+        const card = scoped.nth(cardIndex);
+        if (await card.isVisible().catch(() => false)) return card;
+      }
+      const textMatch = panel.getByText(name, { exact: true });
+      if (await textMatch.count().catch(() => 0) === 1 && await textMatch.isVisible().catch(() => false)) return textMatch;
+    }
     const cards = frame.locator(selector).filter({ hasText: new RegExp(`^${escaped}$`, 'u') });
     const count = await cards.count().catch(() => 0);
     for (let index = 0; index < count; index += 1) {
@@ -268,6 +285,37 @@ async function findCard(page, name, selector = '.slash-card, [data-component]') 
     }
   }
   return page.locator(selector).filter({ hasText: name }).first();
+}
+
+async function findPlusButton(page) {
+  const selectors = [
+    'button[aria-label="添加组件"]', 'button[title="添加组件"]', '[data-action="add-component"]',
+    '[data-testid*="add-component"]', '.add-component-button', '.tiptap-plus-button',
+  ];
+  for (const frame of page.frames()) {
+    for (const selector of selectors) {
+      const button = frame.locator(selector).first();
+      if (await button.isVisible().catch(() => false)) return button;
+    }
+    for (const label of ['+', '添加组件', '插入组件']) {
+      const button = frame.getByRole('button', { name: label, exact: true }).first();
+      if (await button.isVisible().catch(() => false)) return button;
+    }
+  }
+  return null;
+}
+
+async function openComponentPanel(page, options = {}) {
+  const plus = await findPlusButton(page);
+  if (plus) {
+    try {
+      await plus.click({ timeout: options.timeout ?? 3000 });
+      return { strategy: 'plus' };
+    } catch { /* The slash strategy below is the supported fallback. */ }
+  }
+  await focusEditable(page, options);
+  await page.keyboard.type('/');
+  return { strategy: 'slash' };
 }
 
 async function componentPresent(page, name) {
@@ -307,15 +355,27 @@ async function rescueClick(page, description, session, options = {}) {
 export async function insertComponent(page, name, options = {}) {
   if (!name || typeof name !== 'string') throw new SkeletonError('CONTROL_MISSING', '组件名缺失');
   const session = sessionOf(options);
-  await focusEditable(page, options);
-  await page.keyboard.type('/');
   const selector = options.cardSelector || '.slash-card, [data-component]';
+  let opened = await openComponentPanel(page, options);
   try {
     const card = await findCard(page, name, selector);
     await card.waitFor({ state: 'visible', timeout: options.timeout ?? 4000 });
     await card.scrollIntoViewIfNeeded().catch(() => {});
     await card.click({ timeout: 3000 });
   } catch {
+    if (opened.strategy === 'plus') {
+      await focusEditable(page, options);
+      await page.keyboard.type('/');
+      opened = { strategy: 'slash' };
+      try {
+        const card = await findCard(page, name, selector);
+        await card.waitFor({ state: 'visible', timeout: options.timeout ?? 4000 });
+        await card.scrollIntoViewIfNeeded().catch(() => {});
+        await card.click({ timeout: 3000 });
+      } catch { /* Try configured rescue and keyboard fallback below. */ }
+    }
+  }
+  if (!await componentPresent(page, name)) {
     const rescued = await rescueClick(page, `slash card ${name}`, session, options);
     if (!rescued) {
       const typed = options.allowKeyboardFallback === false ? false : await keyboardFallback(page, name, session);
@@ -323,7 +383,7 @@ export async function insertComponent(page, name, options = {}) {
     }
   }
   if (!await componentPresent(page, name)) throw new SkeletonError('CONTROL_MISSING', '组件卡片点击后没有插入');
-  return { ok: true, keyboardFallbacks: session.keyboardFallbacks, rescued: session.rescues.length };
+  return { ok: true, strategy: opened.strategy, keyboardFallbacks: session.keyboardFallbacks, rescued: session.rescues.length };
 }
 
 export async function typeText(page, text, options = {}) {

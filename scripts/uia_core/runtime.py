@@ -352,6 +352,12 @@ def consume_batch(base, m, exit_code=None):
         lifecycle = row.get("lifecycle", {})
         result = row.get("result")
         require(result in RESULTS, "Unknown reporter result")
+        if result == "passed":
+            spec = read_yaml(inside(base, c['case_spec'])) if c.get('case_spec') else None
+            from .assertions import assess
+            assertion_review = assess(spec, row)
+            if not assertion_review['complete']:
+                result = 'unasserted'
         clean = lifecycle.get("cleanup_verified") is True
         cleanup_pending = lifecycle.get("cleanup_pending") is True and (base / batch["directory"] / ("remote-" + cid + ".json")).is_file()
         prepared = lifecycle.get("setup_verified") is True
@@ -371,6 +377,9 @@ def consume_batch(base, m, exit_code=None):
                    "executed": cid in by_id and row.get("playwright_status") not in {"skipped", None},
                    "setup_verified": prepared, "cleanup_verified": clean, "cleanup_pending": cleanup_pending,
                    "setup_started": row.get("setup_started", False),
+                    "precondition_check": lifecycle.get("precondition_check"),
+                    "preparation": lifecycle.get("preparation"),
+                    "prep_time_ms": lifecycle.get("prep_time_ms", 0),
                    "duration_ms": row.get("duration_ms", 0), "errors": row.get("errors", []),
                    "attachments": row.get("attachments", []),
                    "assertions": row.get("assertions", []), "failure_stage": row.get("failure_stage")}

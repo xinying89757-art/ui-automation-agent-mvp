@@ -48,11 +48,19 @@ def rows(base, m):
             business.setdefault(text, []).append(cid)
     from .preconditions import triage
     triaged = triage(base, m)
+    from .preconditions import vocabulary
+    catalog = {**vocabulary(), **m.get('precondition_catalog', {})}
     result = [{'key': 'env:' + row['key'], 'block': 'A', 'label': row['label'], 'cases': row['cases'],
-               'options': ['可用', '缺少，相关用例挂起']} for row in triaged if row['classification'] == 'human_env']
+               'options': ['可用（已按准备方式处理）', '缺少，相关用例挂起'],
+               'prep_method': catalog.get(row['key'], {}).get('prep_method', 'user_preset'),
+               'api_candidates': catalog.get(row['key'], {}).get('api_candidates', [])}
+              for row in triaged if row['classification'] == 'human_env']
     for key, owners in env.items():
+        entry = catalog.get(key, {})
         result.append({'key': 'env:' + key, 'block': 'A', 'label': labels().get(key, key), 'cases': owners,
-                       'options': ['可用', '缺少，相关用例挂起']})
+                       'options': ['可用（已按准备方式处理）', '缺少，相关用例挂起'],
+                       'prep_method': entry.get('prep_method', 'user_preset'),
+                       'api_candidates': entry.get('api_candidates', [])})
     for key, owners in scopes.items():
         result.append({'key': 'scope:' + key, 'block': 'B', 'label': key, 'cases': sorted(set(owners)),
                        'options': ['同意临时修改并还原', '不同意，相关用例挂起']})
@@ -79,7 +87,7 @@ def sync_checklist(base, m):
     unclassified = [r for r in m.get('precondition_triage', []) if r['classification'] == 'unclassified']
     spec_draft = any(not (base / c.get('case_spec', f'cases/{cid}/case-spec.yaml')).is_file() and not c.get('registration') for cid, c in m['cases'].items())
     m['checklist_draft'] = bool(unclassified or spec_draft)
-    memory_answers = load_memory(m)['answers']
+    memory_answers = {**load_memory(m)['answers'], **m.get('round_memory', {}).get('user_preset_answers', {})}
     answers = memory_answers
     old = m['questions'].get(QUESTION_KEY)
     # Run answers are immutable evidence; environment memory supplies only unseen runs.
@@ -184,22 +192,35 @@ def checklist_text(q):
     if q.get('unclassified'):
         lines += ['## 未分类前置条件（AI 必须先分流）', '']
         lines += ['- ' + r['key'] + ' ' + r['label'] + '（' + '、'.join(r['cases']) + '）' for r in q['unclassified']]
+    user_preset = [r for r in q['entries'] if r.get('prep_method') == 'user_preset']
+    if user_preset:
+        lines += ['## 每个需求一次性预置的数据（集中确认）', '',
+                  '以下项目合并为一次批量预置；同一需求后续轮次沿用确认，不按用例重复询问。']
+        for row in user_preset:
+            lines += ['- ' + row['key'] + ' ' + row['label'] + '（' + '、'.join(row['cases']) + '）：确认已预置或说明缺少。']
+        lines += ['']
     for block, title in [('A', '需要的站点、账号、编辑器和迁移条件'), ('B', '临时修改并还原的数据范围'), ('C', '业务歧义及选项'), ('D', '页面入口（大概在哪）'), ('E', '操作路径存疑（spec-pathfinder，回答一次写入知识库）')]:
         lines += ['## ' + block + ' ' + title, '']
         if block == 'A':
             lines += ['公开文件检查在远程执行，不挂起关联用例；本机先完成编辑器保存和数据准备，交接 remote-checks/request.json。远程回执后恢复并核验数据；到期须续跑或调用恢复命令。请求延迟由浏览器拦截器提供。', '']
         if block == 'B':
             lines += ['配置的测试站可自由编辑、保存和发布；实际可行时恢复快照。清单答案不扩大配置授权。', '']
-        subset = [r for r in q['entries'] if r['block'] == block]
+        subset = [r for r in q['entries'] if r['block'] == block and
+                  not (block == 'A' and r.get('prep_method') == 'user_preset')]
         if not subset:
-            lines += ['无。', '']
+            if block == 'A' and user_preset:
+                lines += ['用户预置项已合并到上方批量区。', '']
+            else:
+                lines += ['无。', '']
         for row in subset:
             value = answers.get(row['key'], '待回答')
             status = ('已确认可用' if value is True else '已确认缺少／不同意，相关用例挂起' if value is False else value)
             label = row['label'] + (' 大概在哪里进入？（例：内容管理 → 产品 → 编辑）' if block == 'D' else '')
             if block == 'E' and row.get('kind') == 'guided_exploration':
                 label += '。请记录一次引导探索看到的入口和现象'
-            lines += ['- ' + block + str(row.get('number', 1)) + '. ' + label + '（' + '、'.join(row['cases']) + '）：' + ' / '.join(row['options']) + '。状态：' + str(status)]
+            method = ('；准备方式：' + row.get('prep_method', '')) if block == 'A' else ''
+            api = ('；API 候选：' + '、'.join(row['api_candidates'])) if row.get('api_candidates') else ''
+            lines += ['- ' + block + str(row.get('number', 1)) + '. ' + label + '（' + '、'.join(row['cases']) + '）：' + ' / '.join(row['options']) + '。状态：' + str(status) + method + api]
         lines += ['']
     lines += ['回答格式：A 除 TC-xxxx 缺少外其余可用，B 同意，C 无歧义，D 页面=大概路径（多项用 D1、D2 或分号分隔），E 按原文可观察或 E1 具体结论 / E 挂起。', '']
     return '\n'.join(lines)
@@ -295,7 +316,9 @@ def answer_sentence(base, m, sentence, finalizing=False):
     m.setdefault('checklist_question_count', len(newly_answered))
     m.setdefault('entry_question_count', sum(r['block'] == 'D' and r['key'] in newly_answered for r in q['entries']))
     m['checklist_issued'] = True
-    m.setdefault('interaction_events', []).append({'kind': 'checklist_answer', 'at': now()})
+    m.setdefault('interaction_events', []).append({'kind': 'checklist_answer', 'at': now(), 'question_id': q.get('id'),
+        'entries': [{'key': row['key'], 'label': row['label'], 'cases': row.get('cases', [])}
+                    for row in q.get('entries', []) if row.get('key') in newly_answered]})
     event(m, 'checklist_answered', entries=len(answers))
     apply_checklist(m, q)
     (base / 'checklist.md').write_text(scrub_text(checklist_text(q), m['config']), encoding='utf-8')

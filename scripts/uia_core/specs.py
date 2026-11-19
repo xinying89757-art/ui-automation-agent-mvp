@@ -410,6 +410,8 @@ def lint(base, m, case_ids=None, record=True, check_scripts=True):
         for text in spec['questions']:
             business.setdefault(text, []).append(cid)
         for assertion in spec['assertions']:
+            if assertion.get('category') == 'frontend' and not all(check.get('op') == 'remote_file' for check in assertion.get('checks', [])):
+                results[cid]['errors'].append('frontend assertions must use the remote-checks protocol')
             signature = digest(sorted(assertion['checks'], key=lambda check: json.dumps(check, sort_keys=True, ensure_ascii=False)))
             if signature in seen and seen[signature][0] != cid:
                 other, aid = seen[signature]

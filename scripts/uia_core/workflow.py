@@ -102,6 +102,9 @@ def answer(m, qid, value, base):
         q.update(status="answered", answer=value, answered_at=now(), wait_seconds=elapsed(q["created_at"]))
         from .preconditions import apply_precondition_answer
         apply_precondition_answer(m, q)
+        m.setdefault('interaction_events', []).append({'kind': 'checklist_answer', 'at': now(), 'question_id': qid,
+            'entries': [{'key': row.get('key'), 'label': row.get('label'), 'cases': row.get('cases', [])}
+                        for row in q.get('entries', [])]})
         event(m, "question_answered", question_id=qid)
         waiting = [cid for cid in q["case_ids"] if m["cases"][cid]["work_status"] == "waiting_human"]
         return {"question_id": qid, "next": "next", "waiting": waiting}
@@ -124,6 +127,7 @@ def answer(m, qid, value, base):
                 c["stage"] = "discovery"
     if q["kind"] in {"login", "environment"}:
         m["preflight"] = None
+    m.setdefault('interaction_events', []).append({'kind': 'mid_run_question', 'at': now(), 'question_id': qid})
     event(m, "question_answered", question_id=qid)
     return {"question_id": qid, "next": "next", "replay_required": q["kind"] == "demo"}
 

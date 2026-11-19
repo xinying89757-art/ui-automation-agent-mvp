@@ -180,3 +180,35 @@ def classify_precondition(base, m, key, classification, label, matches, page=Non
     atomic_write(base / 'preconditions.yaml', {'schema_version': 'preconditions.run.v1', 'preconditions': m['precondition_catalog']}, as_yaml=True)
     triage(base, m)
     return {'classified': key, 'as': classification}
+
+
+def api_candidates(label, patterns, markdown_file):
+    """Match a human-maintained Open Platform API Markdown list without networking."""
+    if not markdown_file:
+        return []
+    from pathlib import Path
+    import re
+    text = Path(markdown_file).read_text(encoding='utf-8')
+    candidates = [line.strip().lstrip('#-* ').strip() for line in text.splitlines() if line.strip()]
+    needles = set()
+    for value in [label, *(patterns or [])]:
+        needles.update(x.casefold() for x in re.findall(r'[A-Za-z][A-Za-z0-9_-]{2,}|[\u4e00-\u9fff]{2,}', value))
+    return [line for line in candidates if any(token in line.casefold() for token in needles)][:20]
+
+
+def set_prep_method(base, m, key, method, api_list=None):
+    from .common import atomic_write, require
+    from .secrets import scrub_text
+    require(method in {'api', 'ui_agent', 'user_preset'}, 'Invalid preparation method')
+    catalog = m.setdefault('precondition_catalog', {})
+    entry = {**vocabulary().get(key, {}), **catalog.get(key, {})}
+    catalog[key] = entry
+    entry['prep_method'] = method
+    candidates = api_candidates(entry.get('label', key), entry.get('match', []), api_list) if method == 'api' else []
+    if candidates:
+        require(all(scrub_text(item, m['config']) == item for item in candidates), 'API candidate contains sensitive data')
+        entry['api_candidates'] = candidates
+    atomic_write(base / 'preconditions.yaml', {'schema_version': 'preconditions.run.v1',
+                                               'preconditions': m.get('precondition_catalog', {})}, as_yaml=True)
+    triage(base, m)
+    return {'precondition': key, 'prep_method': method, 'api_candidates': candidates}

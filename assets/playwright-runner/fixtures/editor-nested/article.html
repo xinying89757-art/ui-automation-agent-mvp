@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>Article frame</title></head>
+<body>
+  <button type="button" id="nav-article">文章</button>
+  <a id="edit-link" href="https://shop.example.test/article_edit?invokeAction=article_edit" hidden>编辑</a>
+  <button type="button" id="body-tab" hidden>正文</button>
+  <iframe id="tiptap-iframe" class="tiptap-iframe" hidden title="tiptap" src="canvas.html"></iframe>
+  <script>
+    document.getElementById('nav-article').addEventListener('click', () => {
+      document.getElementById('edit-link').hidden = false;
+    });
+    document.getElementById('edit-link').addEventListener('click', event => {
+      event.preventDefault();
+      document.getElementById('body-tab').hidden = false;
+    });
+    document.getElementById('body-tab').addEventListener('click', () => {
+      document.getElementById('tiptap-iframe').hidden = false;
+    });
+  </script>
+</body>
+</html>

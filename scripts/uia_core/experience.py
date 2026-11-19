@@ -72,6 +72,26 @@ def rows(base, m):
     from .pathfinder import checklist_rows
     result += page_rows(base, m)
     result += checklist_rows(m, result)
+    # Keep missing-control markers in the same E checklist as Pathfinder doubts.
+    from .preconditions import normalize
+    for marker in m.get('missing_controls') or []:
+        target = str(marker.get('target') or '').strip()
+        control = re.sub(r'^[A-Za-z]\d+\s+', '', target)
+        case_id = str(marker.get('case_id') or '').strip()
+        if not target:
+            continue
+        existing = next((row for row in result if row.get('block') == 'E' and
+                         (normalize(control) == normalize(row.get('subject', '')) or
+                          normalize(control) in normalize(row.get('label', '')))), None)
+        if existing:
+            existing['cases'] = sorted(set(existing.get('cases', [])) | ({case_id} if case_id else set()))
+            existing.setdefault('missing_controls', []).append(marker)
+            continue
+        result.append({'key': 'missing-control:' + digest([case_id, target]), 'block': 'E',
+                       'label': '待补控件：' + target, 'subject': target,
+                       'cases': [case_id] if case_id else [],
+                       'options': ['按原文可观察', '挂起'], 'kind': 'missing_control',
+                       'missing_controls': [marker]})
     guided = [row.get('subject', '') for row in result if row.get('kind') == 'guided_exploration']
     result = [row for row in result if row.get('block') != 'D' or not any(
         subject and (subject in row.get('page', '') or row.get('page', '') in subject) for subject in guided)]
@@ -613,11 +633,11 @@ def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_m
         return {'run_id': m['run_id'], 'run_reused': bool(matches),
                 'run_selection': '复用同一工作簿与环境的 run；用例子集已更新' if matches else '新建 run；当前环境和工作簿没有匹配的既有 run',
                 'checklist_message': memory_note, **checklist, 'spec_tasks': tasks, 'report': output, 'armed_watches': armed,
+                'smoke': m.get('smoke'), 'abort': m.get('abort'),
                 'pathfinder': {'stage': (m.get('pathfinder') or {}).get('stage'),
                                'requirements': [row.get('name') for row in (m.get('pathfinder') or {}).get('requirements') or []],
                                'guided': (m.get('pathfinder') or {}).get('guided') or [],
                                'output_dir': (m.get('pathfinder') or {}).get('output_dir')},
-                'smoke': m.get('smoke'), 'abort': m.get('abort'),
                 'next': {'action': 'classify_preconditions' if checklist['unclassified'] else 'complete_spec_tasks' if checklist['draft'] else 'answer_checklist' if checklist['question_count'] else 'continue_spec_tasks_or_review', 'unclassified': checklist['unclassified'], 'ai_tasks': checklist['ai_tasks'], 'mid_run_questions': 0,
                          **({'process_issue': {'code': 're_explored_known_pages', 'count': exploration_metric['re_explored_known_pages']}} if exploration_metric['re_explored_known_pages'] else {}),
                          'exploration_for_missing_controls': exploration_metric['exploration_for_missing_controls'],

@@ -371,6 +371,99 @@ def entry_route_locator_errors(body, spec, pages):
     return errors
 
 
+RAW_ASSEMBLED_ACTION = re.compile(
+    r'\b(?:getByText|getByRole|getByLabel|getByPlaceholder|locator|frameLocator)\s*\([^\n]*\)'
+    r'\s*(?:\.[\w$]+\([^\n]*\)\s*)*\.(?:click|dblclick|fill|press|selectOption|check|uncheck|hover|setInputFiles|type)\s*\('
+)
+
+
+def assembled_raw_action_errors(body):
+    """Assembled specs call skeleton primitives. Raw locator actions are a generation defect."""
+    if '// @uia-assembled' not in body:
+        return []
+    errors = []
+    for index, line in enumerate(body.splitlines(), 1):
+        stripped = line.strip()
+        if stripped.startswith('//') or stripped.startswith('*'):
+            continue
+        if RAW_ASSEMBLED_ACTION.search(line):
+            errors.append('generated spec must call skeleton primitives, not a raw locator action: line ' + str(index))
+    return errors
+
+
+def note_missing_control(base, m, cid, label):
+    """Record a 待补控件 marker on the case, the checklist when one exists, and a run file."""
+    marker = {'case_id': cid, 'target': label, 'marker': '待补控件'}
+    bucket = m.setdefault('missing_controls', [])
+    if marker not in bucket:
+        bucket.append(marker)
+    case = m['cases'][cid]
+    case.setdefault('missing_controls', [])
+    if label not in case['missing_controls']:
+        case['missing_controls'].append(label)
+    question = m.get('questions', {}).get('run-preconditions')
+    if isinstance(question, dict):
+        question.setdefault('missing_controls', [])
+        if marker not in question['missing_controls']:
+            question['missing_controls'].append(marker)
+    if base is None:
+        return
+    lines = ['# 待补控件', '']
+    lines.extend('- 待补控件 ' + row['case_id'] + ' ' + row['target'] for row in bucket)
+    (Path(base) / 'missing-controls.md').write_text('\n'.join(lines) + '\n', encoding='utf-8')
+
+
+def _control_label(entry, name):
+    if isinstance(entry, dict) and isinstance(entry.get('name'), str) and entry['name'].strip():
+        return entry['name'].strip()
+    match = re.search(r'(?:has-text|text-is|text)\(\s*(["\'])(.*?)\1', str((entry or {}).get('selector') or ''))
+    return match.group(2) if match else name
+
+
+def _rich_text_kind(entry, name, verb):
+    blob = json.dumps(entry or {}, ensure_ascii=False) + ' ' + str(name)
+    if verb == 'click' and re.search(r'slash-card|slash-command', blob, re.I):
+        return 'insert'
+    if verb == 'fill' and re.search(r'contenteditable|ProseMirror|tiptap', blob, re.I):
+        return 'type'
+    role = str((entry or {}).get('role') or '')
+    if verb == 'click' and role in {'option', 'menuitem', 'menuitemcheckbox', 'menuitemradio'}:
+        return 'menu'
+    return ''
+
+
+def _emit_verified_action(lines, verb, name, value, pages):
+    entry = pages['targets'].get(name, {})
+    kind = _rich_text_kind(entry, name, verb)
+    if kind == 'insert':
+        lines.append('  await editor.insertComponent(' + json.dumps(_control_label(entry, name), ensure_ascii=False) + ');')
+        return
+    if kind == 'type':
+        lines.append('  await editor.typeText(' + json.dumps(value if isinstance(value, str) else '', ensure_ascii=False) + ');')
+        return
+    if kind == 'menu':
+        lines.append('  await editor.selectMenuItem(' + json.dumps(_control_label(entry, name), ensure_ascii=False) + ');')
+        return
+    action = 'click' if verb == 'close' else verb
+    pattern_verb = 'click' if verb in {'click', 'close'} else verb
+    patterns = interaction_patterns_for_target(entry, pattern_verb, name) if pattern_verb == 'click' else list(entry.get('patterns') or [])
+    value_js = json.dumps(value, ensure_ascii=False) if isinstance(value, str) else 'undefined'
+    lines.append('  await editor.actVerified(' + json.dumps(action) + ', ' + json.dumps(name) + ', ' + value_js + ', ' + json.dumps(patterns) + ');')
+
+
+def _emit_verified_check(lines, check):
+    target = json.dumps(check['target'])
+    op = json.dumps(check['op'])
+    if check['op'] in {'visible', 'hidden', 'enabled', 'disabled'}:
+        lines.append('    await editor.expectVerified(' + target + ', ' + op + ');')
+        return
+    value = json.dumps(check.get('value'), ensure_ascii=False)
+    if check['op'] == 'attribute':
+        lines.append('    await editor.expectVerified(' + target + ', ' + op + ', ' + value + ', { attribute: ' + json.dumps(check.get('attribute')) + ' });')
+        return
+    lines.append('    await editor.expectVerified(' + target + ', ' + op + ', ' + value + ');')
+
+
 def coverage(body, file):
     result = {'steps': {}, 'assertions': {}}
     for line, text in enumerate(body.splitlines(), 1):
@@ -425,6 +518,7 @@ def lint(base, m, case_ids=None, record=True, check_scripts=True):
             body = script.read_text()
             errors.extend(locator_errors(body, pages))
             errors.extend(entry_route_locator_errors(body, spec, pages))
+            errors.extend(assembled_raw_action_errors(body))
             try:
                 refs = coverage(body, str(script.resolve().relative_to((base / 'runner').resolve())))
                 for field in ('steps', 'assertions'):
@@ -510,13 +604,15 @@ def generate(base, m, cid):
         match_run(base, m)
     knowledge_context = matched_context(base, m, cid)
     lines = ["// Generated deterministically from case-spec.v1 and shared interaction patterns.", *pathfinder_note,
+             '// @uia-assembled',
              '// Knowledge targets: ' + ', '.join(sorted(item['id'] for item in knowledge_context.get('selected', []))),
              "import { test, expect, businessAssertion } from '../../support/fixtures.js';",
              "import { openTarget } from '../../support/case-spec.js';",
-             "import { delayRequests, doubleClick, attemptClick, observeOccurrences } from '../../flows/network-control.mjs';",
-             "import { performWithPatterns } from '../../support/interaction-patterns.mjs';",
-             "import { deferPublic, trackSave, verifyPersisted, readFieldValue, assertSaveBusinessOk } from '../../support/remote-checks.mjs';", '',
-             'test(' + json.dumps('[' + cid + '] ' + spec['intent'], ensure_ascii=False) + ', async ({ page, caseContext }) => {', '  const networks: Record<string, any> = {};', '  const observations: Record<string, any> = {};', '  try {']
+             "import { createContentEditor } from '../../support/editor-skeleton.mjs';",
+             "import { delayRequests } from '../../flows/network-control.mjs';",
+             "import { deferPublic, trackSave, assertSaveBusinessOk } from '../../support/remote-checks.mjs';", '',
+             'test(' + json.dumps('[' + cid + '] ' + spec['intent'], ensure_ascii=False) + ', async ({ page, caseContext }) => {', '  const networks: Record<string, any> = {};', '  const observations: Record<string, any> = {};', '  try {',
+             '  const editor = createContentEditor(() => page, { caseContext, observations, networks });']
     entry_routes = (read_yaml(ROOT / 'knowledge/entries.yaml') or {}).get('entries', {})
     route_id = canonical_entry_route(spec.get('entry_route'), entry_routes)
     start = pages.get('pages', {}).get(spec['start_page'], {})
@@ -544,6 +640,8 @@ def generate(base, m, cid):
     todos = []
     def todo(label):
         todos.append(label)
+        note_missing_control(base, m, cid, label)
+        lines.append('  // 待补控件: ' + label)
         lines.append('  // TODO explore: ' + label)
         lines.append('  throw new Error(' + json.dumps('UIA_EXPLORATION_REQUIRED: ' + label) + ');')
     source_steps = []
@@ -563,12 +661,14 @@ def generate(base, m, cid):
             source_text = ' '.join(str(part) for part in source_text) if isinstance(source_text, list) else str(source_text or '')
         press_enter = bool(keyboard_step(source_text) or keyboard_step(str(name or '')) or keyboard_step(str(step.get('value') or '')))
         loc = locator_expression(name, pages)
+        entry = pages['targets'].get(name, {})
+        known = bool(loc) or verb == 'open' or bool(canonical_entry_route(name, entry_routes))
         if press_enter:
             lines.append('  await page.keyboard.press("Enter");')
         elif sid in replayed_route_steps:
             lines.append('  // Navigation replayed by openTarget(' + json.dumps(route_id) + ').')
         elif verb == 'observe':
-            lines.append('  observations[' + json.dumps(name) + '] = await observeOccurrences(page, ' + json.dumps(pages['targets'][name]['observe_text'], ensure_ascii=False) + ');')
+            lines.append('  observations[' + json.dumps(name) + '] = await editor.observe(' + json.dumps(name) + ');')
         elif verb == 'defer_public':
             lines.append('  await assertSaveBusinessOk(caseContext);')
             lines.append('  // Public assertions are handed off after the editor save.')
@@ -577,32 +677,15 @@ def generate(base, m, cid):
             lines.append('  networks[' + json.dumps(name) + '] = await delayRequests(page, ' + json.dumps(rule) + ', ' + step['value'] + ');')
         elif verb == 'network_release':
             lines.append('  networks[' + json.dumps(name) + '].release();')
-        elif verb in {'double_click', 'attempt_click'}:
-            lines.append('  await ' + ('doubleClick' if verb == 'double_click' else 'attemptClick') + '(page, ' + loc + ');')
-        elif (not loc and verb != 'open') or name.startswith('?'):
+        elif name.startswith('?') or (verb not in {'open', 'observe', 'defer_public', 'network_delay', 'network_release'} and not known and not _rich_text_kind(entry, name, verb)):
             todo(sid + ' ' + name)
         elif verb == 'open':
             target = canonical_entry_route(name, entry_routes) or name
             lines.append('  page = await openTarget(page, ' + json.dumps(target) + ');')
-        elif verb in {'click', 'hover', 'check', 'uncheck', 'close'}:
-            action = 'click' if verb == 'close' else verb
-            target_patterns = interaction_patterns_for_target(pages['targets'].get(name, {}), action, name)
-            if target_patterns:
-                lines.append('  await performWithPatterns(page, () => ' + loc + ', ' + json.dumps(target_patterns) +
-                             ', target => target.' + action + '());')
-            else:
-                lines.append('  await ' + loc + '.' + action + '();')
-        elif verb in {'fill', 'select', 'press', 'upload'}:
-            method = {'select': 'selectOption', 'upload': 'setInputFiles'}.get(verb, verb)
-            target_patterns = pages['targets'].get(name, {}).get('patterns', [])
-            value = json.dumps(step['value'], ensure_ascii=False)
-            if target_patterns:
-                lines.append('  await performWithPatterns(page, () => ' + loc + ', ' + json.dumps(target_patterns) +
-                             ', target => target.' + method + '(' + value + '));')
-            else:
-                lines.append('  await ' + loc + '.' + method + '(' + value + ');')
         elif verb in {'wait', 'assert'}:
-            lines.append('  await expect(' + loc + ').toBeVisible();')
+            lines.append('  await editor.expectVerified(' + json.dumps(name) + ', "visible");')
+        else:
+            _emit_verified_action(lines, verb, name, step.get('value'), pages)
         lines.append('  });')
         for assertion in (a for a in spec['assertions'] if a['after'] == sid):
             lines.append('  // Excel: ' + assertion['excel'].replace('\n', '\n  // '))
@@ -615,51 +698,29 @@ def generate(base, m, cid):
                 continue
             lines.append("  await businessAssertion('" + assertion['id'] + "', async () => {")
             for check in assertion['checks']:
-                loc = locator_expression(check['target'], pages)
-                if check['op'] == 'occurrence_count':
-                    lines.append('    await expect.poll(() => observations[' + json.dumps(check['target']) + '].count()).toBe(' + str(check['value']) + ');')
+                if check['op'] in {'occurrence_count', 'request_count'}:
+                    _emit_verified_check(lines, check)
                     continue
-                if check['op'] == 'request_count':
-                    lines.append('    await expect.poll(() => networks[' + json.dumps(check['target']) + '].count()).toBe(' + str(check['value']) + ');')
-                    continue
-                if check['op'] == 'visible_text':
-                    lines.append('    await expect.poll(() => ' + loc + '.innerText()).toBe(' + json.dumps(check['value'], ensure_ascii=False) + ');')
-                    continue
-                if check['op'] == 'blocked':
-                    lines.append('    expect(await ' + loc + '.evaluate(el => el.matches(":disabled") || el.getAttribute("aria-disabled") === "true" || /disabled/i.test(el.className) || getComputedStyle(el).pointerEvents === "none")).toBe(true);')
-                    continue
-                if not loc:
-                    todo(assertion['id'] + ' ' + check['target']); continue
                 if check['op'] == 'left_of':
-                    other = locator_expression(check['value'], pages)
-                    if not other:
-                        todo(assertion['id'] + ' ' + check['value']); continue
-                    lines.append('    expect((await ' + loc + '.boundingBox())!.x).toBeLessThan((await ' + other + '.boundingBox())!.x);')
+                    if not locator_expression(check['target'], pages) or not locator_expression(check.get('value'), pages):
+                        todo(assertion['id'] + ' ' + str(check.get('target')))
+                        continue
+                    _emit_verified_check(lines, check)
                     continue
-                method = {'visible':'toBeVisible', 'hidden':'toBeHidden', 'text':'toHaveText', 'contains':'toContainText', 'value':'toHaveValue',
-                          'attribute':'toHaveAttribute', 'count':'toHaveCount', 'enabled':'toBeEnabled', 'disabled':'toBeDisabled'}[check['op']]
-                args = [check['attribute']] if check['op'] == 'attribute' else []
-                if 'value' in check:
-                    args.append(check['value'])
-                lines.append('    await expect(' + loc + ').' + method + '(' + ', '.join(json.dumps(x, ensure_ascii=False) for x in args) + ');')
+                if check['op'] not in {'occurrence_count', 'request_count'} and not locator_expression(check['target'], pages):
+                    todo(assertion['id'] + ' ' + check['target'])
+                    continue
+                _emit_verified_check(lines, check)
             lines.append('  });')
         for rb in (item for item in spec.get('read_back', []) if item['after'] == sid):
-            lines.append('  await page.reload();')
-            for index, target_name in enumerate(rb['reopen']):
-                entry = pages['targets'][target_name]
-                if index == 0 and entry.get('open'):
-                    lines.append('  page = await openTarget(page, ' + json.dumps(target_name) + ');')
-                else:
-                    reopen_loc = locator_expression(target_name, pages)
-                    if not reopen_loc:
-                        todo(rb['id'] + ' ' + target_name)
-                    else:
-                        lines.append('  await ' + reopen_loc + '.click();')
-            field_loc = locator_expression(rb['target'], pages)
-            lines.append('  await verifyPersisted(page, caseContext, ' + json.dumps(rb, ensure_ascii=False) + ', ' + json.dumps(pages['targets'][rb['save_target']]['network']) + ', async () => await readFieldValue(' + field_loc + '));')
+            missing = [item for item in [rb['target'], *rb['reopen']] if not locator_expression(item, pages) and not pages['targets'].get(item, {}).get('open')]
+            if missing:
+                todo(rb['id'] + ' ' + missing[0])
+            else:
+                lines.append('  page = await editor.readBack(' + json.dumps(rb, ensure_ascii=False) + ');')
     lines += ['  await assertSaveBusinessOk(caseContext);', '  } finally {', '    for (const network of Object.values(networks)) await network.dispose();', '    for (const observation of Object.values(observations)) await observation.dispose();', '  }', '});', '']
     body = '\n'.join(lines)
-    errors = locator_errors(body, pages) + entry_route_locator_errors(body, spec, pages)
+    errors = locator_errors(body, pages) + entry_route_locator_errors(body, spec, pages) + assembled_raw_action_errors(body)
     require(not errors, 'Generated locator lint failed', errors)
     relative = 'tests/generated/' + cid + '.spec.ts'
     script = base / 'runner' / relative
@@ -695,7 +756,7 @@ def register_script(base, m, cid, script_path):
     require(script.suffix == '.ts' and script.is_file(), 'Final spec must be a TypeScript file under runner/tests')
     relative = str(script.relative_to((base / 'runner').resolve()))
     body = script.read_text()
-    locator_problems = locator_errors(body, pages) + entry_route_locator_errors(body, spec, pages)
+    locator_problems = locator_errors(body, pages) + entry_route_locator_errors(body, spec, pages) + assembled_raw_action_errors(body)
     require(not locator_problems, 'Final spec locator lint failed', locator_problems)
     require('TODO explore:' not in body and 'UIA_EXPLORATION_REQUIRED' not in body, 'Resolve exploration TODO before registration')
     refs = coverage(body, relative)

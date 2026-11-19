@@ -222,6 +222,13 @@ export async function openSiteArea(page, cfg, area) {
   const label = selected.kind === 'card' || area === '内容管理' ? area : '网页编辑';
   const action = root.getByText(label, { exact: true }).first();
   if (!(await visible(action))) fail('SITE_PERMISSION_DENIED', '当前账号没有所需站点管理入口', ['切换有权限账号', '暂停相关用例']);
+  await dismissShellNotices(page);
+  if (selected.kind === 'card') {
+    // Site cards reveal their administration links on hover in the current cloud shell.
+    await root.hover().catch(() => {});
+    await action.scrollIntoViewIfNeeded().catch(() => {});
+    await action.waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
+  }
   if (selected.kind === 'platform') {
     const popupPromise = page.context().waitForEvent('page', { timeout: 30000 });
     await action.click();
@@ -248,6 +255,29 @@ export async function openSiteArea(page, cfg, area) {
   if (await visible(destination.locator('.wrap-webSite').first())) await selectTargetSite(destination, cfg);
   await areaReady(destination, area, cfg);
   return destination;
+}
+
+/** Dismiss only known, explicitly dismissible shell notices before clicking a site entry. */
+export async function dismissShellNotices(page) {
+  const notices = page.locator('.member-warning-box');
+  for (let index = await notices.count() - 1; index >= 0; index -= 1) {
+    const notice = notices.nth(index);
+    const close = notice.locator('.member-warning-close').first();
+    if (await visible(notice) && await visible(close)) {
+      await close.click({ timeout: 2000 }).catch(() => {});
+      await notice.waitFor({ state: 'hidden', timeout: 1200 }).catch(() => {});
+    }
+  }
+
+  // The cloud shell's feature-announcement modal uses this explicit acknowledgement
+  // control rather than a dialog role or the member-warning markup above.
+  const acknowledgements = page.locator('button.hasMessage_url').filter({ hasText: /^我知道了$/u });
+  for (let index = await acknowledgements.count() - 1; index >= 0; index -= 1) {
+    const acknowledgement = acknowledgements.nth(index);
+    if (!await visible(acknowledgement)) continue;
+    await acknowledgement.click({ timeout: 2000 });
+    await acknowledgement.waitFor({ state: 'hidden', timeout: 3000 }).catch(() => {});
+  }
 }
 export async function authenticatedSession(browser, cfg, { force = false, allowLogin = true, manual = false } = {}) {
   const state = force || manual ? undefined : reusableState(cfg);

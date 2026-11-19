@@ -232,10 +232,11 @@ def calculate(base, m, final_report_at=None):
         "human_interventions_per_case": (interventions / len(cases)) if cases else None,
         "kb_hit_rate": hit,
         "knowledge_injected_tokens": {"count": len(injected), "p50": percentile(injected, .50), "p95": percentile(injected, .95)},
-        "rescued_by_midscene": rescued_count,
         "scope_violations": int(m.get("scope_violations", 0)),
         "leak_hits": len(m.get("leak_hits", [])),
         "unreviewed_assertion_changes": max(int(m.get("unreviewed_assertion_changes", 0)), assertion_changes),
+        "rescued_by_midscene": sum(int(a.get("rescued_by_midscene") or 0) for c in cases for a in (c.get("attempts") or [])) + int(m.get("rescued_by_midscene") or 0),
+        "missing_controls": sum(len(c.get("missing_controls") or []) for c in cases),
         "remote_checks": {status: sum(r.get("active", True) and r["status"] == status for r in m.get("remote_checks", {}).values()) for status in ("pending", "pass", "fail", "still-cached", "unreachable")},
         "measured_at": now(),
     }

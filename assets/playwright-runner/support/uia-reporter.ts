@@ -88,12 +88,15 @@ export default class UiaReporter implements Reporter {
       : passed ? { result: 'passed', failure_class: null }
       : classifyFailure(message, result.status, this.locatorNeverResolved(message));
     const status = judged.result;
+    const annotations = result.annotations?.length ? result.annotations : test.annotations;
+    const rescued = annotations.filter(item => item.type === 'rescued_by_midscene').length;
     this.cases.push({ case_id: caseId, result: status, failure_class: judged.failure_class, playwright_status: result.status,
+      rescued_by_midscene: rescued,
       setup_started: result.attachments.some(a => a.name === 'uia-setup-started'),
       duration_ms: result.duration, retry: result.retry, errors, lifecycle,
       assertions: actual, deferred_assertions: deferred, expected_assertions: expected,
       successful_steps: this.successfulSteps.get(test.id) ?? [],
-      failure_stage: passed ? null : judged.failure_class === 'environment' ? 'environment' : /UIA_SAVE_NOT_PERSISTED/u.test(message) ? "save_not_persisted" : /UIA_ENVIRONMENT_BLOCKED/u.test(message) ? "environment_or_session" : /UIA_SETUP_FAILED/u.test(message) ? "data_preparation" : this.locatorNeverResolved(message) ? "locator_resolution" : /UIA_BUSINESS_FAILURE/u.test(message) ? "business_assertion" : "locator_or_timing",
+      failure_stage: passed ? null : judged.failure_class === 'environment' ? 'environment' : /UIA_SAVE_NOT_PERSISTED/u.test(message) ? "save_not_persisted" : /UIA_SETUP_FAILED/u.test(message) ? "data_preparation" : this.locatorNeverResolved(message) ? "locator_resolution" : /UIA_BUSINESS_FAILURE/u.test(message) ? "business_assertion" : "locator_or_timing",
       read_back: this.readBack(caseId),
       saves: this.saveObservations(caseId),
       script: test.location.file, line: test.location.line,

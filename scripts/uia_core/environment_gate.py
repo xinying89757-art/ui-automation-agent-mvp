@@ -31,10 +31,17 @@ def block_run(m, error):
     reason = scrub_text(str(error), m.get("config"))[:500]
     details = error.details if isinstance(getattr(error, "details", None), dict) else {}
     code = details.get("code")
+    timings = details.get("timings") if isinstance(details.get("timings"), dict) else {}
+    timings = {key: int(value) for key, value in timings.items()
+               if key in {"authenticated_ms", "editor_ms", "total_ms"}
+               and isinstance(value, (int, float)) and not isinstance(value, bool)}
+    auth_path = details.get("auth_path") if details.get("auth_path") in {"session", "password"} else None
     if code and code not in reason:
         reason = f"{code}: {reason}"
     m["preflight"] = {**(m.get("preflight") or {}), "status": "blocked", "checked_at": now(),
-                      "errors": [reason], "failure_class": "environment"}
+                      "errors": [reason], "failure_class": "environment",
+                      **({"timings_ms": timings} if timings else {}),
+                      **({"auth_path": auth_path} if auth_path else {})}
     for case in m.get("cases", {}).values():
         case.update(result="environment_blocked", stage="finished", work_status="finished",
                     pass_streak=0, stability="not_run" if not case.get("attempts") else "unstable",
@@ -43,7 +50,9 @@ def block_run(m, error):
                                     **({"code": code} if code else {})})
     m.setdefault("history", [])
     event(m, "environment_blocked", reason=reason, code=code)
-    return {"status": "blocked", "failure_class": "environment", "reason": reason, "code": code}
+    return {"status": "blocked", "failure_class": "environment", "reason": reason, "code": code,
+            **({"timings_ms": timings} if timings else {}),
+            **({"auth_path": auth_path} if auth_path else {})}
 
 
 def enforce_editor(base, evidence_rel):
@@ -76,6 +85,7 @@ def public_preflight_result(proof, elapsed_seconds):
     return {
         "status": "passed" if passed else "blocked",
         "failure_class": None if passed else "environment",
+        "auth_path": "session" if proof.get("reused") else "password" if proof.get("refreshed") else None,
         "checks": {
             "login": bool(login_ok),
             "site_reachable": bool(site_reachable),
@@ -105,8 +115,14 @@ def live_preflight(cfg, runner=None):
         code = error.details.get("code") if isinstance(error.details, dict) else None
         if code and code not in reason:
             reason = f"{code}: {reason}"
+        details = error.details if isinstance(error.details, dict) else {}
+        timings = details.get("timings") if isinstance(details.get("timings"), dict) else {}
+        timings = {key: int(value) for key, value in timings.items()
+                   if key in {"authenticated_ms", "editor_ms", "total_ms"}
+                   and isinstance(value, (int, float)) and not isinstance(value, bool)}
         return {"status": "blocked", "failure_class": "environment", "reason": reason, "code": code,
                 "checks": {"login": False, "site_reachable": False, "site_selected": False, "editor_opened": False},
+                "timings_ms": timings, "auth_path": details.get("auth_path") if details.get("auth_path") in {"session", "password"} else None,
                 "elapsed_seconds": round(time.perf_counter() - started, 3)}
     proof = read_json(evidence) if evidence.is_file() else {}
     result = public_preflight_result(proof, time.perf_counter() - started)

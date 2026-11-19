@@ -54,18 +54,18 @@ class JsonParser(argparse.ArgumentParser):
         raise UiaError(message)
 
     def parse_args(self, args=None, namespace=None):
-        if args is None:
-            args = sys.argv[1:]
-        else:
-            args = list(args)
-        if args and args[0] == "hints":
-            args = _reorder_hints(args)
-        # Python 3.12 drops a trailing positional that follows an option (nargs='?').
-        namespace, extras = super().parse_known_args(args, namespace)
+        argv = sys.argv[1:] if args is None else list(args)
+        if argv and argv[0] == "hints":
+            argv = _reorder_hints(argv)
+        # Preserve trailing positionals that Python 3.12 can drop after an option.
+        namespace, extras = super().parse_known_args(argv, namespace)
         if not extras:
             return namespace
         if any(str(item).startswith('-') for item in extras):
             self.error('unrecognized arguments: ' + ' '.join(extras))
+        if getattr(namespace, 'command', None) == 'hints' and not getattr(namespace, 'text', None):
+            namespace.text = ' '.join(extras)
+            return namespace
         subparsers = next(action for action in self._actions if isinstance(action, argparse._SubParsersAction))
         sub = subparsers.choices.get(getattr(namespace, 'command', None))
         target = None
@@ -120,10 +120,10 @@ def parser():
     hints.add_argument("--prefix")
     hints.add_argument("--overwrite", action="store_true")
     hints.add_argument("--run", required=True)
-    hints.add_argument("text", nargs="?")
     hints.add_argument("--page")
     hints.add_argument("--step", action="append", default=[])
     hints.add_argument("--frame")
+    hints.add_argument("text", nargs="?")
     go.add_argument("--arm-watch", help="Comma-separated case IDs whose max-latency public assertion gets a pre-armed remote watch before the save")
     go.add_argument("--lead-minutes", type=int, default=20)
     go.add_argument("--watch-minutes", type=int, default=10)
@@ -145,6 +145,14 @@ def parser():
     kb.add_argument("--max-tokens", type=int)
     kb.add_argument("--stale-after-days", type=int, default=90)
     kb.add_argument("--candidate-after-days", type=int, default=180)
+    editor_explore = commands.add_parser("editor-explore")
+    editor_explore.add_argument("--fixture")
+    editor_explore.add_argument("--profile")
+    editor_explore.add_argument("--run")
+    editor_explore.add_argument("--out")
+    editor_smoke = commands.add_parser("editor-smoke")
+    editor_smoke.add_argument("--profile", required=True)
+    editor_smoke.add_argument("--out")
     turn = commands.add_parser("session-turn")
     turn.add_argument("--run", required=True)
     turn.add_argument("--id", required=True)
@@ -560,6 +568,11 @@ def execute(args):
             return round_ops.create(args.from_run, args.round, args.run_id, args.profile, args.excel)
         require(args.run, 'rounds compare requires --run')
         return round_ops.compare(args.run)
+    if args.command in {'editor-explore', 'editor-smoke'}:
+        from .editor_explore import run_explore, run_smoke
+        if args.command == 'editor-smoke':
+            return run_smoke(args.profile, args.out)
+        return run_explore(args.fixture, args.profile, args.out, args.run or 'editor-explore')
     if args.command == 'kb':
         from . import knowledge
         if args.action == 'merge':
@@ -612,7 +625,8 @@ def execute(args):
         from .experience import go
         return go(args.excel, args.profile, args.cases, arm_watch=args.arm_watch, lead_minutes=args.lead_minutes,
                   watch_minutes=args.watch_minutes, hints=args.hints, smoke_size=args.smoke_size,
-                  smoke_pass_rate=args.smoke_pass_rate, first_result_budget_minutes=args.first_result_budget_minutes, code_root=args.code)
+                  smoke_pass_rate=args.smoke_pass_rate, first_result_budget_minutes=args.first_result_budget_minutes,
+                  code_root=args.code)
     if args.command == "env":
         return {"environments": profiles.presets()}
     if args.command == "setup":

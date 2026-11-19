@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>Fixture admin</title>
+</head>
+<body data-uia-fixture="editor-nested">
+  <form id="login" onsubmit="return false">
+    <input id="loginName" name="loginName" autocomplete="username">
+    <input id="password" name="password" type="password" autocomplete="current-password">
+    <button id="loginSubmit" type="button">登录</button>
+  </form>
+  <div class="contentShow" hidden>
+    <a href="https://shop.example.test/">shop.example.test</a>
+    <button type="button" id="enter-content">内容管理</button>
+  </div>
+  <div id="topNavigator" hidden>内容</div>
+  <iframe id="prod-frame" name="prod" hidden title="prod" src="prod.html"></iframe>
+  <iframe id="article-frame" name="article" hidden title="article" src="article.html"></iframe>
+  <script>
+    function revealShell() {
+      for (const id of ['loginName', 'password', 'loginSubmit']) document.getElementById(id).style.display = 'none';
+      document.querySelector('.contentShow').hidden = false;
+    }
+    document.getElementById('loginSubmit').addEventListener('click', revealShell);
+    document.getElementById('enter-content').addEventListener('click', () => {
+      document.getElementById('topNavigator').hidden = false;
+      document.getElementById('prod-frame').hidden = false;
+      document.getElementById('article-frame').hidden = false;
+      if (location.hash !== '#content') location.hash = 'content';
+    });
+    if (new URL(location.href).searchParams.get('autodrive') === '1') {
+      revealShell();
+      document.getElementById('enter-content').click();
+    }
+  </script>
+</body>
+</html>

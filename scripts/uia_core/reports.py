@@ -14,7 +14,7 @@ from .secrets import drop_unsafe_artifacts, scrub_text, unsafe_attachment
 from . import metrics as run_metrics
 
 
-STATUS_ZH = {"remote_pending": "待远程检查", "remote_cached": "公开文件仍在缓存期", "remote_unreachable": "远程不可达或无法验证","passed": "通过", "business_failure": "业务失败", "save_not_persisted": "保存未生效（后台读回不一致）", "automation_failure": "自动化失败",
+STATUS_ZH = {"remote_pending": "待远程检查", "frontend": "前台待执行", "remote_cached": "公开文件仍在缓存期", "remote_unreachable": "远程不可达或无法验证","passed": "通过", "unasserted": "缺少可执行断言或证据", "business_failure": "业务失败", "save_not_persisted": "保存未生效（后台读回不一致）", "automation_failure": "自动化失败",
              "environment_blocked": "环境阻断", "product_confirmation": "待业务确认", "not_suitable": "不适合自动化", "suspended": "挂起（流程/知识缺口）",
              "interrupted": "已中断", "stable": "已稳定", "unstable": "未稳定", "candidate": "待复验",
              "not_run": "未执行", "pending": "待处理", "runnable": "可执行", "running": "执行中",
@@ -36,9 +36,9 @@ def opening(m, metrics, review):
                   for cid, c in m['cases'].items() if c.get('duplicate_script_warning')]
     if duplicates:
         waiting.append('重复脚本选择：' + '；'.join(duplicates))
-    remote = [cid for cid, c in m['cases'].items() if c.get('work_status') == 'remote_pending']
+    remote = [cid for cid, c in m['cases'].items() if c.get('work_status') in {'remote_pending', 'frontend'}]
     if remote:
-        waiting.append('公开文件待远程验证：' + '、'.join(remote) + '；见 remote-checks/request.json，不计通过。')
+        waiting.append('公开前台待执行/验证：' + '、'.join(remote) + '；见 remote-checks/request.json，不计通过。')
     needs = waiting + ([f"异步审核单 {len(review['items'])} 项；断言建议默认不应用。"] if review['items'] else [])
     metrics_text = (f"清单问题 {metrics['checklist_questions']}（入口问题 {metrics.get('entry_question_count', 0)}），清单回答 {metrics['checklist_answers']}，中途提问 {metrics['mid_run_questions']}，"
                     f"计划外人工介入 {metrics['unplanned_interventions']}，会话轮次 {metrics['session_turns']}；"
@@ -149,6 +149,10 @@ def make_report(base, m):
     m["final_report_at"] = now()
     m["leak_hits"] = run_metrics.leak_scan(base, m["config"])
     flow_metrics = run_metrics.calculate(base, m, m["final_report_at"])
+    from . import process_issues
+    issue_report = process_issues.build(base, m, flow_metrics)
+    atomic_write(out / 'process-issues.json', issue_report)
+    (out / 'process-issues.md').write_text(process_issues.markdown(issue_report), encoding='utf-8')
     atomic_write(base / "metrics.json", flow_metrics)
     atomic_write(out / "metrics.json", flow_metrics)
     blocks = opening(m, flow_metrics, review)

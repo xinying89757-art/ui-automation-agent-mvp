@@ -96,6 +96,14 @@ test('checker evidence is bounded and redacts contact and credential patterns',a
  assert.equal(result.evidence.length,1); assert.ok(result.evidence[0].excerpt.length<=2000);
  assert.doesNotMatch(result.evidence[0].excerpt,/person@example\.com|eyJabcdefghijk|13812345678/);
 });
+
+test('frontend category pass includes per-condition evidence required by import', async()=>{
+ const result=await checkOne({...check,category:'frontend',conditions:[{op:'contains',value:'new'}]},response('new'),()=>start+1000);
+ assert.equal(result.status,'pass');
+ assert.equal(result.evidence.length,1);
+ assert.equal(result.evidence[0].excerpt,'new');
+ assert.match(result.evidence[0].section_sha256,/^[a-f0-9]{64}$/);
+});
 test('watch polls until three present confirmations, records state changes and median clock offset',async()=>{
  let now=start, n=0; const bodies=['old','old','new','new','new'];
  const request={schema_version:'uia-remote-watch.v1',run_id:'R',watch_id:'W',request_sha256:'a'.repeat(64),url:'http://example.test/file',

@@ -86,7 +86,7 @@ def parser():
     p = JsonParser(description="Local UI automation workflow; commands emit JSON")
     commands = p.add_subparsers(dest="command", required=True)
     remote = commands.add_parser("remote-checks")
-    remote.add_argument("action", choices=["ingest", "restore", "reevaluate", "arm-watch", "ingest-watch", "reevaluate-watch"])
+    remote.add_argument("action", choices=["ingest", "restore", "reevaluate", "arm-watch", "ingest-watch", "reevaluate-watch", "bundle"])
     remote.add_argument("--run", required=True)
     remote.add_argument("file", nargs="?")
     remote.add_argument("--case", dest="watch_case")
@@ -94,6 +94,14 @@ def parser():
     remote.add_argument("--watch-minutes", type=int, default=40)
     remote.add_argument("--interval-ms", type=int, default=1000)
     remote.add_argument("--watch")
+    rounds = commands.add_parser("rounds")
+    rounds.add_argument("action", choices=["create", "compare"])
+    rounds.add_argument("--run", help="Current run for compare")
+    rounds.add_argument("--from-run", help="Previous run for create")
+    rounds.add_argument("--round", type=int)
+    rounds.add_argument("--run-id")
+    rounds.add_argument("--profile")
+    rounds.add_argument("--excel", help="Optional updated workbook; unchanged confirmed cases retain their spec")
     go = commands.add_parser("go")
     go.add_argument("excel")
     go.add_argument("--profile")
@@ -213,6 +221,8 @@ def parser():
             cmd.add_argument("--label")
             cmd.add_argument("--page")
             cmd.add_argument("--match", action="append", default=[])
+            cmd.add_argument("--prep-method", choices=["api", "ui_agent", "user_preset"])
+            cmd.add_argument("--api-list", help="Optional Markdown Open Platform API list for keyword matching")
         if name == "generator":
             cmd.add_argument("--purpose", required=True)
             cmd.add_argument("--plan", required=True)
@@ -321,7 +331,7 @@ def dispatch(args, path, m):
     if hasattr(args, "case"):
         require(args.case in m["cases"], "Unknown case: " + args.case)
     if cmd == "remote-checks":
-        from .remote_checks import ingest, restore, reevaluate, arm_watch, ingest_watch, reevaluate_watch
+        from .remote_checks import ingest, restore, reevaluate, arm_watch, ingest_watch, reevaluate_watch, export_frontend_bundle
         if args.action == "arm-watch":
             require(args.watch_case, "arm-watch requires --case CID")
             result = arm_watch(base, m, args.watch_case, args.lead_minutes, args.watch_minutes, args.interval_ms)
@@ -330,6 +340,8 @@ def dispatch(args, path, m):
             result = ingest_watch(base, m, args.file)
         elif args.action == "reevaluate-watch":
             result = reevaluate_watch(base, m, args.watch)
+        elif args.action == 'bundle':
+            result = export_frontend_bundle(base, m)
         else:
             require(args.action == "restore" or args.file, args.action + " requires a JSON file")
             result = ingest(base, m, args.file) if args.action == "ingest" else reevaluate(base, m, args.file) if args.action == "reevaluate" else restore(base, m)
@@ -484,6 +496,9 @@ def dispatch(args, path, m):
         if args.action == "classify":
             require(args.key and args.classification and args.label, "classify requires --key --as --label")
             result = classify_precondition(base, m, args.key, args.classification, args.label, args.match, args.page)
+            if args.prep_method:
+                from .preconditions import set_prep_method
+                result['preparation'] = set_prep_method(base, m, args.key, args.prep_method, args.api_list)
             return {**result, **sync_preconditions(base, m)}
         return sync_preconditions(base, m)
     if cmd == "absorb-locators":
@@ -537,6 +552,14 @@ def _preflight_command(args):
 
 
 def execute(args):
+    if args.command == 'rounds':
+        from . import rounds as round_ops
+        if args.action == 'create':
+            require(args.from_run and args.round and args.run_id and args.profile,
+                    'rounds create requires --from-run --round --run-id --profile')
+            return round_ops.create(args.from_run, args.round, args.run_id, args.profile, args.excel)
+        require(args.run, 'rounds compare requires --run')
+        return round_ops.compare(args.run)
     if args.command == 'kb':
         from . import knowledge
         if args.action == 'merge':

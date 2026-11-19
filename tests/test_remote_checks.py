@@ -42,10 +42,11 @@ class RemoteChecksTests(unittest.TestCase):
         self.request = self.base/'remote-checks/request.json'
         common.atomic_write(self.request, {'schema_version':'uia-remote-request.v1','run_id':'R','checks':[self.check]})
     def payload(self, status='pass'):
-        return {'schema_version':'uia-remote-results.v1','run_id':'R', 'request_sha256':common.file_hash(self.request),
-                'results':[{'id':'check1','checked_at':common.now(),'status':status,'variant':'cache_busted' if self.check.get('cache_bust') else 'default','http_status':200 if status!='unreachable' else None,
-                            'conditions':[True] if status=='pass' else [False] if status!='unreachable' else [],
-                            'reason':{'pass':'conditions_met','fail':'conditions_mismatch','still-cached':'cache_window','unreachable':'network'}[status]}]}
+        row = {'id':'check1','checked_at':common.now(),'status':status,'variant':'cache_busted' if self.check.get('cache_bust') else 'default','http_status':200 if status!='unreachable' else None,
+               'conditions':[True] if status=='pass' else [False] if status!='unreachable' else [],
+               'reason':{'pass':'conditions_met','fail':'conditions_mismatch','still-cached':'cache_window','unreachable':'network'}[status]}
+        if status == 'pass': row['evidence'] = self.evidence('new value')
+        return {'schema_version':'uia-remote-results.v1','run_id':'R', 'request_sha256':common.file_hash(self.request), 'results':[row]}
     def ingest(self, payload):
         f=self.base/'fake-results.json'; common.atomic_write(f,payload); return remote.ingest(self.base,self.m,f)
     def configure_faq(self):
@@ -336,13 +337,15 @@ class RemoteChecksTests(unittest.TestCase):
         self.m.update(questions={},contaminated_fixtures={},batches=[],delivery={})
         self.m['config']['execution']['repair_rounds']=2
         folder=self.base/'cases/C';folder.mkdir(parents=True)
-        (folder/'case-spec.yaml').write_text(yaml.safe_dump({'assertions':[{'id':'A2','excel':self.check['expected']}]}))
+        (folder/'case-spec.yaml').write_text(yaml.safe_dump({'assertions':[{'id':'A2','excel':self.check['expected'],
+          'checks':[{'op':'remote_file'}]}]}))
         directory=self.base/'batches/b';directory.mkdir(parents=True)
         self.m['active_batch']={'id':'b','directory':'batches/b','case_ids':['C'],'report':'batches/b/case-results.json','versions':{'C':'v'}}
         common.atomic_write(directory/'remote-C.json',[{**{k:self.check[k] for k in ('assertion_id','expected','url','method','saved_at','conditions')},'max_latency_seconds':5}])
         common.atomic_write(directory/'case-results.json',{'schema_version':'uia-batch-results.v1','batch_id':'b','complete':True,
           'cases':[{'case_id':'C','result':'passed','playwright_status':'passed','setup_started':True,'retry':0,
-                    'lifecycle':{'batch_id':'b','setup_verified':True,'cleanup_verified':False,'cleanup_pending':True}}]})
+                    'lifecycle':{'batch_id':'b','setup_verified':True,'cleanup_verified':False,'cleanup_pending':True},
+                    'deferred_assertions':[{'id':'A2','recorded':True,'evidence':{'source':'remote-check-request'}}]}]})
         self.m['remote_checks']={}
         with patch.object(runtime,'case_version',return_value='v'), patch('uia_core.remote_checks.ROOT', self.base):
             result=runtime.consume_batch(self.base,self.m)

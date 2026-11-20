@@ -1,0 +1,16 @@
+id: target.content-admin.row-action.edit
+kind: component
+label: 内容管理列表行操作：详情编辑入口
+page: content-admin
+row_action:
+  column: 操作
+  order: 1
+  tooltip: 编辑
+  icon: blue-pencil
+  opens: detail-editor
+source: human-confirmed
+confirmed: true
+ask_once: true
+confirmed_by: 'Xinying: human-confirmed, ask-once; content-management row operation
+  buttons are ordered edit, copy, preview, share, delete.'
+created_at: '2026-11-20'

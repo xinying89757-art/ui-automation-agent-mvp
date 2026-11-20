@@ -1641,6 +1641,50 @@ targets:
     confirmed_by: 需求方确认（产品描述编辑区的「+」或输入「/」唤起组件添加弹窗）
     page: editor
     route: 内容管理 › 产品详情 › 产品描述
+  content-admin.row-action.edit:
+    label: 内容管理列表行操作：详情编辑入口
+    page: content-admin
+    row_action:
+      column: 操作
+      order: 1
+      tooltip: 编辑
+      icon: blue-pencil
+      opens: detail-editor
+    source: human-confirmed
+    confirmed: true
+    ask_once: true
+    confirmed_by: 'Xinying: human-confirmed, ask-once; content-management row operation
+      buttons are ordered edit, copy, preview, share, delete.'
+  content-admin.row-action.preview:
+    label: 内容管理列表行操作：前台预览入口
+    page: content-admin
+    row_action:
+      column: 操作
+      order: 3
+      tooltip: 预览
+      icon: green-eye
+      opens: frontend-detail
+    capture_url_only: true
+    source: human-confirmed
+    confirmed: true
+    ask_once: true
+    confirmed_by: 'Xinying: human-confirmed, ask-once; content-management row operation
+      buttons are ordered edit, copy, preview, share, delete.'
+  content-admin.row-action.delete-guard:
+    label: 内容管理列表行操作：删除保护
+    page: content-admin
+    row_action:
+      column: 操作
+      order: 5
+      tooltip: 删除
+      icon: red-trash
+      allowed_to_click: false
+    hard_guard: true
+    source: human-confirmed
+    confirmed: true
+    ask_once: true
+    confirmed_by: 'Xinying: human-confirmed, ask-once; content-management row operation
+      buttons are ordered edit, copy, preview, share, delete.'
 observations:
   duplicate_names:
   - role: link

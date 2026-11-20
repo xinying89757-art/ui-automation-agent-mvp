@@ -14,6 +14,37 @@ from .common import (ROOT, UiaError, atomic_write, config, digest, elapsed, even
 from .secrets import scrub_text
 
 
+def budget_expired(deadline_at):
+    if not deadline_at: return False
+    try:
+        deadline = dt.datetime.fromisoformat(str(deadline_at).replace('Z', '+00:00'))
+        return dt.datetime.now(dt.timezone.utc) >= deadline.astimezone(dt.timezone.utc)
+    except (TypeError, ValueError):
+        return False
+
+
+def ensure_go_deadline(m, started_at, budget_minutes):
+    """Persist one immutable deadline for all go calls in the same run/round."""
+    deadline = m.get('go_budget_deadline_at')
+    if not deadline:
+        deadline = (dt.datetime.fromisoformat(str(started_at).replace('Z', '+00:00')) +
+                    dt.timedelta(minutes=float(budget_minutes))).isoformat().replace('+00:00', 'Z')
+        m['go_budget_deadline_at'] = deadline
+        m['go_budget_minutes'] = float(budget_minutes)
+    return deadline
+
+
+def _budget_stop(manifest, m, stage):
+    """Persist a round-level deadline stop at a workflow safe point."""
+    deadline = m.get('go_budget_deadline_at')
+    if not budget_expired(deadline): return False
+    m['abort'] = {'reason': 'go_wall_clock_budget', 'deadline_at': deadline,
+                  'stage': stage, 'at': now()}
+    event(m, 'go_budget_expired', stage=stage, deadline_at=deadline)
+    save(manifest, m)
+    return True
+
+
 def memory_path(m):
     # Bind answers to the exact environment/site/identity/network, using hashes only.
     from .profiles import connection_settings
@@ -550,6 +581,13 @@ def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_m
             workflow.init(run_id, path)
     with locked_run(manifest) as (manifest, m):
         base = manifest.parent
+        deadline = ensure_go_deadline(m, started_at, first_result_budget_minutes)
+        if budget_expired(deadline):
+            m['abort'] = {'reason': 'go_wall_clock_budget', 'deadline_at': deadline, 'stage': 'go-entry', 'at': now()}
+            output = reports.make_report(base, m)
+            save(manifest, m)
+            return {'run_id': m['run_id'], 'run_reused': bool(matches), 'abort': m['abort'],
+                    'report': output, 'next': {'action': 'review', 'reason': 'go time budget expired'}}
         if hints:
             from .entries import handoff
             handoff(m, hints)
@@ -568,6 +606,9 @@ def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_m
         workflow.scaffold(base)
         if not m['sources'] or m['sources'][0]['sha256'] != file_hash(source) or previous_selection != selected:
             workflow.import_excel(base, m, source)
+        if _budget_stop(manifest, m, 'import'):
+            return {'run_id': m['run_id'], 'abort': m['abort'], 'report': reports.make_report(base, m),
+                    'next': {'action': 'review', 'reason': 'go time budget expired'}}
         from .remote_checks import expire
         expire(base, m)
         workflow.refresh(base, m)
@@ -590,6 +631,9 @@ def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_m
         phase_clock = time.perf_counter()
         match_run(base, m)
         phase_ms['kb_match_ms'] = round((time.perf_counter() - phase_clock) * 1000)
+        if _budget_stop(manifest, m, 'knowledge-match'):
+            return {'run_id': m['run_id'], 'abort': m['abort'], 'report': reports.make_report(base, m),
+                    'next': {'action': 'review', 'reason': 'go time budget expired'}}
         # Lint and compile matched contracts before legacy scripts claim imported cases.
         if matched:
             lint = specs.lint(base, m, matched)
@@ -611,6 +655,9 @@ def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_m
         from .knowledge import bind_spec_placeholders
         binding_result = bind_spec_placeholders(base, m)
         phase_ms['spec_compile_ms'] = round((time.perf_counter() - phase_clock) * 1000)
+        if _budget_stop(manifest, m, 'spec-compile'):
+            return {'run_id': m['run_id'], 'abort': m['abort'], 'report': reports.make_report(base, m),
+                    'next': {'action': 'review', 'reason': 'go time budget expired'}}
         # A legacy script that substitutes editor values for a public-file assertion is
         # incompatible with the source-matched deferred contract. Preserve its history,
         # then compile the contract instead of silently running the partial legacy test.
@@ -640,6 +687,9 @@ def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_m
                     pending['error'] = str(exc)
                 compile_run(base, m, code_root=str(Path(code_root).expanduser()) if code_root else None)
                 project_specs(base, m)
+                # Re-projection may rewrite case-spec files from the human-checked
+                # brief. Reapply saved bindings after the final projection as well.
+                binding_result = bind_spec_placeholders(base, m)
                 checklist = sync_checklist(base, m)
         # Environment preflight is the first execution gate: login, site, and the content editor.
         m['gates'] = {'smoke_size': smoke_size, 'smoke_pass_rate': float(smoke_pass_rate),
@@ -651,7 +701,16 @@ def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_m
         phase_ms['preflight_ms'] = round((time.perf_counter() - phase_clock) * 1000)
         phase_ms['preflight_cached'] = bool(gate.get('cached'))
         save(manifest, m)
+        if _budget_stop(manifest, m, 'preflight'):
+            phase_ms['go_call_ms'] = round((time.perf_counter() - call_clock) * 1000)
+            m.setdefault('go_phase_timings', []).append({'at': started_at, **phase_ms, 'exit_stage': 'budget'})
+            save(manifest, m)
+            return {'run_id': m['run_id'], 'abort': m['abort'], 'report': reports.make_report(base, m),
+                    'next': {'action': 'review', 'reason': 'go time budget expired'}}
         if gate.get('status') == 'blocked':
+            phase_ms['go_call_ms'] = round((time.perf_counter() - call_clock) * 1000)
+            m.setdefault('go_phase_timings', []).append({'at': started_at, **phase_ms,
+                                                         'exit_stage': 'preflight_blocked'})
             output = reports.make_report(base, m)
             save(manifest, m)
             return {'run_id': m['run_id'], 'run_reused': bool(matches), 'environment_blocked': True,
@@ -670,6 +729,11 @@ def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_m
     phase_ms['execution_ms'] = round((time.perf_counter() - execution_clock) * 1000)
     with locked_run(manifest) as (manifest, m):
         base = manifest.parent
+        if _budget_stop(manifest, m, 'execution'):
+            output = reports.make_report(base, m)
+            save(manifest, m)
+            return {'run_id': m['run_id'], 'run_reused': bool(matches), 'abort': m['abort'],
+                    'report': output, 'next': {'action': 'review', 'reason': 'go time budget expired'}}
         if not checklist['question_count']:
             for cid, c in m['cases'].items():
                 if c.get('work_status') == 'waiting_human' or not specs.spec_path(base, c).is_file() or (c.get('registration') or {}).get('case_spec') or c.get('result'):
@@ -877,6 +941,17 @@ def _run_ready(manifest, ready):
             wait_for_watch(path.parent, row, heartbeat=beat)
         code = runtime.execute_process(path.parent, batch, cfg)
         with locked_run(manifest) as (path, m):
+            if code == 124 and budget_expired(m.get('go_budget_deadline_at')):
+                evidence = 'evidence/go-budget-interruption-' + batch['id'] + '.json'
+                atomic_write(path.parent / evidence, {'batch_id': batch['id'], 'case_ids': batch['case_ids'],
+                    'deadline_at': m.get('go_budget_deadline_at'), 'stopped_at': now(),
+                    'reason': 'go wall-clock budget expired; child process terminated'})
+                runtime.abandon_batch(path.parent, m, evidence)
+                m['abort'] = {'reason': 'go_wall_clock_budget', 'deadline_at': m.get('go_budget_deadline_at'),
+                              'stage': 'run-batch', 'batch_id': batch['id'], 'evidence': evidence, 'at': now()}
+                event(m, 'go_budget_expired', stage='run-batch', batch_id=batch['id'])
+                save(path, m)
+                return
             runtime.consume_batch(path.parent, m, code)
             budget_minutes = (m.get("gates") or {}).get("first_result_budget_minutes")
             started_at = m.get("go_started_at")

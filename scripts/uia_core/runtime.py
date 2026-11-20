@@ -273,7 +273,7 @@ def begin_batch(base, m, case_ids):
     batch = {"id": batch_id, "case_ids": case_ids, "versions": versions,
              "scripts": {c['case_id']: c['registration']['script'] for c in selected},
              "owner_pid": os.getpid(),
-             "started_at": now(), "directory": str(directory.relative_to(base)),
+             "started_at": now(), "deadline_at": m.get('go_budget_deadline_at'), "directory": str(directory.relative_to(base)),
              "report": str((directory / "case-results.json").relative_to(base)), "command": command}
     m["active_batch"] = batch
     event(m, "batch_started", batch_id=batch_id, case_ids=case_ids)
@@ -290,6 +290,7 @@ def execute_process(base, batch, cfg):
                UIA_KNOWLEDGE_FILE=str(knowledge_overlay),
                UIA_RESULTS_DIR=str(directory), UIA_CONTAMINATION_DIR=str(base / "state/contaminated"))
     stop = threading.Event()
+    budget_hit = threading.Event()
 
     def pump():
         write_heartbeat(base, batch, True)
@@ -305,11 +306,29 @@ def execute_process(base, batch, cfg):
                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                     text=True, start_new_session=os.name != "nt")
             atomic_write(directory / "process.json", {"pid": proc.pid, "batch_id": batch["id"], "started_at": now()})
+            timer = None
+            if batch.get('deadline_at'):
+                deadline = batch['deadline_at']
+                def stop_at_deadline():
+                    if proc.poll() is None:
+                        budget_hit.set()
+                        if os.name == 'nt': proc.terminate()
+                        else: os.killpg(proc.pid, signal.SIGTERM)
+                try:
+                    import datetime as _dt
+                    due = _dt.datetime.fromisoformat(str(deadline).replace('Z', '+00:00'))
+                    remaining = max(0, (due - _dt.datetime.now(_dt.timezone.utc)).total_seconds())
+                except (TypeError, ValueError): remaining = None
+                if remaining is not None:
+                    timer = threading.Timer(remaining, stop_at_deadline)
+                    timer.daemon = True
+                    timer.start()
             try:
                 for line in proc.stdout:
                     log.write(redact(line, cfg))
                     log.flush()
-                return proc.wait()
+                code = proc.wait()
+                return 124 if budget_hit.is_set() else code
             except BaseException:
                 if os.name == "nt":
                     proc.terminate()
@@ -325,6 +344,8 @@ def execute_process(base, batch, cfg):
                     proc.wait()
                 raise
     finally:
+        if 'timer' in locals() and timer:
+            timer.cancel()
         stop.set()
         writer.join(timeout=1)
         write_heartbeat(base, batch, False)

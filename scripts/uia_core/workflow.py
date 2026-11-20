@@ -679,6 +679,10 @@ def script_todos(base, c):
 
 
 def next_task(base, m):
+    from .experience import budget_expired
+    if budget_expired(m.get('go_budget_deadline_at')):
+        return {'action': 'review', 'reason': 'go wall-clock budget expired',
+                'abort': m.get('abort'), 'active_batch': (m.get('active_batch') or {}).get('id')}
     if m.get("active_batch"):
         from .runtime import batch_running
         active = m["active_batch"]

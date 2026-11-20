@@ -117,6 +117,18 @@ class SmokeGateTests(unittest.TestCase):
         self.assertFalse(experience.first_result_exceeded(fast, 26, start))
         self.assertFalse(experience.first_result_exceeded({}, 26, start))
 
+    def test_wall_clock_budget_uses_persisted_deadline(self):
+        self.assertTrue(experience.budget_expired('2000-01-01T00:00:00Z'))
+        self.assertFalse(experience.budget_expired('2999-01-01T00:00:00Z'))
+
+    def test_go_deadline_is_persisted_across_calls(self):
+        manifest = {}
+        first = experience.ensure_go_deadline(manifest, '2026-01-01T00:00:00Z', 26)
+        resumed = experience.ensure_go_deadline(manifest, '2026-01-01T01:00:00Z', 10)
+        self.assertEqual(first, '2026-01-01T00:26:00Z')
+        self.assertEqual(resumed, first)
+        self.assertEqual(manifest['go_budget_minutes'], 26)
+
 
 class PreflightGateTests(unittest.TestCase):
     def setUp(self):

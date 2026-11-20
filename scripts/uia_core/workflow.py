@@ -48,7 +48,7 @@ def init(run_id, config_path):
     return {"run": str(base / "run.json"), "next": "import", "status": "not_executed"}
 
 
-def question(m, kind, subject, prompt, case_ids, key=None, attempted=None, sheet=None, reopen=False, interaction=None, base=None, page=None):
+def question(m, kind, subject, prompt, case_ids, key=None, attempted=None, sheet=None, reopen=False, interaction=None, base=None, page=None, urgency='normal'):
     require(all(cid in m["cases"] for cid in case_ids), "Question refers to an unknown case")
     if kind in {"demo", "record_request"}:
         from .exploration import demo_gate
@@ -57,6 +57,9 @@ def question(m, kind, subject, prompt, case_ids, key=None, attempted=None, sheet
     key = key or digest([kind, subject, sheet])[:16]
     existing = m["questions"].get(key)
     if existing and existing["status"] == "answered" and not reopen:
+        for cid in case_ids:
+            if cid not in existing['case_ids']:
+                existing['case_ids'].append(cid)
         return existing
     if existing and existing["status"] in {"answered", "closed"}:
         existing.setdefault("previous_answers", []).append({k: existing.get(k) for k in ("created_at", "answer", "answered_at", "wait_seconds")})
@@ -70,7 +73,12 @@ def question(m, kind, subject, prompt, case_ids, key=None, attempted=None, sheet
         q.update(interaction=interaction, page=page)
     elif page:
         q["page"] = page
-    if m.get("interaction_mode") == "once" and subject != "run-preconditions":
+    if kind == 'exploration':
+        require(urgency in {'normal', 'critical'}, 'Invalid question urgency')
+        q.update(urgency=urgency, requires_answer=True)
+        if not existing:
+            m.setdefault('interaction_events', []).append({'kind': 'mid_run_question', 'question_id': key, 'at': now()})
+    if m.get("interaction_mode") == "once" and subject != "run-preconditions" and kind != 'exploration':
         q["status"] = "deferred"
     q["attempted"] = list(dict.fromkeys(q["attempted"] + (attempted or [])))
     for cid in case_ids:
@@ -114,14 +122,27 @@ def answer(m, qid, value, base):
         shutil.copyfile(src, dest)
         dest.chmod(0o600)
         value = {"script": str(dest.relative_to(base)), "sha256": file_hash(dest), "replay": "pending"}
+    if q['kind'] == 'exploration':
+        from .secrets import scrub_text
+        import json
+        text = json.dumps(value, ensure_ascii=False)
+        require(scrub_text(text, m.get('config')) == text, '答复不能包含敏感内容')
+        require(isinstance(value, str) and value.strip(), '答复需要非空文字')
     q.update(status="answered", answer=value, answered_at=now(), wait_seconds=elapsed(q["created_at"]))
     for cid in q["case_ids"]:
         c = m["cases"][cid]
-        others = [x for x in m["questions"].values() if x["status"] == "open" and cid in x["case_ids"]]
+        others = [x for x in m["questions"].values() if x["status"] in {"open", "deferred"} and cid in x["case_ids"] and question_requires_human_answer(x)]
         if not others and c["work_status"] != "finished":
             c["work_status"] = "runnable" if c.get("registration") and c["stage"] == "execution" and q["kind"] != "demo" else "pending"
             if q["kind"] == "demo":
                 c["stage"] = "discovery"
+            if q['kind'] == 'exploration':
+                target = q['subject'].lstrip('?？')
+                c.setdefault('gap_assessments', {})[target] = {'attempt_count': len(target_exploration_state(c, target)['attempts']), 'decision': 'answered'}
+    if q['kind'] == 'exploration':
+        m.setdefault('knowledge_candidates', {})[qid] = {'question_id': qid, 'subject': q['subject'],
+            'page': q.get('page'), 'case_ids': list(q['case_ids']), 'answer': value,
+            'source': 'human_answer', 'verification': 'unverified', 'created_at': now()}
     if q["kind"] in {"login", "environment"}:
         m["preflight"] = None
     event(m, "question_answered", question_id=qid)
@@ -555,6 +576,23 @@ def refresh(base, m):
     release_resolved(m)
     reopen_unearned(m)
     park_cases_with_open_questions(m)
+    park_cases_with_pending_review(m)
+
+
+def park_cases_with_pending_review(m):
+    review = m.get('human_review') or {}
+    pending = {cid for row in review.get('pending', []) for cid in row.get('cases', [])}
+    for cid, case in m.get('cases', {}).items():
+        if case.get('result') is not None or case.get('stage') == 'finished':
+            continue
+        if cid in pending:
+            case['review_wait'] = True
+            case['work_status'] = 'waiting_human'
+        elif case.pop('review_wait', False) and case.get('work_status') == 'waiting_human':
+            blockers = [q for q in m.get('questions', {}).values() if q.get('status') in {'open', 'deferred'}
+                        and cid in q.get('case_ids', []) and question_requires_human_answer(q)]
+            if not blockers and not case.get('checklist_wait'):
+                case['work_status'] = 'runnable' if case.get('registration') and case.get('stage') == 'execution' else 'pending'
 
 
 def park_cases_with_open_questions(m):
@@ -569,7 +607,47 @@ def park_cases_with_open_questions(m):
 
 def question_requires_human_answer(q):
     """Return whether this question is a blocking checklist the human must answer."""
-    return q.get("kind") in {"preconditions", "checklist", "login"}
+    return q.get("kind") in {"preconditions", "checklist", "login", "exploration"} or q.get('requires_answer') is True
+
+
+def assess_gap(base, m, case_ids, target, decision, reason, prompt=None, urgency='normal', page=None, review_id=None):
+    from .secrets import scrub_text
+    require(case_ids and all(cid in m['cases'] for cid in case_ids), '探索评估需要关联有效用例')
+    require(isinstance(target, str) and target.strip().lstrip('?？'), '探索评估需要目标')
+    require(decision in {'continue', 'ask'} and isinstance(reason, str) and reason.strip(), '探索评估需要决定和原因')
+    require(scrub_text(reason, m.get('config')) == reason, '探索评估包含敏感内容')
+    name = target.strip().lstrip('?？')
+    if review_id:
+        matches = [item for source in ('human_review', 'prototype_review')
+                   for item in (m.get(source) or {}).get('decisions', [])
+                   if item.get('id') == review_id and set(case_ids) <= set(item.get('cases', []))
+                   and item.get('status') in {'confirmed', 'edited'}]
+        require(len(matches) == 1, '未找到适用于这些用例的唯一审核答复')
+        return {'decision': 'use_review_answer', 'review_id': review_id, 'answer': matches[0]['value'],
+                'note': '使用已有答复作为线索；需按范围验证，不创建重复问题。'}
+    if decision == 'ask':
+        require(isinstance(prompt, str) and prompt.strip() and scrub_text(prompt, m.get('config')) == prompt,
+                '提问需要不含敏感内容的具体问题')
+        require(isinstance(page, str) and page.strip() and scrub_text(page, m.get('config')) == page,
+                '提问需要明确页面或业务范围，避免跨页面误用答复')
+        attempts = []
+        for cid in case_ids:
+            for row in target_exploration_state(m['cases'][cid], name)['attempts']:
+                attempts.append({k: row[k] for k in ('method', 'result', 'note', 'evidence', 'duration_ms') if k in row})
+        qkey = digest(['exploration', name, page or ''])[:16]
+        q = question(m, 'exploration', name, prompt, case_ids, key=qkey, attempted=[], base=base, page=page, urgency=urgency)
+        if q.get('status') == 'answered':
+            return {'decision': 'use_answer', 'question': q,
+                    'note': '该页面和目标已有答复；继续按适用范围验证。'}
+        q['exploration_attempts'] = attempts
+        q['assessment_reason'] = reason
+        return {'decision': decision, 'question': q}
+    for cid in case_ids:
+        case = m['cases'][cid]
+        case.setdefault('gap_assessments', {})[name] = {'attempt_count': len(target_exploration_state(case, name)['attempts']),
+                                                        'decision': 'continue', 'reason': reason, 'at': now()}
+    event(m, 'exploration_assessed', target=name, decision=decision, case_ids=case_ids)
+    return {'decision': decision, 'case_ids': case_ids, 'target': name}
 
 
 PUBLIC_RE = re.compile(r"公开(?:前台|页面|站点)|前台不可达|public[ _-]?(?:front|site|page)", re.I)
@@ -682,6 +760,9 @@ def next_task(base, m):
         return {"action": "monitor" if running else "recover",
                 "skill": "uia-runtime", "batch_id": active["id"], "report": active["report"],
                 "wait": "python3 scripts/uia.py wait --run " + m["run_id"]}
+    urgent = [q for q in m['questions'].values() if q.get('status') == 'open' and q.get('kind') == 'exploration' and q.get('urgency') == 'critical']
+    if urgent:
+        return {'action': 'ask_human', 'questions': urgent, 'message': '关键路径需要人工答复。'}
     from .preconditions import triage
     unclassified = [row for row in triage(base, m) if row["classification"] == "unclassified"]
     if unclassified:
@@ -707,6 +788,7 @@ def next_task(base, m):
     page_data = read_yaml(page_map) or {}
     known_targets = set((page_data.get('pages') or {})) | set((page_data.get('targets') or {}))
     missing_by_case = {}
+    assessments = []
     for c in available:
         spec = spec_cache.get(c['case_id'], {})
         unresolved = unresolved_targets(base, m, c, spec_cache)
@@ -715,19 +797,15 @@ def next_task(base, m):
         missing_by_case[c['case_id']] = targets
         for target in targets:
             state = target_exploration_state(c, target, known_targets)
-            if len(state['failed']) >= 2 and not state['succeeded']:
+            baseline = c.get('gap_assessments', {}).get(str(target).lstrip('?？'), {}).get('attempt_count', 0)
+            fresh = state['attempts'][baseline:]
+            if not state['succeeded'] and (sum(row.get('result') == 'failed' or
+                    (row.get('result') == 'ok' and not state['succeeded']) for row in fresh) >= 2 or
+                    any(row.get('progress') == 'stalled' for row in fresh) or
+                    sum(row.get('duration_ms', 0) for row in fresh) >= 300000):
                 evidence = [row.get('evidence') for row in state['failed'] if row.get('evidence')]
-                latest = evidence[-1] if evidence else None
-                display_target = str(target).lstrip('?？')
-                import shlex
-                reason = '缺控件：' + display_target
-                return {'action': 'classify', 'skill': 'uia-runtime', 'case_ids': [c['case_id']],
-                        'case_id': c['case_id'], 'result': 'suspended',
-                        'reason': reason,
-                        'evidence': latest, 'attempt_evidence': evidence[-2:],
-                        'instruction': '两次有界探索均失败。执行 `uia.py classify --run RUN --case ' + c['case_id'] +
-                                       ' --result suspended --reason ' + shlex.quote(reason) +
-                                       ' --evidence ' + shlex.quote(str(latest or '<evidence-path>')) + '；不得再次探索。'}
+                assessments.append({'case_id': c['case_id'], 'target': target, 'attempts': fresh,
+                                    'attempt_evidence': evidence, 'duration_ms': sum(row.get('duration_ms', 0) for row in state['attempts'])})
     # Breadth first: runnable cases with complete specs go before any further exploration.
     ready = [c for c in available if c["work_status"] == "runnable" and
              not missing_by_case.get(c['case_id']) and not script_todos(base, c)]
@@ -735,6 +813,9 @@ def next_task(base, m):
         if not m.get("preflight") or m["preflight"]["status"] != "passed":
             return {"action": "preflight", "skill": "uia-runtime", "case_ids": [c["case_id"] for c in ready]}
         return {"action": "run-batch", "skill": "uia-runtime", "case_ids": [c["case_id"] for c in ready[:budget]]}
+    if assessments:
+        return {'action': 'assess_exploration', 'items': assessments,
+                'instruction': '评估是否仍有新线索：有进展可继续，无线索则用 gap-assess 创建问题；不得仅因次数判用例失败。'}
     repairs = [c for c in available if c["stage"] == "repair"]
     # Breadth first: every case gets a first execution before any case gets another repair round.
     untried = [c for c in available if not c.get("attempts") and c["stage"] in {"spec", "intent", "matching", "discovery"}]
@@ -801,7 +882,7 @@ def next_task(base, m):
                         "report": 'exploration/generator-' + purpose + '.json',
                         "instruction": "优先完成最接近可生成的首例；每项最多 8 个不同目标。targets_by_case 只列本批共享目标，其余目标留待后续。执行以下命令：\n" +
                         generator_command + "\n" + promote_command +
-                        "\ngenerator 会从每例 case-spec 注入 step_id/spec-target 清单并记录本次各目标的耗时及结果。promote 只会写入 verified=true 且 match_count=1 的 step_targets，通过单一 page-map 写入路径绑定占位符并重写规格。若没有任何 placeholder 绑定，本次按每个未解决目标失败一次计算。不得猜 locator。之后运行 spec lint/gen 并立即 next；可运行用例先 run-batch。snapshot 场景须对每例目标用 exploration-log 报告 --duration-ms。两次无绑定/失败后 next 会按 缺控件 分类并继续其他用例。"}
+                        "\ngenerator 会记录目标、耗时及结果；promote 只写入实测唯一目标。不得猜 locator。之后运行 spec lint/gen 并立即 next；可运行用例先 run-batch。snapshot 须记录耗时和进展，遇到无进展时评估是否继续或提问。"}
             known = sorted((page_data.get("targets") or {}).keys())
             return {"action": "refine_specs", "skill": "uia-case-spec",
                     "case_ids": [c["case_id"] for c, _ in refine[:budget]],
@@ -809,7 +890,7 @@ def next_task(base, m):
                     "known_targets": known,
                     "instruction": "清单已定稿：把规格中的 ?目标 替换成已知 page-map 目标（generator 结果先用 hints promote 写入），"
                                    "每条 Excel 期望拆成可观察的 checks；start_page 用入口提示确认路线所在区域（如 content-admin），不要沿用草稿占位；仍未知的目标先 snapshot --entry/generator --entry 探索。"
-                                   "改完运行 spec lint/gen，再按 next 执行；不要因此结束本轮或提问。"}
+                                   "改完运行 spec lint/gen，再按 next 执行；探索后仍无法确定时记录问题。"}
     selected = [c for c in available if c["stage"] == "spec" or (m.get("pipeline") == "case-spec.v1" and c["stage"] in {"intent", "matching"})][:budget]
     if selected:
         return {"action": "spec", "skill": "uia-case-spec", "case_ids": [c["case_id"] for c in selected],
@@ -843,11 +924,12 @@ def next_task(base, m):
     if feedback:
         return {"action": "feedback", "skill": "uia-runtime-feedback-reviewer", "case_ids": [c["case_id"] for c in feedback[:budget]]}
     pending_questions = [q for q in m["questions"].values() if q["status"] == "open"]
-    if m.get("interaction_mode") == "once" and m.get("checklist_issued"):
-        return {"action": "review", "file": str(base / "review.md"), "mid_run_questions": 0}
     if pending_questions:
         return {"action": "ask_human", "questions": pending_questions,
                 "message": "All currently independent work has been processed; consolidate these requests."}
+    if m.get("interaction_mode") == "once" and m.get("checklist_issued"):
+        return {"action": "review", "file": str(base / "review.md"),
+                "mid_run_questions": sum(e.get('kind') == 'mid_run_question' for e in m.get('interaction_events', []))}
     if not cases:
         return {"action": "import", "reason": "no_source_cases"}
     return {"action": "report", "summary": summary(m)}

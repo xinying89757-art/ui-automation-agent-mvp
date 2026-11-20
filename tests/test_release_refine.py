@@ -142,7 +142,7 @@ class ReleaseAndRefineTests(unittest.TestCase):
             task=workflow.next_task(self.base,m)
         self.assertNotEqual(task.get('action'),'run-batch')
 
-    def test_unknown_target_exploration_is_bounded_and_classifies_after_two_evidenced_failures(self):
+    def test_unknown_target_exploration_requests_assessment_after_two_evidenced_failures(self):
         entries.confirm(self.m, '新版内容编辑器', ['click:content-admin', 'click:text=产品'])
         workflow.release_resolved(self.m)
         cid='C1'; target='?faq_state_C1'
@@ -156,11 +156,10 @@ class ReleaseAndRefineTests(unittest.TestCase):
             if number == 1:
                 self.assertEqual(task['action'],'explore')
             else:
-                self.assertEqual(task['action'],'classify')
-                self.assertEqual(task['result'],'suspended')
-                self.assertEqual(task['reason'],'缺控件：faq_state_C1')
-                self.assertEqual(task['evidence'],rel)
-                self.assertEqual(task['attempt_evidence'],[f'exploration/{cid}-attempt-1.json',rel])
+                self.assertEqual(task['action'],'assess_exploration')
+                self.assertEqual(task['items'][0]['case_id'], cid)
+                self.assertEqual(task['items'][0]['attempt_evidence'],[f'exploration/{cid}-attempt-1.json',rel])
+                self.assertIsNone(self.m['cases'][cid]['result'])
 
     def test_unbound_successful_explorations_consume_placeholder_failure_bound(self):
         entries.confirm(self.m, '新版内容编辑器', ['click:content-admin', 'click:text=产品'])
@@ -175,8 +174,8 @@ class ReleaseAndRefineTests(unittest.TestCase):
                 task=workflow.next_task(self.base,self.m)
             if number==1: self.assertEqual(task['action'],'explore')
             else:
-                self.assertEqual(task['action'],'classify')
-                self.assertEqual(task['reason'],'缺控件：faq_state_C1')
+                self.assertEqual(task['action'],'assess_exploration')
+                self.assertEqual(task['items'][0]['target'], target)
         from uia_core.metrics import exploration_counts
         self.assertEqual(exploration_counts(self.m)['exploration_duration_ms'],
                          {'count':2,'total':500,'p50':250,'p95':250})

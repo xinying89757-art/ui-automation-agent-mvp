@@ -27,14 +27,15 @@ Before presenting the checklist, classify every unmatched workbook precondition;
 For any page with an entry hint, always begin with `snapshot --entry` / `generator --entry`.
 Follow the hinted backend area first; never start component exploration in another area.
 A generator failure classified `subagent_start` is infrastructure failure and never a demo rung.
-A generator `timeout` is not evidence either: rerun once with the default budget (omit --minutes;
-the CLI enforces a 10-minute floor) before recording any gap; follow the returned `next`.
+A generator `timeout` is not proof that the page is inaccessible. Assess whether its checkpoint
+provides a new lead before continuing or requesting missing information.
 When a generator reaches its node, run `uia.py hints promote --run R --report exploration/generator-<slug>.json`
 (--page <entry>): it adds `<purpose>.<name>` page-map targets and confirms the entry route. Do not hand-edit page-map.
 For one more observed control use `uia.py hints target --run R --name <purpose.name> --locator '<JSON target>' --evidence exploration/<file>`;
 never fabricate or edit generator reports.
 A confirmed entry closes deferred review items about that page automatically. Never end a turn while
-`next` returns an AI action (refine_specs, spec, discover, preflight, run-batch, repair); end only on `review`/done.
+`next` returns an AI action (refine_specs, spec, discover, preflight, run-batch, repair); follow it until
+an answer is needed or the run reaches review/done.
 Outcomes are earned by execution: classify product_confirmation/automation_failure/business_failure only
 after run-batch evidence; public-frontend assertions use defer_public + remote-check requests (remote_pending),
 never environment_blocked. Breadth first: `next` refines/runs never-executed cases before more repair
@@ -42,29 +43,46 @@ rounds; follow its order instead of iterating one hard case.
 Need saves/validation/re-edit inside an editor? use `generator --draft` (component saves, empty submits; never outer
 save/publish). Public checks: find the record's public path (edit page URL/SEO field, list 预览/查看 link) and register it
 with `hints target --name <x>.public --resource /path --evidence ...`, then defer_public to it.
-A case that cannot be executed for a recorded knowledge/process reason is classified `suspended` with a reason
-category (缺知识|缺控件|缺公开路径|远程条件不可表达|需求级|生成门禁|其他：…); it is an outcome, not a question. Validation messages, re-edit, toolbars: explore them (snapshot/generator), do not park.
-Explore each node once: knowledge → snapshot --goto/--open-target/--step/--frame/--scope → generator_setup_page with tests/seed.spec.ts; Midscene only for visual expectations.
+Explore unresolved nodes using existing knowledge and source materials, then bounded snapshots or generator as useful; Midscene only for visual expectations. Do not repeat a strategy without new evidence. A missing entry or control may become a focused human question, and only affected cases wait. Use a final suspended outcome only when the work cannot proceed and the unresolved reason has been recorded.
 Write named targets into page-map.yaml (+ routes into flows) before writing specs; keep writing/running other nodes while one is unknown.
-Demo requires a known entry, entry_reached evidence and generator-cli --entry failure on the requested --interaction; unknown entries join checklist D (later discoveries go to review).
-Write all case-specs (unknown targets as ?name) before exploring, so the checklist is final early; an answer given while it is still a draft is saved and applied automatically by go — never ask again.
+Demo requires a known entry, entry_reached evidence and generator-cli --entry failure on the requested --interaction. Unknown entries can become focused questions when exploration has no promising lead.
+Prepare enough source-backed case information to identify ambiguities and shared gaps. Clear cases need no per-case approval. Unknown targets may remain ?name while the agent explores; reuse already received answers.
+
+## Exploration and focused questions
+
+Clarify ambiguous business expectations and key assertions from cases/design and shared knowledge before execution; never guess them from UI behavior. For an unknown entry, control, or data setup, search available knowledge and inspect the relevant UI before asking. The ordinary exploration budget is roughly 3–5 minutes, complex gaps 5–10 minutes; stop earlier when there are no promising leads, or continue when concrete progress justifies it. Measure active exploration only, excluding human waits.
+
+Record each attempt with `exploration-log`, including duration, evidence and `--progress progress|stalled`. When `next` returns `assess_exploration`, use `gap-assess --decision continue` with the new lead, or `--decision ask` with affected cases, target, reason, a concise question and optional critical urgency. An agent may ask before the reminder if no viable lead remains. Reuse the imported review decision via `--review-id` when applicable. Do not treat two attempts or a timer alone as a product failure. After an answer, check it in the UI; `candidate-verify` records evidence for a run-local candidate but does not publish knowledge.
 
 ## One-command daily entry
 
 For go runs, this section supersedes the legacy human-question routing below.
-Use `python3 scripts/uia.py go <xlsx> --profile <p> --cases TC-0004,TC-0016`.
+For a new requirement with human review, start with `python3 scripts/uia.py go <xlsx> --profile <p> --review-only`.
+The output includes the run's shared HTML review page. Add key checks and genuinely unresolved questions to
+`review-input.json` in the run directory, citing the relevant workbook, design, prototype, or verified knowledge.
+Regenerate with `review-page render --run R`. Review questions once per shared gap, with the related case IDs.
+Show the HTML to the reviewer once the checklist is ready. Routine steps with clear evidence remain available
+under 全部用例 for optional correction. Receive the exported JSON with `review-page ingest --run R --file FILE`.
+Use `review-handoff.json` to find the received decisions and unanswered questions for each case. Receipt is not
+application: translate decisions to affected case-spec steps, assertions and run scope, preserving the source text.
+For complex shared decisions where a plan helps prevent omissions, use the case-level plan in `docs/interfaces.md` and `review-page validate-plan`; the plan is optional and does not make a spec executable.
+Handle partial exclusions at the affected scenario/assertion level; do not suspend an entire case unless all of it
+is excluded or blocked. Separate a person's suggestion from an entry actually verified in the browser. Record
+reusable knowledge as a scoped candidate with its source and verification state, not as a proven fact.
+Lint affected specs before resuming with `go`; verify entry suggestions in the browser before promoting them.
+Cases still waiting for an answer stay pending while independent cases may proceed within the approved scope.
 The CLI resumes the run matching the workbook and environment, regardless of the requested
 case subset; it reports the selected run and whether the subset changed. Existing generated
 specs from lint-passing case-specs take precedence over duplicate handwritten specs, and
 the report names the selected script and warns when a duplicate exists. It checks the
 environment, binds existing scripts first, queues missing case-spec tasks and writes
-checklist.md with A/B/C/D blocks in Chinese. Finish missing case-spec tasks before presenting
-the checklist; its draft is not a question. While go returns present_checklist false, do not
-end the turn to ask: classify preconditions, write all specs, rerun go. Present the final checklist once; record
-`uia.py answer --run R "A ...，B 同意，C ..."`. Explicit answers persist in environment
+checklist.md with A/B/C/D blocks in Chinese. The legacy checklist may stay draft while specs
+are incomplete; do not let that prevent the HTML review of known business ambiguities or a focused
+question that unblocks a critical gap. Draft checklist sentence answers are queued until finalization.
+For the finalized legacy checklist, use `uia.py answer --run R "A ...，B 同意，C ..."`. Explicit answers persist in environment
 memory; zero unknown answers means zero questions. When every checklist item came from
 environment memory, report `清单全部来自环境记忆（N 项），本次 0 问`.
-Do not ask during execution. Suspend newly gated cases and write review.md instead.
+During execution, ask promptly for a critical-path gap after bounded exploration; consolidate other gaps while continuing independent work. A waiting answer is not a final test result.
 Keep source expectations; assertion-change proposals default to not applied.
 Record every incoming user turn once using `session-turn --run R --id <stable-id>
 --kind 发起|答清单|审核单|看报告|计划外`. Agent CLI calls are not human turns.

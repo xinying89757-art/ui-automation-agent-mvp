@@ -85,6 +85,11 @@ class JsonParser(argparse.ArgumentParser):
 def parser():
     p = JsonParser(description="Local UI automation workflow; commands emit JSON")
     commands = p.add_subparsers(dest="command", required=True)
+    review = commands.add_parser("review-page", help="Render and receive the human review workbench")
+    review.add_argument("action", choices=["render", "ingest", "ingest-prototype", "validate-plan"])
+    review.add_argument("--run", required=True)
+    review.add_argument("--file", help="The JSON file downloaded from the review page (ingest only)")
+    review.add_argument("--mapping", help="Explicit prototype review ID mapping JSON (ingest-prototype only)")
     remote = commands.add_parser("remote-checks")
     remote.add_argument("action", choices=["ingest", "restore", "reevaluate", "arm-watch", "ingest-watch", "reevaluate-watch"])
     remote.add_argument("--run", required=True)
@@ -98,6 +103,7 @@ def parser():
     go.add_argument("excel")
     go.add_argument("--profile")
     go.add_argument("--cases", help="Comma-separated case IDs")
+    go.add_argument("--review-only", action="store_true", help="Prepare the review page without starting browser execution")
     go.add_argument("--hints", help="Optional page=rough path lines or a UTF-8 file")
     go.add_argument("--code", help="Optional project source root. Runs spec-pathfinder v2 and writes the agent spec under the run directory")
     hints = commands.add_parser("hints")
@@ -203,7 +209,7 @@ def parser():
     for name in ("import", "status", "next", "bind", "advance", "match", "scaffold", "register",
                  "question", "answer", "explore", "run-batch", "record-run", "recover", "repair", "classify",
                  "feedback", "resolve-fixture", "replay-demo", "report", "validate",
-                 "bind-specs", "absorb-locators", "heal-review", "preconditions", "wait", "agent-env", "exploration-log", "generator"):
+                 "bind-specs", "absorb-locators", "heal-review", "preconditions", "wait", "agent-env", "exploration-log", "gap-assess", "candidate-verify", "generator"):
         cmd = commands.add_parser(name)
         cmd.add_argument("--run", required=name != "validate")
         if name == "preconditions":
@@ -218,7 +224,7 @@ def parser():
             cmd.add_argument("--plan", required=True)
             cmd.add_argument("--cases", nargs="+", help="case IDs whose placeholder targets must be mapped in the report")
             cmd.add_argument("--targets", nargs="*", help="spec placeholders to explore in this bounded task")
-            cmd.add_argument("--minutes", type=int, default=20)
+            cmd.add_argument("--minutes", type=int, default=5)
             cmd.add_argument("--model")
             cmd.add_argument("--entry")
             cmd.add_argument("--frame")
@@ -232,6 +238,19 @@ def parser():
             cmd.add_argument("--target")
             cmd.add_argument("--evidence")
             cmd.add_argument("--duration-ms", type=int)
+            cmd.add_argument("--progress", choices=["progress", "stalled"])
+        if name == "gap-assess":
+            cmd.add_argument("--cases", nargs="+", required=True)
+            cmd.add_argument("--target", required=True)
+            cmd.add_argument("--decision", choices=["continue", "ask"], required=True)
+            cmd.add_argument("--reason", required=True)
+            cmd.add_argument("--prompt")
+            cmd.add_argument("--urgency", choices=["normal", "critical"], default="normal")
+            cmd.add_argument("--page")
+            cmd.add_argument("--review-id", help="Reuse this existing human-review decision for all specified cases")
+        if name == "candidate-verify":
+            cmd.add_argument("--question", required=True)
+            cmd.add_argument("--evidence", required=True)
         if name == "import":
             cmd.add_argument("--excel", required=True)
             cmd.add_argument("--mapping")
@@ -289,6 +308,20 @@ def parser():
 def dispatch(args, path, m):
     base = path.parent
     cmd = args.command
+    if cmd == "review-page":
+        from . import review_page
+        if args.action == "render":
+            require(not args.file and not args.mapping, "review-page render reads the optional review-input.json in the run directory")
+            return review_page.render(base, m)
+        if args.action == "ingest-prototype":
+            require(args.file and args.mapping, "review-page ingest-prototype requires --file and --mapping")
+            return review_page.ingest_prototype(base, m, args.file, args.mapping)
+        require(not args.mapping, "--mapping is only supported by ingest-prototype")
+        if args.action == "validate-plan":
+            require(args.file, "review-page validate-plan requires --file")
+            return review_page.validate_plan(base, m, args.file)
+        require(args.file, "review-page ingest requires --file")
+        return review_page.ingest(base, m, args.file)
     if cmd == 'knowledge':
         from . import knowledge
         if args.action == 'merge':
@@ -478,7 +511,18 @@ def dispatch(args, path, m):
         from .exploration import log
         return log(m, args.method, args.purpose, args.result, args.note, base=base,
                    case_id=args.explore_case, target=args.target, evidence=args.evidence,
-                   duration_ms=args.duration_ms)
+                   duration_ms=args.duration_ms, progress=args.progress)
+    if cmd == "gap-assess":
+        return workflow.assess_gap(base, m, args.cases, args.target, args.decision, args.reason,
+                                   args.prompt, args.urgency, args.page, args.review_id)
+    if cmd == "candidate-verify":
+        candidate = m.get('knowledge_candidates', {}).get(args.question)
+        require(candidate is not None, '知识候选不存在')
+        evidence = inside(base, args.evidence)
+        require(evidence.is_file() and evidence.stat().st_size > 0, '验证证据文件不存在或为空')
+        candidate.update(verification='verified', evidence=str(evidence.relative_to(base)), verified_at=now())
+        event(m, 'knowledge_candidate_verified', question_id=args.question, evidence=args.evidence)
+        return {'candidate': candidate, 'note': '仅更新候选验证状态；未写入长期知识库'}
     if cmd == "preconditions":
         from .preconditions import sync_preconditions, classify_precondition
         if args.action == "classify":
@@ -589,7 +633,8 @@ def execute(args):
         from .experience import go
         return go(args.excel, args.profile, args.cases, arm_watch=args.arm_watch, lead_minutes=args.lead_minutes,
                   watch_minutes=args.watch_minutes, hints=args.hints, smoke_size=args.smoke_size,
-                  smoke_pass_rate=args.smoke_pass_rate, first_result_budget_minutes=args.first_result_budget_minutes, code_root=args.code)
+                  smoke_pass_rate=args.smoke_pass_rate, first_result_budget_minutes=args.first_result_budget_minutes,
+                  code_root=args.code, review_only=args.review_only)
     if args.command == "env":
         return {"environments": profiles.presets()}
     if args.command == "setup":

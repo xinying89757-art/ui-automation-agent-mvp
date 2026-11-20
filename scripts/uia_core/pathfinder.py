@@ -73,21 +73,27 @@ def resolution_key(kind, subject):
 
 
 def remembered(kind, subject):
-    return load_resolutions()['resolutions'].get(resolution_key(kind, subject))
+    row = load_resolutions()['resolutions'].get(resolution_key(kind, subject))
+    return row if row and row.get('verification') == 'verified' else None
 
 
 def remember(m, kind, subject, answer, claim_ids):
-    """Persist one non-secret answer. The same subject is never asked again."""
+    """Persist a non-secret answer as an unverified, run-scoped candidate."""
     from .preconditions import normalize
     text = scrub_text(str(answer).strip(), m.get('config'))
     require(text and text == str(answer).strip(), '存疑答复含敏感信息，请只写操作结论')
     require(len(text) <= 500, '存疑答复过长')
     record = {'kind': kind, 'subject': normalize(subject)[:80], 'answer': text,
-              'claim_ids': list(claim_ids)[:20], 'source': 'checklist', 'at': now()}
+              'claim_ids': list(claim_ids)[:20], 'source': 'checklist', 'at': now(),
+              'run_id': m.get('run_id'), 'verification': 'unverified'}
     require(scrub_text(json.dumps(record, ensure_ascii=False), m.get('config')) == json.dumps(record, ensure_ascii=False),
             '存疑答复含敏感信息')
     data = load_resolutions()
-    data['resolutions'][resolution_key(kind, subject)] = record
+    key = resolution_key(kind, subject)
+    m.setdefault('knowledge_candidates', {})[key] = dict(record)
+    # A new unverified answer cannot replace a previously verified resolution.
+    if data['resolutions'].get(key, {}).get('verification') != 'verified':
+        data['resolutions'][key] = record
     path = resolutions_path()
     _not_skill(path)
     atomic_write(path, data, as_yaml=True)

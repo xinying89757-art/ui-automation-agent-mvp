@@ -30,11 +30,13 @@ the project root, never from a particular user's global skill installation.
   regression. The same script, dependencies, configuration and data rules must pass
   that many times in separate batches. Edits reset the count. A batch may reuse one
   editor session; that does not count as a second pass. Preserve every attempt and interruption.
-- Run every runnable case before escalating. A public-page failure, a slow batch, or
+- Continue independent runnable cases while non-critical questions wait; raise a
+  critical-path question promptly after bounded exploration. A public-page failure, a slow batch, or
   cases waiting on the precondition checklist are not grounds to mark the workbook
   blocked. Use `python3 scripts/uia.py wait --run <id>` and its heartbeat file; do not
-  infer that a batch died because its PID is hidden. Ask once, up front, for the
-  consolidated permission, editor, site and migration checklist. Leave unmet cases
+  infer that a batch died because its PID is hidden. Consolidate known permission,
+  editor, site and migration questions up front; ask focused follow-up questions when
+  later exploration reveals genuine gaps. Leave unmet cases
   waiting. Prepare differing site data in the editor, then restore the snapshot.
 - Never print credentials, tokens, cookies, browser storage or account names. Never
   cat/sed whole `.auth/`, `runs/*/state` files or token-bearing fixtures. Test files

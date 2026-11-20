@@ -121,13 +121,13 @@ class GenericProcessTests(unittest.TestCase):
         self.assertIn('default_tools_approval_mode="approve"', joined)
         self.assertIn('mcp_servers.playwright-test.env.UIA_CONFIG="/p/c.json"', joined)
         self.assertIn('seed.spec.ts', seen['cmd'][-1])
-        self.assertEqual(seen['timeout'], 600)  # 10-minute floor
+        self.assertEqual(seen['timeout'], 180)
         row = result['recorded']
         self.assertEqual((row['source'], row['result'], row['tokens']['input_tokens']), ('generator-cli', 'ok', 10))
         self.assertEqual(result['route']['route'], ['click:text=产品'])
         self.assertTrue((self.base / 'exploration/generator-node.y.json').is_file())
         args = cli.parser().parse_args(['generator', '--run', 'R', '--purpose', 'n', '--plan', 'p'])
-        self.assertEqual(args.minutes, 20)
+        self.assertEqual(args.minutes, 5)
 
     def test_legacy_explore_is_clean_and_parser_compatible(self):
         args = cli.parser().parse_args(['explore', '--run', 'R'])

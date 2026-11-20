@@ -25,12 +25,15 @@ def save_snapshot_evidence(base, relative, args, result, cfg=None):
     return str(path.relative_to(base))
 
 
-def log(m, method, purpose, result, note, base=None, case_id=None, target=None, evidence=None, duration_ms=None):
+def log(m, method, purpose, result, note, base=None, case_id=None, target=None, evidence=None, duration_ms=None, progress=None):
     require(purpose and purpose.strip(), 'Exploration purpose must name a specific node')
     require(method in {'snapshot', 'generator', 'midscene'} and result in {'ok', 'failed'}, 'Invalid exploration method/result')
     require(duration_ms is None or type(duration_ms) is int and duration_ms >= 0,
             'Exploration duration must be a non-negative integer in milliseconds')
+    require(progress in (None, 'progress', 'stalled'), 'Invalid exploration progress')
     row = {'at': now(), 'method': method, 'purpose': purpose, 'result': result, 'note': note}
+    if progress:
+        row['progress'] = progress
     if duration_ms is not None:
         row['duration_ms'] = duration_ms
     if case_id is not None:
@@ -42,10 +45,11 @@ def log(m, method, purpose, result, note, base=None, case_id=None, target=None, 
         target_name = target.strip().lstrip('?？')
         require(target_name, 'Exploration target is empty')
         row.update(case_id=case_id, target=target_name, evidence=str(evidence_path.relative_to(base)))
-        attempt = {key: row[key] for key in ('at', 'method', 'purpose', 'result', 'target', 'evidence', 'note', 'duration_ms') if key in row}
-        m['cases'][case_id].setdefault('explore_attempts', []).append(attempt)
+        attempt = {key: row[key] for key in ('at', 'method', 'purpose', 'result', 'target', 'evidence', 'note', 'duration_ms', 'progress') if key in row}
     import json
     require(scrub_text(json.dumps(row, ensure_ascii=False), m['config']) == json.dumps(row, ensure_ascii=False), 'Exploration metadata contains sensitive values')
+    if case_id is not None:
+        m['cases'][case_id].setdefault('explore_attempts', []).append(attempt)
     m.setdefault('exploration', []).append(row)
     return {'recorded': row, 'target_attempts': sum(1 for item in m.get('cases', {}).get(case_id, {}).get('explore_attempts', [])
                                                      if item.get('target') == row.get('target')) if case_id else None}
@@ -215,7 +219,7 @@ DRAFT_RULE = ('Draft mode: you MAY click save/confirm/delete INSIDE an editor or
               'to observe validation, but never save the outer page/record, never publish, and leave via the page cancel/back,')
 
 
-def run_generator(base, m, purpose, plan, minutes=20, model=None, max_actions=40, runner=None, entry=None, draft=False,
+def run_generator(base, m, purpose, plan, minutes=5, model=None, max_actions=40, runner=None, entry=None, draft=False,
                   case_ids=None, targets=None, frame=None):
     """Launch an isolated Codex sub-agent with the Test Agents MCP + seed; record a real generator rung."""
     import json, re, subprocess, time
@@ -274,7 +278,8 @@ def run_generator(base, m, purpose, plan, minutes=20, model=None, max_actions=40
     model = model or 'gpt-6-luna'
     from .common import DEFAULTS
     requested_minutes = minutes
-    minutes = max(int(minutes or 0), int(DEFAULTS['exploration_minutes_per_flow']))
+    minutes = int(minutes or DEFAULTS['exploration_minutes_per_flow'])
+    require(1 <= minutes <= 120, 'Generator timeout must be 1 to 120 minutes')
     command = generator_command(codex_binary(), setup['cwd'], setup['env'], prompt, model)
     started, t0 = now(), time.monotonic()
     runner = runner or (lambda cmd, timeout: subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, stdin=subprocess.DEVNULL))
@@ -346,9 +351,8 @@ def run_generator(base, m, purpose, plan, minutes=20, model=None, max_actions=40
                 case.setdefault('explore_attempts', []).append(attempt)
     advice = None
     if failure_class == 'timeout':
-        advice = ('generator 超时不是页面不可达的证据：同一入口用默认预算再运行一次（不传 --minutes），'
-                  + ('已到达入口，后续计划只写入口之后的交互；' if reached_entry else '')
-                  + '不要把超时转成审核问题或演示请求。')
+        advice = ('generator 超时不是页面不可达的证据；评估是否存在新线索再决定继续探索或请求信息。'
+                  + ('已到达入口，后续探索从入口之后继续。' if reached_entry else ''))
     elif failure_class == 'subagent_start':
         advice = '子代理启动失败属于环境问题：修复后重试，不算演示依据。'
     if (reached or reached_entry) and failure_class is None:

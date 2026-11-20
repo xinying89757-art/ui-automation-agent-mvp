@@ -79,7 +79,10 @@ def sync_checklist(base, m):
     unclassified = [r for r in m.get('precondition_triage', []) if r['classification'] == 'unclassified']
     spec_draft = any(not (base / c.get('case_spec', f'cases/{cid}/case-spec.yaml')).is_file() and not c.get('registration') for cid, c in m['cases'].items())
     m['checklist_draft'] = bool(unclassified or spec_draft)
-    memory_answers = load_memory(m)['answers']
+    # Environment availability and authorization are scoped by the environment
+    # fingerprint. Business and route answers remain local to their review/run.
+    reusable_keys = {row['key'] for row in entries if row.get('block') in {'A', 'B'}}
+    memory_answers = {key: value for key, value in load_memory(m)['answers'].items() if key in reusable_keys}
     answers = memory_answers
     old = m['questions'].get(QUESTION_KEY)
     # Run answers are immutable evidence; environment memory supplies only unseen runs.
@@ -409,7 +412,7 @@ def checklist_notice(checklist):
 
 
 def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_minutes=10, hints=None,
-       smoke_size=3, smoke_pass_rate=1.0, first_result_budget_minutes=26, code_root=None):
+       smoke_size=3, smoke_pass_rate=1.0, first_result_budget_minutes=26, code_root=None, review_only=False):
     from . import workflow, specs, profiles, runtime, reports
     started_at = now()
     require(type(smoke_size) is int and smoke_size >= 1, "smoke size must be a positive integer")
@@ -456,6 +459,13 @@ def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_m
                     'run_selection': '复用同一工作簿与环境的 run；继续已有活动批次' if matches else '使用当前匹配 run；继续已有活动批次',
                     'question_count': 0, 'entry_question_count': 0, 'next': {**workflow.next_task(base, m),
                         **({'process_issue': {'code': 're_explored_known_pages', 'count': repeat_count}} if repeat_count else {})}}
+        urgent = [q for q in m['questions'].values() if q.get('status') == 'open' and
+                  q.get('kind') == 'exploration' and q.get('urgency') == 'critical']
+        if urgent and not review_only:
+            if hints:
+                save(manifest, m)
+            return {'run_id': m['run_id'], 'run_reused': bool(matches),
+                    'next': {'action': 'ask_human', 'questions': urgent}}
         previous_selection = m.get('selected_cases')
         m.update(go_key=key, go_source=str(source), go_profile=str(path.resolve()), interaction_mode='once', selected_cases=selected)
         save(manifest, m)
@@ -463,7 +473,8 @@ def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_m
         if not m['sources'] or m['sources'][0]['sha256'] != file_hash(source) or previous_selection != selected:
             workflow.import_excel(base, m, source)
         from .remote_checks import expire
-        expire(base, m)
+        if not review_only:
+            expire(base, m)
         workflow.refresh(base, m)
         # Reuse only source-fingerprint-matched example contracts, never by case ID alone.
         index = ROOT / 'examples/phase2/index.json'
@@ -483,7 +494,7 @@ def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_m
         from .knowledge import match_run
         match_run(base, m)
         # Lint and compile matched contracts before legacy scripts claim imported cases.
-        if matched:
+        if matched and not review_only:
             lint = specs.lint(base, m, matched)
             for cid in matched:
                 if not m['cases'][cid].get('spec_lint', {}).get('errors'):
@@ -497,7 +508,17 @@ def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_m
         from .pathfinder import compile_run, project_specs
         if code_root:
             require(Path(code_root).expanduser().is_dir(), '项目代码路径不是目录')
-        compile_run(base, m, code_root=str(Path(code_root).expanduser()) if code_root else None)
+        try:
+            compile_run(base, m, code_root=str(Path(code_root).expanduser()) if code_root else None)
+        except UiaError as error:
+            if not review_only or str(error) != '人审版或存疑说明混入了代码串':
+                raise
+            from .review_page import render
+            checklist = sync_checklist(base, m)
+            page = render(base, m)
+            save(manifest, m)
+            return {'run_id': m['run_id'], **checklist, **page, 'review_only': True, 'draft': True,
+                    'preparation_error': str(error), 'next': {'action': 'prepare_review'}}
         project_specs(base, m)
         # A legacy script that substitutes editor values for a public-file assertion is
         # incompatible with the source-matched deferred contract. Preserve its history,
@@ -529,6 +550,18 @@ def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_m
                 compile_run(base, m, code_root=str(Path(code_root).expanduser()) if code_root else None)
                 project_specs(base, m)
                 checklist = sync_checklist(base, m)
+        from .review_page import render as render_review_page
+        review_page = render_review_page(base, m) if review_only or not checklist['draft'] else {}
+        if review_only:
+            save(manifest, m)
+            return {'run_id': m['run_id'], **checklist, **review_page, 'review_only': True,
+                    'next': {'action': 'prepare_review' if checklist['draft'] else 'review'}}
+        urgent = [q for q in m['questions'].values() if q.get('status') == 'open' and
+                  q.get('kind') == 'exploration' and q.get('urgency') == 'critical']
+        if urgent:
+            save(manifest, m)
+            return {'run_id': m['run_id'], 'run_reused': bool(matches), **review_page,
+                    'next': {'action': 'ask_human', 'questions': urgent}}
         # Environment preflight is the first execution gate: login, site, and the content editor.
         m['gates'] = {'smoke_size': smoke_size, 'smoke_pass_rate': float(smoke_pass_rate),
                       'first_result_budget_minutes': float(first_result_budget_minutes)}
@@ -541,7 +574,7 @@ def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_m
             save(manifest, m)
             return {'run_id': m['run_id'], 'run_reused': bool(matches), 'environment_blocked': True,
                     'failure_class': 'environment', 'reason': gate.get('reason'), 'preflight': m.get('preflight'),
-                    'report': output, 'spec_tasks': [],
+                    'report': output, 'spec_tasks': [], **review_page,
                     'next': {'action': 'environment_blocked', 'instruction': '环境预检未通过，未执行用例。'}}
         ready = [cid for cid, c in m['cases'].items() if c['work_status'] == 'runnable' and not c.get('case_spec')]
         armed = _arm_requested_watches(base, m, arm_watch, lead_minutes, watch_minutes)
@@ -587,15 +620,20 @@ def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_m
         memory_note = checklist_notice(checklist)
         from .metrics import exploration_counts
         exploration_metric = exploration_counts(m)
+        open_questions = [q for q in m['questions'].values() if q.get('status') == 'open' and q.get('kind') == 'exploration']
+        actionable = any(c.get('work_status') not in {'waiting_human', 'finished'} and not c.get('result')
+                         for c in m['cases'].values())
+        ask_now = bool(open_questions and not actionable)
         return {'run_id': m['run_id'], 'run_reused': bool(matches),
                 'run_selection': '复用同一工作簿与环境的 run；用例子集已更新' if matches else '新建 run；当前环境和工作簿没有匹配的既有 run',
-                'checklist_message': memory_note, **checklist, 'spec_tasks': tasks, 'report': output, 'armed_watches': armed,
+                'checklist_message': memory_note, **checklist, **review_page, 'spec_tasks': tasks, 'report': output, 'armed_watches': armed,
                 'pathfinder': {'stage': (m.get('pathfinder') or {}).get('stage'),
                                'requirements': [row.get('name') for row in (m.get('pathfinder') or {}).get('requirements') or []],
                                'guided': (m.get('pathfinder') or {}).get('guided') or [],
                                'output_dir': (m.get('pathfinder') or {}).get('output_dir')},
                 'smoke': m.get('smoke'), 'abort': m.get('abort'),
-                'next': {'action': 'classify_preconditions' if checklist['unclassified'] else 'complete_spec_tasks' if checklist['draft'] else 'answer_checklist' if checklist['question_count'] else 'continue_spec_tasks_or_review', 'unclassified': checklist['unclassified'], 'ai_tasks': checklist['ai_tasks'], 'mid_run_questions': 0,
+                'next': {'action': 'ask_human' if ask_now else 'classify_preconditions' if checklist['unclassified'] else 'complete_spec_tasks' if checklist['draft'] else 'answer_checklist' if checklist['question_count'] else 'continue_spec_tasks_or_review', 'unclassified': checklist['unclassified'], 'ai_tasks': checklist['ai_tasks'], 'mid_run_questions': sum(e.get('kind') == 'mid_run_question' for e in m.get('interaction_events', [])),
+                         **({'questions': open_questions} if ask_now else {}),
                          **({'process_issue': {'code': 're_explored_known_pages', 'count': exploration_metric['re_explored_known_pages']}} if exploration_metric['re_explored_known_pages'] else {}),
                          'exploration_for_missing_controls': exploration_metric['exploration_for_missing_controls'],
                          **({'present_checklist': False, 'instruction': '清单仍是草稿：不要向人展示或提问；先分类全部前置条件并写完全部 case-spec（未知目标写 ?名称），再次运行 go 得到最终清单后一次性展示。'} if checklist['draft'] else {'present_checklist': bool(checklist['question_count'])})}}

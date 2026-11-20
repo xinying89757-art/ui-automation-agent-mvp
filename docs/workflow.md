@@ -30,7 +30,7 @@ Excel 导入接受常见中英文表头别名并跳过无用例内容的行；�
 
 `uia go` 在绑定已有脚本之后、生成新脚本之前运行 spec-pathfinder。每个需求（模块，否则工作表）写一份中文人审版和存疑清单，编号在同一次编译内稳定。没有 `--code` 时置信度最高为中。`--code 代码根` 会运行 `skills/spec-pathfinder/scripts/build-index.mjs`，把索引和 agent 执行版写到 `runs/<id>/spec-pathfinder/`，不写进 skill 目录。
 
-存疑清单并进同一次执行前清单：知识库定位不到的页面在 D 块，预期看不清或只存在于前端的控件在 E 块。D 的路径写入 `entries.yaml`；E 的结论写入 `knowledge/pathfinder-resolutions.yaml`。同一主题再次出现时不再询问。富文本这类后端索引里没有的控件标记为一次性引导探索，人工把看到的现象写进 E 块后作为知识种子。
+存疑清单并进同一次执行前清单：知识库定位不到的页面在 D 块，预期看不清或只存在于前端的控件在 E 块。D 的路径作为未验证入口线索；E 的结论记录为带运行来源的未验证候选。只有经过验证的结论才可跨运行作为已确认知识；本次运行保留原答复，避免重复提问。富文本这类后端索引里没有的控件标记为一次性引导探索，人工把看到的现象写进 E 块后作为知识种子。
 
 生成器只读取这份确认稿里的入口、步骤和预期。确认稿会投影成 case-spec；尚未定位的起点可以是 `?名称`。已绑定的旧脚本不因这份清单重写。
 
@@ -46,9 +46,9 @@ Excel 导入接受常见中英文表头别名并跳过无用例内容的行；�
 
 ## 人工问题
 
-提测可选 `go --hints FILE_OR_TEXT` 或 `hints add --run R "页面=路径"`；未知入口合并一次清单 D（可用 `preconditions classify --page` 注册），后发现只进异步审核。
+提测可选 `go --hints FILE_OR_TEXT` 或 `hints add --run R "页面=路径"`；未知入口合并一次清单 D（可用 `preconditions classify --page` 注册），后发现的问题按影响范围排队，关键路径可及时提问，其余先继续独立用例。
 D 答复（页面=路径或 D1/D2）写入环境记忆及 `assets/playwright-runner/knowledge/entries.yaml`，跨需求复用；草稿答复在清单定稿时自动应用。
-探索从 `snapshot --entry PAGE` / `generator --entry PAGE` 开始；`next` 优先选择缺失占位目标最少的 case，每次最多 8 个目标，同入口/frame 的其他 case 只有在共享这些目标时才加入。按返回的 `targets_by_case` 执行 action 的精确 `generator_command`；命令带 `--cases`/`--targets`，报告包含 case spec 的 step ID 与 placeholder 对应的唯一已验证 locator。快照命令示例：`uia.py snapshot --run R --node editor --entry PAGE --purpose TARGET --evidence evidence/TARGET.json`。Generator 成功后执行返回的 `hints promote --report` 命令；它自动保存唯一 locator 并绑定 placeholder，不需要手工 `--for`。Snapshot 结果用 `uia.py exploration-log` 按 case/目标记录，并传 `--duration-ms`。两次没有绑定或失败的有证据尝试后，`next` 挂起该目标的 case 并继续其他用例。菜单交互先滚动并尝试普通 click，失败后才使用 typeahead/Enter 或 ArrowDown/Enter；保持焦点在当前编辑器或触发控件。禁止猜测控件或在探索报告未成功时绑定。粗略路径转为 --goto/--step 后用 `hints confirm` 保存；仅已知入口到达且 generator 在指定 --interaction 失败后才可请求演示。
+探索从 `snapshot --entry PAGE` / `generator --entry PAGE` 开始；`next` 优先选择缺失占位目标最少的 case，每次最多 8 个目标，同入口/frame 的其他 case 只有在共享这些目标时才加入。按返回的 `targets_by_case` 执行 action 的精确 `generator_command`；命令带 `--cases`/`--targets`，报告包含 case spec 的 step ID 与 placeholder 对应的唯一已验证 locator。快照命令示例：`uia.py snapshot --run R --node editor --entry PAGE --purpose TARGET --evidence evidence/TARGET.json`。Generator 成功后执行返回的 `hints promote --report` 命令；它自动保存唯一 locator 并绑定 placeholder，不需要手工 `--for`。Snapshot 结果用 `uia.py exploration-log` 按 case/目标记录，并传 `--duration-ms`。两次尝试、无进展或参考预算到达后，`next` 提醒评估；Agent 可以依据新线索继续，也可以创建人工问题，等待期间其他用例继续。菜单交互先滚动并尝试普通 click，失败后才使用 typeahead/Enter 或 ArrowDown/Enter；保持焦点在当前编辑器或触发控件。禁止猜测控件或在探索报告未成功时绑定。粗略路径转为 --goto/--step 后用 `hints confirm` 保存；仅已知入口到达且 generator 在指定 --interaction 失败后才可请求演示。
 
 问题保存类型、影响用例、尝试记录和恢复位置。登录和凭证只接收状态/环境变量引用，
 不在对话或清单中保存密码值。同一缺口合并询问，已经确认的业务答案再次使用；
@@ -109,4 +109,4 @@ Xinying 已授权测试站及账号自由修改、保存、发布；实际可行
 
 report/close-out 自动执行知识回写。已执行成功的操作步骤可在最终断言失败时回写已到达入口、已定位/交互控件和已走路线；断言与业务语义不作为知识证据。完整的入口与定位器成功记录仍按重复验证更新稳定性计数。两次独立失败会将同版本知识设为 `needs_review`，默认不注入。`kb prune` 超过 90 天未验证标为 stale；180 天无命中仅列删除候选，不删文件。历史扁平 `entries.yaml`/`page-map.yaml` 由 `knowledge merge` 迁移到按页面/组件/流程/模式拆分的 YAML 文件。
 
-缺失 page-map 控件是探索任务，不是生成门禁结论。每个 case/target 最多两次失败探索；`next` 在第二次有证据失败后返回 `缺控件：…` 分类任务。写入 catalog 但未绑定 `?placeholder` 不算该规格目标已发现，且不能重置失败上限。每次成功后运行 lint/gen，并继续调用 `next`；只有所有用例均结论并已生成最终报告后才结束。
+缺失 page-map 控件是探索任务，不是业务失败。Agent 根据证据和进展决定继续或提问；写入 catalog 但未绑定 `?placeholder` 不算该规格目标已发现。每次成功后运行 lint/gen，并继续调用 `next`；只有所有用例均结论并已生成最终报告后才结束。

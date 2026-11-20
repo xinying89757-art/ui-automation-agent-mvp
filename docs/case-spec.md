@@ -100,7 +100,7 @@ python3 scripts/uia.py preconditions classify --run R --key raw:OTHER --as human
 必须给说明标签；`human_env` 合并进清单 A 块。运行目录 `preconditions.yaml` 是本地目录投影，
 不会自动改根目录。已有环境记忆仍自动回答；分类完并完成规格后才呈现一次清单。
 
-每个未知节点只探索一次，阶梯为：知识 → bounded snapshot → Test Agents generator；
+未知节点按进展进行有界探索，阶梯为：知识 → bounded snapshot → Test Agents generator；
 Midscene 仅补充视觉期望。明确命名 `--purpose NODE`，知识落入 page-map.yaml 命名目标及 flows
 路由后再编写 specs；一个节点未知时继续编写/执行其他节点。
 

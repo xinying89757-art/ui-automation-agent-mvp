@@ -115,6 +115,7 @@ class PathfinderStageTests(unittest.TestCase):
         self.assertEqual(entries.resolve('订单列表页面')['path_text'], '内容管理 → 订单')
         saved = common.read_yaml(self.root / 'knowledge/pathfinder-resolutions.yaml')
         self.assertTrue(saved['resolutions'])
+        self.assertTrue(all(row['verification'] == 'unverified' for row in saved['resolutions'].values()))
         self.assertNotIn('TC-PF-1/S1', json.dumps(saved, ensure_ascii=False))
         import copy
         other = copy.deepcopy(self.m)
@@ -123,7 +124,7 @@ class PathfinderStageTests(unittest.TestCase):
         other['run_id'] = 'PF2'
         pathfinder.compile_run(self.base, other)
         second = experience.sync_checklist(self.base, other)
-        self.assertEqual(second['question_count'], 0)
+        self.assertGreaterEqual(second['question_count'], 1)
         self.assertNotIn('大概在哪里', (self.base / 'checklist.md').read_text(encoding='utf-8'))
         skill_after = {path.relative_to(SOURCE) for path in (SOURCE / 'skills/spec-pathfinder').rglob('*') if path.is_file()}
         self.assertEqual(skill_before, skill_after)

@@ -115,9 +115,9 @@ class Fix3Tests(unittest.TestCase):
             result = exploration.run_generator(self.base, self.m, 'insert.widget', 'observe', minutes=3,
                                                runner=runner, entry='内容编辑器')
         row = result['recorded']
-        self.assertEqual(seen['timeout'], 600)
+        self.assertEqual(seen['timeout'], 180)
         self.assertEqual((row['failure_class'], row['reached_entry'], row['requested_minutes']), ('timeout', True, 3))
-        self.assertIn('默认预算', result['next'])
+        self.assertIn('新线索', result['next'])
         self.m['cases']['C1']['unknown_nodes'] = ['insert.widget']
         with self.assertRaisesRegex(common.UiaError, 'generator'):
             exploration.demo_gate(self.m, 'insert.widget', ['C1'], 'drag', page='内容编辑器')

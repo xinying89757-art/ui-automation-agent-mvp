@@ -7,6 +7,25 @@ coverage、hooks、dependencies 的代码路径相对该运行下的 runner。
 
 命令实际执行需由 Codex 按技能推进。`next` 只返回下一动作，**不调用模型、不启动浏览器**。
 
+`review-page ingest` 接收与当前运行和审核版本一致的导出文件，生成 `review-decisions.json` 和按用例
+汇总答复及待答问题的 `review-handoff.json`。后者的 `processing: not_applied` 表示仅已接收，Agent
+仍须逐项落实到执行规格、断言或本轮范围，再做校验；不会自动修改规格、写入知识库或运行测试。
+没有版本信息的历史原型导出不能直接作为当前审核版本导入，需保留原件并人工对照审核项和来源。
+
+原型迁移可用 `review-page ingest-prototype --run R --file OLD.json --mapping MAP.json`：MAP 是旧 ID
+到当前 ID 的一对一对象；命令核对运行、用例归属及已确认内容，另存来源摘要和 `reviewed_revision: null`，
+不会声称审核过当前版本。自由文本答复需由 Agent 逐用例拆解为计划，写入 JSON：
+
+```json
+{"run_id":"R", "review_source":"review-decisions.json", "review_source_sha256":"答复文件的 SHA-256",
+ "items":[{"review_id":"Q1", "case_id":"C1", "disposition":"implement", "scope":"产品描述",
+           "instruction":"进入产品描述并打开 FAQ 面板"}]}
+```
+
+`review-page validate-plan --run R --file PLAN.json` 核验来源摘要及每个答复与关联用例的组合均有处理项；
+`disposition` 支持 implement、partial_exclusion、exclude、blocked。通过仅表示覆盖完整、结构有效；
+它不证明语义正确、规格已生成、控件已验证或测试可运行。规格和执行结果必须另行落实。
+
 知识查询通过 `uia go` 自动按每例的页面/入口运行，结果写入 `runs/<id>/knowledge-match.json`，在 generator/spec-gen 之前完成。手动查询与维护命令：
 
 ```bash
@@ -21,13 +40,21 @@ python3 scripts/uia.py kb writeback --run GO-id
 
 ### `explore` action
 
-`next` 返回 `explore` 时不提问。它先选择占位目标最少、优先级最高的 case，每次最多 8 个目标；同入口/frame 的其他 case 仅在共享同一目标时加入 `case_ids` 和 `targets_by_case`。推荐执行 action 返回的 `generator_command`：它包含 `--cases` 和 `--targets`，generator 会把 step ID/占位目标清单写入 prompt，并输出逐目标的 `step_targets` 映射。快照可用 `snapshot --run R --node editor --entry PAGE --purpose TARGET --evidence evidence/CASE-TARGET-1.json` 保存脱敏后的入口、frame、失败步骤等结果元数据，不保存 DOM。
+`next` 返回 `explore` 时先自主探索；若已经没有可行线索，也可提前评估并提问。它先选择占位目标最少、优先级最高的 case，每次最多 8 个目标；同入口/frame 的其他 case 仅在共享同一目标时加入 `case_ids` 和 `targets_by_case`。推荐执行 action 返回的 `generator_command`：它包含 `--cases` 和 `--targets`，generator 会把 step ID/占位目标清单写入 prompt，并输出逐目标的 `step_targets` 映射。快照可用 `snapshot --run R --node editor --entry PAGE --purpose TARGET --evidence evidence/CASE-TARGET-1.json` 保存脱敏后的入口、frame、失败步骤等结果元数据，不保存 DOM。
 
 ```bash
 python3 scripts/uia.py exploration-log --run R --case CASE --target TARGET --method snapshot --purpose TARGET --result failed --evidence evidence/CASE-TARGET-1.json --duration-ms 1234 --note '到达入口后控件仍不可见'
 ```
 
-成功的 snapshot 同样用 `--result ok` 记录。Generator session 自动记录各 case/target 的结果与耗时；运行 `hints promote --run R --report exploration/generator-SLUG.json` 后，promote 仅接受 `verified: true` 且 `match_count: 1` 的 step locator，通过唯一 catalog 写入路径保存控件、绑定 run 内占位符并重写 case-spec；通常不需要手动 `--for`。手动 `hints target`/`hints promote --for '?placeholder'` 仍可用于精确绑定。一次探索没有绑定目标时，每个任务占位符计一次失败；每个 case/target 最多两次失败，此后 `next` 返回 `classify`，按返回的 `reason` 与 `evidence` 执行 `uia.py classify --run R --case CASE --result suspended --reason REASON --evidence PATH`，再继续其他 case。报告中的 exploration_duration_ms 记录次数、总时长和 p50/p95。不要自行增加重试或向用户提问。
+成功的 snapshot 同样用 `--result ok` 记录。Generator session 自动记录各 case/target 的结果与耗时；运行 `hints promote --run R --report exploration/generator-SLUG.json` 后，promote 仅接受 `verified: true` 且 `match_count: 1` 的 step locator，通过唯一 catalog 写入路径保存控件、绑定 run 内占位符并重写 case-spec；通常不需要手动 `--for`。手动 `hints target`/`hints promote --for '?placeholder'` 仍可用于精确绑定。没有绑定目标不视为目标已解决。两次尝试、无进展或累计 5 分钟后，`next` 返回 `assess_exploration` 提醒 Agent 判断，不自动给出用例结论；Agent 也可以提前评估。`gap-assess --decision continue` 记录新线索并继续，`gap-assess --decision ask` 创建仅阻断相关用例的答疑；关键问题加 `--urgency critical`，其他问题在独立工作完成后集中提问。答复用 `answer --question ID --file answer.json`（JSON 字符串），并保存为未验证的 run 内知识候选；`candidate-verify --question ID --evidence PATH` 记录人工核对过的实测证据，不自动写入长期知识库。报告中的 exploration_duration_ms 记录次数、总时长和 p50/p95。
+
+```bash
+python3 scripts/uia.py exploration-log --run R --case C1 --target '?faq' --method snapshot --purpose faq --result failed --evidence evidence/faq.json --duration-ms 30000 --progress stalled --note '已查看产品描述，没有发现组件入口'
+python3 scripts/uia.py gap-assess --run R --cases C1 C2 --target '?faq' --decision ask --page 产品描述 --reason '无进一步线索' --prompt '如何打开 FAQ 组件面板？'
+python3 scripts/uia.py gap-assess --run R --cases C1 --target '?faq' --decision continue --reason '发现产品菜单，继续查看'
+```
+
+提问时 `--page` 表示业务适用范围，用于避免跨页面复用同名目标的答复；同一页面和目标的问题会合并。若本运行审核答复已覆盖该用例，先用 `gap-assess ... --review-id REVIEW_ID` 取回答复，再按适用范围验证。待处理的审核页问题只暂停其关联用例。
 
 每完成探索、绑定、lint/gen、批次或恢复动作后都重新调用 `next`，继续处理 runnable 用例和其他 AI action，直至所有用例均已结论并生成最终报告；不能以中间摘要结束。
 
@@ -78,7 +105,7 @@ python3 scripts/uia.py next --run REQ-001
 python3 scripts/uia.py bind --run REQ-001 --cases TC-01 TC-02 --flows product-create --fixtures products
 ```
 
-`go` 在导入和 bind-specs 之后运行 spec-pathfinder。默认只做无代码 v1，写出 `runs/<id>/spec-pathfinder/<需求>/SPEC-human-v1.md` 与 `DOUBTS-v1.md`。`--code` 额外运行索引器并写出执行版、证据附录和 v1→v2 升级记录；索引 JSON 只留在该 run 目录。存疑并入同一次 `checklist.md`（D 为未知入口，E 为路径/预期/前端控件）。答复写入知识库后不再询问。随后的 `spec gen` 消费确认稿中的入口、步骤和预期。
+`go` 在导入和 bind-specs 之后运行 spec-pathfinder。默认只做无代码 v1，写出 `runs/<id>/spec-pathfinder/<需求>/SPEC-human-v1.md` 与 `DOUBTS-v1.md`。`--code` 额外运行索引器并写出执行版、证据附录和 v1→v2 升级记录；索引 JSON 只留在该 run 目录。存疑并入同一次 `checklist.md`（D 为未知入口，E 为路径/预期/前端控件）。本运行保留答复；未验证的业务结论只作为候选，不跨运行自动当作确认结果。随后的 `spec gen` 消费确认稿中的入口、步骤和预期。
 
 导入响应会提示先运行 `bind-specs`，索引 `tests/*.spec.ts` 并优先回放已有脚本。页面探索使用
 `python3 scripts/uia.py snapshot --run REQ-001 --node page|content-admin|editor`：登录、打开目标页面、
@@ -204,6 +231,21 @@ HTML 支持筛选；脚本 ZIP 排除依赖、凭证与运行日志。只有源�
 
 ## 一步提测与一次清单（Phase 3）
 
+新需求的人审阶段可以使用固定的单文件 HTML。以下命令分别准备审核材料、重新生成界面和接收答复。
+
+```bash
+python3 scripts/uia.py go /path/to/cases.xlsx --profile my-prod --review-only
+python3 scripts/uia.py review-page render --run GO-xxx
+python3 scripts/uia.py review-page ingest --run GO-xxx --file /path/to/GO-xxx-review.json
+```
+
+页面生成到 `runs/<id>/review.html`，自动显示运行清单中的问题。可选的 `runs/<id>/review-input.json`
+提供 `title`、`questions` 与 `checks`。每项使用稳定的 `id`、`title` 和包含实际用例 ID 的 `cases` 数组，
+可附 `description`、`source`、HTTPS `link`。问题可附现有 `answer`，同 ID 可补充系统问题。
+关键断言用 `checks` 字符串数组列出应验证的结果。Agent 只添加需人工判断的问题和关键断言，原始用例随时可查。
+导出带运行 ID 和审阅版本的 JSON 文件，导入后把结构化决定保存到运行记录及 `review-decisions.json`。
+Agent 按返回的决定更新相关规格并核验后继续执行。工具保存审核意见，业务步骤与断言由 Agent 按用例原文和审核结果落实。
+
 ```bash
 .venv/bin/python scripts/uia.py preflight --profile my-prod
 .venv/bin/python scripts/uia.py go /path/to/cases.xlsx --profile my-prod --cases TC-0004,TC-0016 \
@@ -220,14 +262,14 @@ HTML 支持筛选；脚本 ZIP 排除依赖、凭证与运行日志。只有源�
 私有配置时自动选择。相同工作簿路径、profile、用例范围恢复同一个 run；工作簿内容变化仍做来源对齐。
 导入、索引既有脚本、真实环境自检、可恢复样本契约复用、case-spec 任务、前置聚合和可执行批次由 go 衔接。
 只有全量业务指纹匹配才复用样本契约。未知工作簿由当前 Codex 会话编写契约，不会启动模型子进程。
-待编写契约时清单为草稿，不提问；已具备权限的独立既有脚本优先执行。
+待编写契约时旧清单仍为草稿；不妨碍通过审核页确认已发现的业务歧义，或对关键缺口提出聚焦问题。已具备权限的独立既有脚本优先执行。
 
 checklist.md 是 run.json 的中文投影，A 为站点/账号/编辑器/迁移等必要环境，B 为契约聚合的临时修改范围，
 C 为原始业务歧义及明确选项。中文一句话必须明确各块；不理解的答复原子拒绝，不保存半份答案。
 C 有多项时须逐项给选项；不会把“默认”当作业务答案。旧 --question/--file JSON 接口继续可用。
-环境记忆位于私有 .auth/environment-memory，绑定环境/站点/身份/网络指纹，权限 0600；不打印身份内容。
+环境记忆位于私有 .auth/environment-memory，绑定环境/站点/身份/网络指纹，权限 0600；不打印身份内容。跨运行只自动采用环境和授权条件，业务预期与入口答复在本运行内保留，未验证前不作为跨运行确认结果。
 否定答案也长期记忆。记忆不代替实时可达性、认证和变更范围检查；同意 B 也不能扩大已锁定权限。
-新范围、业务歧义、产品问题及录制请求进 review.md/review.json，不提中途问题，不阻塞其他用例交付。
+新发现的业务歧义和操作缺口可以在运行中提问；只等待受影响的用例，其他用例继续。明确预期后的实际不符先留证并按业务问题处理。
 通过独立审核及原有 replay-demo 入口吸收动作脚本，不自动信任录制或改动断言。
 
 会话适配器/当前 Codex 对每个用户消息调用一次 session-turn，稳定 id 去重。

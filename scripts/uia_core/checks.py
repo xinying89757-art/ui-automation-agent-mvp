@@ -58,15 +58,24 @@ def daily_case_errors(base, case, cfg, execution=False):
     return errors, warnings
 
 
+def review_binding_errors(base, case, spec_file):
+    binding = case.get('review_binding')
+    if binding and (binding.get('spec_sha256') != file_hash(spec_file) or
+                    binding.get('source_file_sha256') != file_hash(inside(base, case['source']))):
+        return ['Reviewed case spec or source changed; reconcile the review binding']
+    return []
+
+
 def case_errors(base, case, cfg, execution=False):
     if (case.get("registration") or {}).get("case_spec"):
         from .specs import catalogs, spec_path, schema_errors, locator_errors, coverage
-        env, data, pages = catalogs()
+        env, data, pages = catalogs(base)
         path = spec_path(base, case)
         if not path.is_file():
             return ["case-spec missing"], []
         spec = read_yaml(path)
         errors, unknown = schema_errors(spec, read_json(inside(base, case["source"])), env, data, pages)
+        errors.extend(review_binding_errors(base, case, path))
         if unknown:
             errors.append("Unknown targets require exploration")
         registration = case["registration"]

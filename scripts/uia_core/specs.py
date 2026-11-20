@@ -24,9 +24,18 @@ def has_snapshot_ref(value):
     return bool(REF.search(json.dumps(value, ensure_ascii=False)))
 
 
-def catalogs():
+def catalogs(base=None):
     shared = ROOT / 'knowledge/page-map.yaml'
     pages = read_yaml(shared if shared.is_file() else ROOT / 'assets/playwright-runner/knowledge/page-map.yaml')
+    if base is not None:
+        overlay_path = Path(base) / 'state/page-map-overlay.yaml'
+        if overlay_path.is_file():
+            overlay = read_yaml(overlay_path)
+            for section in ('pages', 'targets'):
+                extra = overlay.get(section, {})
+                require(isinstance(extra, dict) and not (set(extra) & set(pages.get(section, {}))),
+                        'Run-local page map must not override shared targets')
+                pages.setdefault(section, {}).update(extra)
     networks = read_yaml(ROOT / 'assets/playwright-runner/knowledge/network.yaml')['rules']
     for entry in pages['targets'].values():
         if entry.get('network_rule'):
@@ -382,7 +391,7 @@ def coverage(body, file):
 
 
 def lint(base, m, case_ids=None, record=True, check_scripts=True):
-    env, data, pages = catalogs()
+    env, data, pages = catalogs(base)
     selected = case_ids or [cid for cid, c in m['cases'].items() if spec_path(base, c).is_file()]
     # Cross-case duplication cannot be bypassed with --cases or a single-case generation.
     chosen = list(dict.fromkeys([*selected, *[cid for cid, c in m['cases'].items() if spec_path(base, c).is_file()]]))
@@ -481,7 +490,7 @@ def generate(base, m, cid):
     require(not any(c.get('attempts') and c['attempts'][-1].get('cleanup_pending') for c in m['cases'].values()), 'Restore held remote data before generating another version')
     result = lint(base, m, [cid], check_scripts=False)
     require(not result['errors'] and not result['cases'][cid]['errors'], 'case-spec lint failed', result)
-    case = m['cases'][cid]; spec = read_yaml(spec_path(base, case)); _, catalog, pages = catalogs()
+    case = m['cases'][cid]; spec = read_yaml(spec_path(base, case)); _, catalog, pages = catalogs(base)
     pathfinder_note = []
     if case.get('spec_origin') == 'pathfinder':
         from .pathfinder import generation_brief
@@ -685,7 +694,7 @@ def register_script(base, m, cid, script_path):
     require(not result['errors'] and not result['cases'][cid]['errors'], 'case-spec lint failed', result)
     require(not any(cid in item['case_ids'] for item in result['explore']), 'Resolve unknown targets before registration')
     require(not spec['questions'], 'Resolve business questions before registration')
-    env, catalog, pages = catalogs()
+    env, catalog, pages = catalogs(base)
     require(spec['automatable']['status'] != 'manual', 'Manual case cannot register')
     require(all(catalog[key].get('handler') for key in spec['data_prep']), 'Data preparation handler is not implemented')
     script = inside(base, script_path)

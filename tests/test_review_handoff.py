@@ -3,6 +3,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 from uia_core import review_page
@@ -10,6 +11,28 @@ from uia_core.common import UiaError, atomic_write, read_json
 
 
 class ReviewHandoffTest(unittest.TestCase):
+    def test_apply_entry_preserves_scope_and_prototype_provenance(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            qkey = review_page.QUESTION_KEY
+            run = {'run_id': 'R', 'cases': {'C1': {'title': 'first'}, 'C2': {'title': 'second'}},
+                   'questions': {qkey: {'entries': [{'key': 'entry:产品', 'block': 'D', 'page': '产品',
+                                                     'label': '产品', 'cases': ['C1'], 'options': []}],
+                                        'answer': {'entries': {}}}}, 'history': []}
+            run['cases']['C1']['source'] = 'C1.json'
+            atomic_write(base / 'C1.json', {'steps': [], 'expected': []})
+            current = review_page._payload(base, run)['revision']
+            run['prototype_review'] = {'current_snapshot_revision': current, 'reviewed_revision': None,
+                'source_sha256': 'source-hash', 'decisions': [{'id': 'entry:产品', 'kind': 'question',
+                'status': 'confirmed', 'value': '内容管理 → 产品', 'cases': ['C1']}]}
+            with patch('uia_core.experience.sync_checklist'):
+                with self.assertRaises(UiaError):
+                    review_page.apply_entry(base, run, 'C2', 'entry:产品', 'prototype')
+                result = review_page.apply_entry(base, run, 'C1', 'entry:产品', 'prototype')
+            self.assertIsNone(result['reviewed_revision'])
+            self.assertEqual(run['questions'][qkey]['answer']['entries']['entry:产品'], '内容管理 → 产品')
+            self.assertEqual(run['review_applications']['entry:产品']['case_ids'], ['C1'])
+
     def test_plan_requires_every_decision_case_and_matching_source_hash(self):
         from uia_core.common import file_hash
         with tempfile.TemporaryDirectory() as directory:

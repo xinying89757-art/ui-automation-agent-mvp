@@ -172,6 +172,7 @@ def ingest(base, run, path):
                          'status': row['status'], 'value': value}
     pending = [item for item in [*questions, *checks] if item['id'] not in received]
     result = {'run_id': run['run_id'], 'revision': payload['revision'],
+              'source_files': {cid: file_hash(inside(base, case['source'])) for cid, case in run['cases'].items() if case.get('source')},
               'decisions': list(received.values()), 'pending': pending}
     handoff = _handoff(payload, received.values(), pending, RESULT)
     if run.get('human_review') != result:
@@ -225,6 +226,7 @@ def ingest_prototype(base, run, path, mapping_path):
     result = {'run_id': run['run_id'], 'source_kind': 'unversioned_prototype',
               'source_sha256': file_hash(path), 'mapping_sha256': file_hash(mapping_path),
               'current_snapshot_revision': payload['revision'], 'reviewed_revision': None,
+              'source_files': {cid: file_hash(inside(base, case['source'])) for cid, case in run['cases'].items() if case.get('source')},
               'decisions': list(received.values()), 'pending': pending, 'deferred_cases': deferred}
     handoff = _handoff(payload, received.values(), pending, 'review-prototype-decisions.json')
     handoff['reviewed_revision'] = None
@@ -272,3 +274,71 @@ def validate_plan(base, run, path):
               'items': len(rows), 'state': 'planned_not_applied'}
     atomic_write(base / 'review-plan-validation.json', result)
     return {**result, 'next': 'implement_plan_and_lint_specs'}
+
+
+def apply_entry(base, run, cid, review_id, source='current'):
+    """Apply one reviewed entry to its matching run-local checklist, never to shared KB."""
+    require(cid in run['cases'], '审核用例不存在')
+    review = run.get('prototype_review' if source == 'prototype' else 'human_review') or {}
+    revision = review.get('current_snapshot_revision' if source == 'prototype' else 'revision')
+    current_revision = _payload(base, run)['revision']
+    existing = run.get('review_applications', {}).get(review_id) or {}
+    if existing.get('source') == source and cid in existing.get('case_ids', []) and existing.get('post_revision') == current_revision:
+        existing.setdefault('source_files', {owner: file_hash(inside(base, run['cases'][owner]['source'])) for owner in existing['case_ids']})
+        return {'review_id': review_id, 'case_ids': existing['case_ids'], 'source': source,
+                'reviewed_revision': existing.get('reviewed_revision'), 'next': 'write_case_spec', 'already_applied': True}
+    require(revision and revision == current_revision, '审核材料或运行已变化，请重新核对')
+    decisions = [row for row in review.get('decisions', []) if row.get('id') == review_id and
+                 row.get('kind') == 'question' and row.get('status') in {'confirmed', 'edited'}]
+    require(len(decisions) == 1 and cid in decisions[0].get('cases', []), '审核答复不适用于该用例')
+    q = run.get('questions', {}).get(QUESTION_KEY) or {}
+    rows = [row for row in q.get('entries', []) if row.get('key') == review_id and row.get('block') == 'D']
+    require(len(rows) == 1 and cid in rows[0].get('cases', []) and
+            set(rows[0]['cases']) <= set(decisions[0]['cases']), '清单入口与审核答复范围不匹配')
+    answer = decisions[0]['value']
+    require(isinstance(answer, str) and answer.strip(), '审核答复为空')
+    answers = q.setdefault('answer', {}).setdefault('entries', {})
+    require(review_id not in answers or answers[review_id] == answer, '清单已有不同答复，不能覆盖')
+    answers[review_id] = answer
+    q.setdefault('locally_answered_keys', [])
+    if review_id not in q['locally_answered_keys']:
+        q['locally_answered_keys'].append(review_id)
+    run.setdefault('review_applications', {})[review_id] = {'case_ids': rows[0]['cases'],
+        'source': source, 'reviewed_revision': review.get('reviewed_revision', review.get('revision')),
+        'source_sha256': review.get('source_sha256'), 'value': answer,
+        'source_files': {owner: file_hash(inside(base, run['cases'][owner]['source'])) for owner in rows[0]['cases']}}
+    from .experience import sync_checklist
+    sync_checklist(base, run)
+    run['review_applications'][review_id]['post_revision'] = _payload(base, run)['revision']
+    event(run, 'review_entry_applied', review_id=review_id, case_ids=rows[0]['cases'], source=source)
+    return {'review_id': review_id, 'case_ids': rows[0]['cases'], 'source': source,
+            'reviewed_revision': review.get('reviewed_revision', review.get('revision')),
+            'next': 'write_case_spec'}
+
+
+def bind_case(base, run, cid, review_ids, source='current'):
+    from .specs import lint, spec_path
+    require(cid in run['cases'] and len(review_ids) == len(set(review_ids)), '无效用例或重复审核项')
+    review = run.get('prototype_review' if source == 'prototype' else 'human_review') or {}
+    applications = run.get('review_applications', {})
+    anchors = [row for row in applications.values() if row.get('source') == source and cid in row.get('case_ids', [])]
+    current_source = file_hash(inside(base, run['cases'][cid]['source']))
+    reviewed_source = review.get('source_files', {}).get(cid)
+    if reviewed_source:
+        require(reviewed_source == current_source, '审核后的用例原文已变化')
+    else:
+        # Compatibility for previously reconciled prototypes that predate per-case hashes.
+        require(anchors and all(row.get('source_files', {}).get(cid) == current_source for row in anchors),
+                '缺少来源未变化的审核记录')
+    for key in review_ids:
+        rows = [row for row in review.get('decisions', []) if row.get('id') == key and
+                cid in row.get('cases', []) and row.get('status') in {'confirmed', 'edited'}]
+        require(len(rows) == 1, '审核项未确认或不属于该用例：' + key)
+    result = lint(base, run, [cid])
+    require(not result['errors'] and not result['cases'][cid]['errors'], '用例规格校验失败', result)
+    run['cases'][cid]['review_binding'] = {'source': source, 'review_ids': review_ids,
+        'reviewed_revision': review.get('reviewed_revision', review.get('revision')),
+        'source_sha256': review.get('source_sha256'), 'source_file_sha256': file_hash(inside(base, run['cases'][cid]['source'])),
+        'spec_sha256': file_hash(spec_path(base, run['cases'][cid]))}
+    event(run, 'review_case_bound', case_id=cid, review_ids=review_ids, source=source)
+    return {'case_id': cid, 'review_binding': run['cases'][cid]['review_binding'], 'next': 'generate_or_register_spec'}

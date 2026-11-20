@@ -17,7 +17,7 @@ function privateConfig(environment = 'p') {
   return { directory, cfg, close: () => fs.rmSync(directory, { recursive: true, force: true }) };
 }
 function fakeBrowser({ outcome = 'success', cachedValid = false, wrongDomain = false, captcha = false, manual = false, publicFailure = false } = {}) {
-  const state = { submissions: 0, contexts: [], closed: 0 };
+  const state = { submissions: 0, contexts: [], closed: 0, navigations: [] };
   return { state, async newContext(options) {
     state.contexts.push(options);
     let loggedIn = Boolean(options.storageState && cachedValid);
@@ -33,6 +33,7 @@ function fakeBrowser({ outcome = 'success', cachedValid = false, wrongDomain = f
     });
     const page = {
       async goto(url) {
+        state.navigations.push(String(url));
         if (publicFailure && String(url).includes('en.example.test')) {
           throw new Error((['net::ERR_CONNECTION_REFUSED http://en.example.test ', 'ey', 'JhbGciOiJIUzI1NiJ9.', 'ey', 'JzdWIiOiJ0ZXN0In0.signaturevalue'].join('')));
         }
@@ -141,6 +142,45 @@ test('cached session still requires current target-site permission', async () =>
     const browser = fakeBrowser({ cachedValid: true, wrongDomain: true });
     await assert.rejects(authenticatedSession(browser, f.cfg), { code: 'SITE_NOT_ACCESSIBLE' });
     assert.equal(browser.state.submissions, 0);
+  } finally { f.close(); }
+});
+
+test('authenticated entry equal to cloud target is not opened twice', async () => {
+  const f = privateConfig();
+  try {
+    privateWrite(f.cfg.auth.storage_state, { cookies: [], origins: [] });
+    privateWrite(`${f.cfg.auth.storage_state}.meta.json`, { binding: sessionBinding(f.cfg) });
+    f.cfg.environment.cloud_url = f.cfg.environment.entry_url;
+    const browser = fakeBrowser({ cachedValid: true });
+    const session = await authenticatedSession(browser, f.cfg);
+    assert.equal(browser.state.navigations.filter(url => url === f.cfg.environment.entry_url).length, 1);
+    assert.equal(browser.state.submissions, 0);
+    await session.context.close();
+  } finally { f.close(); }
+});
+
+test('different cloud target is opened after environment check', async () => {
+  const f = privateConfig();
+  try {
+    f.cfg.environment.cloud_url = new URL('/cloud', f.cfg.environment.entry_url).href;
+    privateWrite(f.cfg.auth.storage_state, { cookies: [], origins: [] });
+    privateWrite(`${f.cfg.auth.storage_state}.meta.json`, { binding: sessionBinding(f.cfg) });
+    const browser = fakeBrowser({ cachedValid: true });
+    const session = await authenticatedSession(browser, f.cfg);
+    assert.deepEqual(browser.state.navigations, [f.cfg.environment.entry_url, f.cfg.environment.cloud_url]);
+    await session.context.close();
+  } finally { f.close(); }
+});
+
+test('fresh login landing on cloud target avoids another navigation', async () => {
+  const f = privateConfig();
+  try {
+    f.cfg.environment.cloud_url = f.cfg.environment.entry_url;
+    const browser = fakeBrowser();
+    const session = await authenticatedSession(browser, f.cfg);
+    assert.equal(browser.state.submissions, 1);
+    assert.equal(browser.state.navigations.filter(url => url === f.cfg.environment.cloud_url).length, 1);
+    await session.context.close();
   } finally { f.close(); }
 });
 

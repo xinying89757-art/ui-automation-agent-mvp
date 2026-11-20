@@ -188,7 +188,19 @@ def preflight(base, m, evidence):
     return m["preflight"]
 
 
-def begin_batch(base, m, case_ids):
+def require_rerunnable(m, case):
+    from .workflow import question_requires_human_answer
+    cid = case['case_id']
+    require(case.get('result') == 'passed' and case.get('work_status') == 'finished' and
+            any(row.get('result') == 'passed' and row.get('executed') for row in case.get('attempts', [])),
+            'Rerun requires a finished passed case with execution evidence', cid)
+    blocked = any(q.get('status') in {'open', 'deferred'} and cid in q.get('case_ids', []) and
+                  question_requires_human_answer(q) for q in m.get('questions', {}).values())
+    blocked |= any(cid in row.get('cases', []) for row in (m.get('human_review') or {}).get('pending', []))
+    require(not blocked and not case.get('checklist_wait') and not case.get('review_wait'), 'Case awaits review', cid)
+
+
+def begin_batch(base, m, case_ids, headed=False, rerun=False):
     require(not m.get("active_batch"), "Recover the active batch before starting another")
     refresh(base, m)
     require(case_ids and len(case_ids) == len(set(case_ids)), "Select distinct case IDs")
@@ -214,7 +226,10 @@ def begin_batch(base, m, case_ids):
     caps = (m.get("preflight") or {}).get("capabilities") or {}
     for c in selected:
         require(Path(c["registration"]["script"]).name != "seed.spec.ts", "Exploration seed cannot run as a case")
-        require(c["work_status"] == "runnable", "Case is not runnable", c["case_id"])
+        if rerun:
+            require_rerunnable(m, c)
+        else:
+            require(c["work_status"] == "runnable", "Case is not runnable", c["case_id"])
         require(not set(c["fixture_ids"] or ["case:" + c["case_id"]]) & set(m["contaminated_fixtures"]), "Fixture requires verified recovery", c["case_id"])
         if caps.get("public_frontend") is False and case_needs_public(base, c):
             require(False, "This case reads the public site, which is unreachable",
@@ -245,6 +260,8 @@ def begin_batch(base, m, case_ids):
         if c.get("version") != version:
             reset_case(c, "execution_version_changed", "execution")
         c.update(version=version, work_status="running")
+        if rerun:
+            c.update(stage='execution', result=None)
         versions[c["case_id"]] = version
         for name, sha in code_files(base, c["registration"]).items():
             snapshot[name] = sha
@@ -256,6 +273,9 @@ def begin_batch(base, m, case_ids):
         shutil.copyfile(inside(base / "runner", name), dest)
     atomic_write(directory / "snapshot/versions.json", {"versions": versions, "files": snapshot})
     atomic_write(directory / "snapshot/cases.json", {cid: bindings[cid] for cid in case_ids})
+    overlay = base / 'state/page-map-overlay.yaml'
+    if overlay.is_file():
+        shutil.copyfile(overlay, directory / 'page-map-overlay.yaml')
     import copy
     snapshot_config = copy.deepcopy(m["config"])
     if snapshot_config.get("network", {}).get("mode") == "pac":
@@ -270,11 +290,14 @@ def begin_batch(base, m, case_ids):
     selected_scripts = sorted({str(inside(base, c["registration"]["script"]).relative_to((base / "runner").resolve())).replace("\\", "/") for c in selected})
     # Title grep cannot be anchored: Playwright joins the file suite title in front of the case title.
     command = ["node", str(cli), "test"] + [pattern(name) + "$" for name in selected_scripts] + ["--grep", "(?:" + escaped + ")\\s"]
+    if headed:
+        command.append('--headed')
     batch = {"id": batch_id, "case_ids": case_ids, "versions": versions,
              "scripts": {c['case_id']: c['registration']['script'] for c in selected},
              "owner_pid": os.getpid(),
              "started_at": now(), "directory": str(directory.relative_to(base)),
-             "report": str((directory / "case-results.json").relative_to(base)), "command": command}
+             "report": str((directory / "case-results.json").relative_to(base)), "command": command,
+             "headed": bool(headed), "rerun": bool(rerun)}
     m["active_batch"] = batch
     event(m, "batch_started", batch_id=batch_id, case_ids=case_ids)
     return batch
@@ -289,6 +312,10 @@ def execute_process(base, batch, cfg):
                UIA_CASES_FILE=str(cases_file), UIA_STATE_DIR=str(base / "state/fixture-snapshots"),
                UIA_KNOWLEDGE_FILE=str(knowledge_overlay),
                UIA_RESULTS_DIR=str(directory), UIA_CONTAMINATION_DIR=str(base / "state/contaminated"))
+    if (directory / 'page-map-overlay.yaml').is_file():
+        env['UIA_PAGE_MAP_OVERLAY'] = str(directory / 'page-map-overlay.yaml')
+    else:
+        env.pop('UIA_PAGE_MAP_OVERLAY', None)
     stop = threading.Event()
 
     def pump():

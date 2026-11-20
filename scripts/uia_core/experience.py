@@ -177,6 +177,8 @@ def apply_checklist(m, q, extra_entries=()):
             others = [x for x in m['questions'].values() if x is not q and x['status'] in {'open', 'deferred'} and cid in x['case_ids']]
             if not others:
                 c['work_status'] = 'runnable' if c.get('registration') and c['stage'] == 'execution' else 'pending'
+                if (c.get('classification') or {}).get('reason', '').startswith('前置未满足：'):
+                    c.pop('classification', None)
 
 
 def checklist_text(q):

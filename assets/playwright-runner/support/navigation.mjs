@@ -7,7 +7,21 @@ import { openLlms, openSettings } from '../flows/llms-txt.mjs';
 // Reuse the YAML parser shipped with the locked Playwright runtime.
 const require = createRequire(import.meta.url);
 const { yaml } = require(path.join(path.dirname(require.resolve('playwright-core/package.json')), 'lib/utilsBundle.js'));
-export const pageMap = () => yaml.parse(fs.readFileSync(path.join(runtimeRoot, 'knowledge/page-map.yaml'), 'utf8'));
+export const pageMap = () => {
+  const map = yaml.parse(fs.readFileSync(path.join(runtimeRoot, 'knowledge/page-map.yaml'), 'utf8'));
+  const file = process.env.UIA_PAGE_MAP_OVERLAY;
+  if (file) {
+    const overlay = yaml.parse(fs.readFileSync(file, 'utf8')) ?? {};
+    for (const section of ['pages', 'targets']) {
+      map[section] ??= {};
+      for (const [name, value] of Object.entries(overlay[section] ?? {})) {
+        if (name in map[section]) throw new Error('Run-local page map cannot override shared entries');
+        map[section][name] = value;
+      }
+    }
+  }
+  return map;
+};
 const entryCatalog = () => {
   const file = path.join(runtimeRoot, 'knowledge/entries.yaml');
   return fs.existsSync(file) ? (yaml.parse(fs.readFileSync(file, 'utf8'))?.entries ?? {}) : {};

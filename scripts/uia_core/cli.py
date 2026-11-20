@@ -86,10 +86,14 @@ def parser():
     p = JsonParser(description="Local UI automation workflow; commands emit JSON")
     commands = p.add_subparsers(dest="command", required=True)
     review = commands.add_parser("review-page", help="Render and receive the human review workbench")
-    review.add_argument("action", choices=["render", "ingest", "ingest-prototype", "validate-plan"])
+    review.add_argument("action", choices=["render", "ingest", "ingest-prototype", "validate-plan", "apply-entry", "bind-case"])
     review.add_argument("--run", required=True)
     review.add_argument("--file", help="The JSON file downloaded from the review page (ingest only)")
     review.add_argument("--mapping", help="Explicit prototype review ID mapping JSON (ingest-prototype only)")
+    review.add_argument("--case", help="Case affected by an entry decision")
+    review.add_argument("--review-id", help="Reviewed entry ID matching the checklist entry")
+    review.add_argument("--review-ids", nargs='+', help="Review decisions applied to this case spec")
+    review.add_argument("--review-source", choices=['current', 'prototype'], default='current')
     remote = commands.add_parser("remote-checks")
     remote.add_argument("action", choices=["ingest", "restore", "reevaluate", "arm-watch", "ingest-watch", "reevaluate-watch"])
     remote.add_argument("--run", required=True)
@@ -174,6 +178,7 @@ def parser():
     login.add_argument("--force", action="store_true")
     login.add_argument("--check-only", action="store_true")
     login.add_argument("--manual", action="store_true")
+    login.add_argument("--headed", action="store_true", help="Use a visible browser for login preflight")
     snapshot = commands.add_parser("snapshot")
     source = snapshot.add_mutually_exclusive_group(required=True)
     source.add_argument("--profile")
@@ -291,6 +296,10 @@ def parser():
             cmd.add_argument("--outcome", choices=["resolved", "unresolved"], default="unresolved")
         if name == "run-batch":
             cmd.add_argument("--cases", nargs="+", required=True)
+            cmd.add_argument("--headed", action="store_true", help="Run this batch with a visible browser")
+            cmd.add_argument("--rerun", action="store_true", help="Rerun a passed case and retain earlier attempts")
+        if name == "report":
+            cmd.add_argument("--no-knowledge-writeback", action="store_true", help="Generate report without updating long-term knowledge")
         if name == "recover":
             cmd.add_argument("--abandon", action="store_true")
             cmd.add_argument("--evidence")
@@ -310,6 +319,12 @@ def dispatch(args, path, m):
     cmd = args.command
     if cmd == "review-page":
         from . import review_page
+        if args.action == 'apply-entry':
+            require(args.case and args.review_id and not args.file and not args.mapping, 'apply-entry requires --case and --review-id')
+            return review_page.apply_entry(base, m, args.case, args.review_id, args.review_source)
+        if args.action == 'bind-case':
+            require(args.case and args.review_ids and not args.file and not args.mapping, 'bind-case requires --case and --review-ids')
+            return review_page.bind_case(base, m, args.case, args.review_ids, args.review_source)
         if args.action == "render":
             require(not args.file and not args.mapping, "review-page render reads the optional review-input.json in the run directory")
             return review_page.render(base, m)
@@ -544,7 +559,7 @@ def dispatch(args, path, m):
     if cmd == "report":
         if not m.get("active_batch"):
             workflow.refresh(base, m)
-        return reports.make_report(base, m)
+        return reports.make_report(base, m, writeback=not args.no_knowledge_writeback)
     if cmd == "validate":
         errors, warnings = checks.run_errors(base, m)
         errors.extend(checks.skill_errors())
@@ -668,7 +683,8 @@ def execute(args):
         from .common import config
         if not args.run:
             cfg = config(profiles.profile_path(args.profile) if args.profile else args.config)
-            return profiles.invoke_login(cfg, check_only=args.check_only, force=args.force, manual=args.manual)
+            return profiles.invoke_login(cfg, check_only=args.check_only, force=args.force, manual=args.manual,
+                                         **({'headed': True} if args.headed else {}))
         with locked_run(args.run) as (path, m):
             require(not m.get("active_batch"), "Cannot replace authentication during an active batch")
             workflow.refresh(path.parent, m)
@@ -676,7 +692,8 @@ def execute(args):
             workflow.refresh(path.parent, m)
             evidence = Path("evidence") / ("environment-" + now().replace(":", "-") + ".json")
             try:
-                result = profiles.invoke_login(m["config"], path.parent / "runner", args.check_only, args.force, path.parent / evidence, args.manual)
+                result = profiles.invoke_login(m["config"], path.parent / "runner", args.check_only, args.force, path.parent / evidence, args.manual,
+                                               **({'headed': True} if args.headed else {}))
             except UiaError as error:
                 affected = [cid for cid, c in m["cases"].items() if c["work_status"] != "finished" and
                             c["stage"] in {"discovery", "execution", "repair"}]
@@ -806,7 +823,7 @@ def execute(args):
     if args.command == "run-batch":
         # Release the manifest lock while Playwright runs; the active receipt prevents another batch.
         with locked_run(args.run) as (path, m):
-            batch = runtime.begin_batch(path.parent, m, args.cases)
+            batch = runtime.begin_batch(path.parent, m, args.cases, headed=args.headed, rerun=args.rerun)
             cfg = m["config"]
             save(path, m)
         code = runtime.execute_process(path.parent, batch, cfg)

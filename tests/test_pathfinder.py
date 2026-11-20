@@ -18,6 +18,11 @@ DEMO = SOURCE / 'skills/spec-pathfinder/trial/fixtures/demo'
 
 
 class PathfinderStageTests(unittest.TestCase):
+    def test_human_review_allows_source_literals_without_allowing_invented_code(self):
+        pathfinder._safe_human('预期：生成 canonical/#faqpage；框架为 #tiptap-iframe。',
+                               ['生成 canonical/#faqpage；框架为 #tiptap-iframe。'])
+        with self.assertRaises(common.UiaError):
+            pathfinder._safe_human('请使用 #invented-selector', ['生成 canonical/#faqpage'])
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

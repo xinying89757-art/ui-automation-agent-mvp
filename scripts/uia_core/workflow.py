@@ -395,6 +395,12 @@ def page_map_slice(base, c):
     if not path.is_file():
         path = ROOT / "assets/playwright-runner/knowledge/page-map.yaml"
     catalog = read_yaml(path) if path.is_file() else {}
+    overlay = base / 'state/page-map-overlay.yaml'
+    if overlay.is_file():
+        extra = read_yaml(overlay)
+        for section in ('pages', 'targets'):
+            require(not (set(extra.get(section, {})) & set(catalog.get(section, {}))), 'Run-local page map cannot override shared entries')
+            catalog.setdefault(section, {}).update(extra.get(section, {}))
     spec_path = inside(base, c["case_spec"])
     spec = read_yaml(spec_path) if spec_path.is_file() else {}
     sections = {k: catalog.get(k) or {} for k in ("pages", "targets")}
@@ -786,6 +792,12 @@ def next_task(base, m):
     if not page_map.is_file():
         page_map = ROOT / 'assets/playwright-runner/knowledge/page-map.yaml'
     page_data = read_yaml(page_map) or {}
+    overlay = base / 'state/page-map-overlay.yaml'
+    if overlay.is_file():
+        extra = read_yaml(overlay)
+        for section in ('pages', 'targets'):
+            require(not (set(extra.get(section, {})) & set(page_data.get(section, {}))), 'Run-local page map cannot override shared entries')
+            page_data.setdefault(section, {}).update(extra.get(section, {}))
     known_targets = set((page_data.get('pages') or {})) | set((page_data.get('targets') or {}))
     missing_by_case = {}
     assessments = []

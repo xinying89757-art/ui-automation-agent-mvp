@@ -104,9 +104,10 @@ def brief_error(attempt, cfg=None):
     return scrub_text(" ".join(attempt.get("errors") or []), cfg)[:180]
 
 
-def make_report(base, m):
-    from .knowledge import writeback as knowledge_writeback
-    knowledge_writeback(base, m)
+def make_report(base, m, writeback=True):
+    if writeback:
+        from .knowledge import writeback as knowledge_writeback
+        knowledge_writeback(base, m)
     from .experience import review as build_review
     review = build_review(base, m)
     removed = drop_unsafe_artifacts(base / "batches")
@@ -121,7 +122,7 @@ def make_report(base, m):
     for c in m["cases"].values():
         records.append({k: c.get(k) for k in ("case_id", "original_id", "title", "module", "priority",
                        "sheet", "rows", "stage", "work_status", "result", "stability", "pass_streak",
-                       "flow_ids", "fixture_ids", "repair_rounds", "attempts", "feedback", "classification", "case_spec", "spec_first_lint", "spec_lint", "remote_status")})
+                       "flow_ids", "fixture_ids", "repair_rounds", "attempts", "feedback", "classification", "case_spec", "review_binding", "spec_first_lint", "spec_lint", "remote_status")})
         records[-1]['failure_class'] = failure_class_for_case(c)
         records[-1]['result_label'] = zh(c.get('result'))
         records[-1]['script_binding'] = c.get('script_binding')
@@ -264,6 +265,11 @@ th{background:#23415a;color:white}a{color:#0069a3}pre{white-space:pre-wrap}secti
         with zipfile.ZipFile(out / "scripts.zip", "w", compression=zipfile.ZIP_DEFLATED) as archive:
             from .bindings import case_bindings
             archive.writestr("runner/cases.json", scrub_text(json.dumps(case_bindings(base, m), ensure_ascii=False), m["config"]))
+            overlay = base / 'state/page-map-overlay.yaml'
+            if overlay.is_file():
+                archive.writestr('runner/state/page-map-overlay.yaml', scrub_text(overlay.read_text(encoding='utf-8'), m['config']))
+                archive.writestr('runner/state/OVERLAY-README.txt',
+                                 'For this run, set UIA_PAGE_MAP_OVERLAY to the absolute path of state/page-map-overlay.yaml.\n')
             protected = {Path(m["config_path"]).resolve()}
             if m["config"].get("auth", {}).get("storage_state"):
                 protected.add(Path(m["config"]["auth"]["storage_state"]).resolve())

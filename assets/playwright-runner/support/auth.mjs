@@ -56,6 +56,20 @@ export async function enterCloudPlatform(page) {
   const cloud = page.getByText(/(?:返回)?领动云平台/u).last();
   if (await visible(cloud)) await cloud.click({ timeout: 5000 }).catch(() => {});
 }
+function onCloudTarget(page, cfg) {
+  try {
+    const current = new URL(page.url());
+    const target = new URL(cfg.environment.cloud_url);
+    return current.origin === target.origin && current.pathname === target.pathname && current.search === target.search;
+  } catch { return false; }
+}
+async function ensureCloudTarget(page, cfg) {
+  if (onCloudTarget(page, cfg)) return;
+  await enterCloudPlatform(page);
+  if (!onCloudTarget(page, cfg)) {
+    await page.goto(cfg.environment.cloud_url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+  }
+}
 export async function loginOnce(page, cfg) {
   const value = credentials(cfg);
   await page.goto(cfg.environment.login_url, { waitUntil: 'domcontentloaded', timeout: 30000 });
@@ -93,8 +107,7 @@ export async function loginOnce(page, cfg) {
     if (/密码.*错误|账号.*错误|用户名.*错误|账户.*锁|password.*incorrect/iu.test(body)) fail('INVALID_CREDENTIALS', '账号或密码错误，未重复提交', ['更新本地凭据', '暂停相关用例']);
     fail('LOGIN_FAILED', '提交后仍停留在登录页，未重复提交', ['检查账号与权限', '手动登录后重试', '暂停相关用例']);
   }
-  await enterCloudPlatform(page);
-  await page.goto(cfg.environment.cloud_url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+  await ensureCloudTarget(page, cfg);
   if (await isLoginPage(page)) fail('LOGIN_FAILED', '登录态未能进入云平台');
 }
 
@@ -268,8 +281,7 @@ export async function authenticatedSession(browser, cfg, { force = false, allowL
       if (!allowLogin) fail('AUTH_REQUIRED', '登录态已过期，请在执行前重新运行 login', ['重新登录', '暂停相关用例']);
       await authenticate(); refreshed = true;
     }
-    await enterCloudPlatform(page);
-    await page.goto(cfg.environment.cloud_url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await ensureCloudTarget(page, cfg);
     if (new URL(page.url()).host !== new URL(cfg.environment.cloud_url).host) fail('ENVIRONMENT_MISMATCH', '云平台跳转到了其他主机');
     if (await isLoginPage(page)) {
       if (!allowLogin || refreshed) fail('AUTH_REQUIRED', '云平台要求重新登录');

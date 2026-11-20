@@ -12,6 +12,16 @@ coverage、hooks、dependencies 的代码路径相对该运行下的 runner。
 仍须逐项落实到执行规格、断言或本轮范围，再做校验；不会自动修改规格、写入知识库或运行测试。
 没有版本信息的历史原型导出不能直接作为当前审核版本导入，需保留原件并人工对照审核项和来源。
 
+已核对的入口答复可通过 `review-page apply-entry --run R --case C --review-id ID --review-source prototype`
+接入匹配的运行内清单；旧原型仍记录无审核版本。规格完成后 `review-page bind-case --run R --case C
+--review-source prototype --review-ids ID1 ID2` 记录审核项和规格指纹，要求原始用例未变化且通过规格校验；
+Agent 仍须对照确认断言语义，工具不凭自然语言自动推断预期。新页面可用 `--review-source current`。
+
+`login --run R --headed` 和 `run-batch --run R --cases C --headed` 使用有界面浏览器；已通过用例的同版本复跑
+可加 `--rerun`，保留历史执行及门禁。使用 `report --run R --no-knowledge-writeback` 生成报告而不写长期知识库。
+运行内新控件可写在 `state/page-map-overlay.yaml`（`pages` / `targets`），不能覆盖共享名称；批次快照包含该文件，
+导出脚本包附带 overlay 和配置说明，不自动提升为共享知识。
+
 原型迁移可用 `review-page ingest-prototype --run R --file OLD.json --mapping MAP.json`：MAP 是旧 ID
 到当前 ID 的一对一对象；命令核对运行、用例归属及已确认内容，另存来源摘要和 `reviewed_revision: null`，
 不会声称审核过当前版本。自由文本答复需由 Agent 逐用例拆解为计划，写入 JSON：

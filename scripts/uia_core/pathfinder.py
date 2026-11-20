@@ -431,7 +431,10 @@ def render_human(requirement, models, stage):
         lines += [f"## 用例 {model['case_id']} {model['title']}", '', f'状态：{status}', '']
         pre = model['preconditions'].strip() or '用例未单列前置条件。'
         lines += [f'前置条件：{pre}', '']
-        lines += [f"入口：{model['entry']}", '']
+        # Navigation hints may contain implementation-only selectors. Keep source
+        # expectations intact, but describe these hints in human terms here.
+        entry = CODEISH.sub('页面内部区域', model['entry'])
+        lines += [f"入口：{entry}", '']
         for step in model['steps']:
             lines += [f"### 步骤 {step['id']}", '', f"操作：{step['text']}", '']
             where = '知识库已有同名控件。' if not str(step['target']).startswith('?') else '界面位置还不能从知识库确定，不猜测选择器。'
@@ -640,7 +643,7 @@ def _run_index(base, code_root):
             'fingerprint': _fingerprint(index_dir)}
 
 
-def _safe_human(text):
+def _safe_human(text, source_literals=()):
     prose = []
     for line in text.splitlines():
         if line.startswith('### SRC-') or line.startswith('- S') or line.startswith('- '):
@@ -648,7 +651,11 @@ def _safe_human(text):
         if line.startswith('步骤原文') or line.startswith('预期原文') or line.startswith('工作表：'):
             continue
         prose.append(line)
-    require(not CODEISH.search('\n'.join(prose)), '人审版或存疑说明混入了代码串')
+    # Exact technical tokens from the user's source can be business data (e.g.
+    # a URL fragment in an expected JSON-LD value). Do not invent or erase them.
+    allowed = {match.group() for literal in source_literals for match in CODEISH.finditer(str(literal or ''))}
+    unexpected = [match.group() for match in CODEISH.finditer('\n'.join(prose)) if match.group() not in allowed]
+    require(not unexpected, '人审版或存疑说明混入了代码串')
     return text
 
 
@@ -665,8 +672,10 @@ def _publish(base, m, name, group, stage, code_root=None, fingerprint=None):
     doubts = scrub_text(render_doubts(name, group, stage), m.get('config'))
     if stage == 'v1':
         require('置信度：高' not in human and '置信度：高' not in doubts, 'v1 置信度不得超过中')
-    _safe_human(human)
-    _safe_human(doubts)
+    literals = [value for model in group for value in [model.get('title'), model.get('preconditions'),
+                *(step.get('text') for step in model.get('steps', [])), *model.get('expected_lines', [])]]
+    _safe_human(human, literals)
+    _safe_human(doubts, literals)
     files = {'human': f'spec-pathfinder/{slug}/SPEC-human-{stage}.md',
              'doubts': f'spec-pathfinder/{slug}/DOUBTS-{stage}.md'}
     _write(base, folder / f'SPEC-human-{stage}.md', human)

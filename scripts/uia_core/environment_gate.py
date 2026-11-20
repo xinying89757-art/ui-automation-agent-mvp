@@ -155,6 +155,7 @@ def preflight_run(base, m):
             proof = read_json(proof_path)
             summary = public_preflight_result(proof, 0)
             if summary['status'] == 'passed':
+                clear_stale_environment_blockers(m)
                 return {**summary, 'evidence': evidence, 'cached': True}
     except (OSError, ValueError, TypeError):
         pass
@@ -174,5 +175,23 @@ def preflight_run(base, m):
         summary = public_preflight_result(proof, 0)
         if summary["status"] != "passed":
             return block_run(m, UiaError("环境预检未通过：登录、目标网站或内容编辑器未就绪"))
+        clear_stale_environment_blockers(m)
         return {**summary, "evidence": evidence}
     return {"status": recorded.get("status") or "passed", "evidence": evidence}
+
+
+def clear_stale_environment_blockers(m):
+    """A later successful preflight invalidates only unexecuted environment verdicts."""
+    from .common import event
+    selected = set(m.get('selected_cases') or m.get('cases', {}))
+    cleared = []
+    for cid, case in m.get('cases', {}).items():
+        if cid not in selected or case.get('result') != 'environment_blocked' or case.get('attempts'):
+            continue
+        case.update(result=None, stability='not_run', pass_streak=0, stage='spec', work_status='pending')
+        case.pop('classification', None)
+        case.pop('failure_class', None)
+        cleared.append(cid)
+    if cleared:
+        event(m, 'stale_environment_blockers_cleared', case_ids=cleared)
+    return cleared

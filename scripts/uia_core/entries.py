@@ -28,12 +28,38 @@ def knowledge_path(name):
 def save_catalog(name, data):
     """Single write path: the runner (legacy) catalog, the shared knowledge/ catalog that spec gen and
     retrieval read, and the split index are updated together so no reader sees a stale copy."""
+    import shutil
     validate_match_counts(name, data)
-    atomic_write(knowledge_path(name), data, as_yaml=True)
     from . import knowledge
-    if knowledge._root().is_dir():
-        atomic_write(knowledge._root() / name, data, as_yaml=True)
-        knowledge.sync_layout(**({'pages': data} if name == 'page-map.yaml' else {'entries': data}))
+    folders = [knowledge_path('page-map.yaml').parent]
+    if knowledge._root().is_dir(): folders.append(knowledge._root())
+    snapshots = {folder: ({p.relative_to(folder): p.read_bytes() for p in folder.rglob('*') if p.is_file()}
+                          if folder.exists() else None) for folder in folders}
+    try:
+        atomic_write(knowledge_path(name), data, as_yaml=True)
+        if knowledge._root().is_dir():
+            atomic_write(knowledge._root() / name, data, as_yaml=True)
+            knowledge.sync_layout(**({'pages': data} if name == 'page-map.yaml' else {'entries': data}))
+        # Promotion is committed only when both the knowledge validator and the
+        # repository's cross-file checker accept the complete transaction.
+        if knowledge._root().resolve() == (common.ROOT / 'knowledge').resolve():
+            checker = common.ROOT / 'scripts/check_knowledge.py'
+            if checker.is_file():
+                knowledge.validate()
+                import subprocess
+                check = subprocess.run(['python3', str(checker)], cwd=common.ROOT,
+                                       capture_output=True, text=True, timeout=30)
+                require(check.returncode == 0, 'Knowledge check failed after promotion; changes rolled back')
+    except Exception:
+        for folder, files in snapshots.items():
+            if folder.exists(): shutil.rmtree(folder)
+            if files is not None:
+                folder.mkdir(parents=True, exist_ok=True)
+                for relative, content in files.items():
+                    target = folder / relative
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_bytes(content)
+        raise
 
 
 def validate_match_counts(name, data):

@@ -195,3 +195,10 @@ class PathfinderStageTests(unittest.TestCase):
         model = pathfinder.build_case('TC-SYN-PAGE', {}, source, pages)
         self.assertEqual(model['steps'][0]['target'], 'page-product-admin')
         self.assertNotEqual(model['steps'][0]['target'], 'target-product-admin')
+
+    def test_target_names_come_from_action_and_expectation_words(self):
+        self.assertEqual(pathfinder._derived_target('删除其中 1 组问答。'), '删除')
+        self.assertEqual(pathfinder._derived_target('在问题2中填写内容。'), '问题2')
+        self.assertEqual(pathfinder._derived_expectation_target('被删除的问答消失，面板仅剩1组。'), '问答组')
+        self.assertEqual(pathfinder._derived_expectation_target('上移、下移、删除入口均置灰。'), '问答操作入口')
+        self.assertEqual(pathfinder._derived_target('页面变化。', '待探索'), '待探索')

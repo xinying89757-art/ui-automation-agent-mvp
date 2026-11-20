@@ -14,7 +14,7 @@ import urllib.request
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from .common import ROOT, atomic_write, read_json, require, safe_id
+from .common import ROOT, UiaError, atomic_write, read_json, require, safe_id
 
 
 def runtime_root():
@@ -219,7 +219,14 @@ def invoke_login(cfg, runner=None, check_only=False, force=False, evidence=None,
             command.append("--open-editor")
         if evidence:
             command.extend(["--output", str(evidence)])
-        result = subprocess.run(command, cwd=runner, capture_output=True, text=True)
+        try:
+            # The whole login/site/editor gate has a hard 90 second ceiling.
+            # Entry navigation itself is capped at 60 seconds in the shared
+            # editor skeleton, leaving time to authenticate and write evidence.
+            result = subprocess.run(command, cwd=runner, capture_output=True, text=True,
+                                    timeout=90 if open_editor else 180)
+        except subprocess.TimeoutExpired:
+            raise UiaError("预检超过 90 秒", {"code": "PREFLIGHT_TIMEOUT", "timings": {"total_ms": 90000}})
         try:
             payload = json.loads(result.stdout)
         except (ValueError, TypeError):

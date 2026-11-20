@@ -109,7 +109,8 @@ export async function main(args = process.argv.slice(2)) {
     console.log(JSON.stringify({ ok: true, ...result }));
   } catch (error) {
     const known = error instanceof WorkflowError;
-    console.log(JSON.stringify({ ok: false, code: known ? error.code : 'BROWSER_OPERATION_FAILED',
+    const typed = typeof error?.code === 'string' && error.code;
+    console.log(JSON.stringify({ ok: false, code: known ? error.code : typed || 'BROWSER_OPERATION_FAILED',
       error: safeError(error, cfg), choices: known ? error.choices : ['检查运行依赖', '重新执行预检', '暂停相关用例'],
       ...(error.preflight ? { auth_path: error.preflight.auth_path, timings: error.preflight.timings } : {}) }));
     process.exitCode = 2;

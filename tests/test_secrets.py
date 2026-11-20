@@ -33,6 +33,7 @@ class SecretScrubTest(unittest.TestCase):
         self.assertIn("@playwright/test", cleaned)
         self.assertIn("[REDACTED]", cleaned)
         self.assertIn("[email]", cleaned)
+        self.assertNotIn('session-ref', scrub_text('https://example.test/path?s=session-ref&c=another-ref'))
         self.assertIn("[phone]", cleaned)
 
     def test_drop_removes_snapshots_and_leaves_results(self):

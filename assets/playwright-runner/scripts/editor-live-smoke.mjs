@@ -87,6 +87,47 @@ async function saveEntryEvidence(outDir) {
   }
 }
 
+async function captureOperationColumn(page, kind) {
+  const reports=[];
+  for (const [pageIndex,current] of pages.entries()) {
+    if (current.isClosed()) continue;
+    for (const [frameIndex,frame] of current.frames().entries()) {
+      const data=await frame.locator('body').evaluate(body=>{
+        const visible=node=>node.checkVisibility?.({checkOpacity:true,checkVisibilityCSS:true})&&!node.closest('[hidden],[aria-hidden="true"]');
+        const action=node=>({tag:node.tagName.toLowerCase(),title:node.getAttribute('title'),aria:node.getAttribute('aria-label'),
+          cls:typeof node.className==='string'?node.className.split(/\s+/u).filter(Boolean).slice(0,6):[],
+          href:node.matches('a')?(()=>{try{return new URL(node.href).pathname}catch{return null}})():null});
+        return [...body.querySelectorAll('table,[role="grid"]')].filter(visible).slice(0,4).map(table=>{
+          const headers=[...table.querySelectorAll('thead th,[role="columnheader"]')].filter(visible).map(node=>(node.innerText||'').trim().slice(0,24));
+          const operation=headers.indexOf('操作');
+          const rows=[...table.querySelectorAll('tbody tr,[role="row"]')].filter(visible).slice(0,5).map(row=>{
+            const cells=[...row.querySelectorAll(':scope > td,:scope > [role="gridcell"]')];
+            const cell=operation>=0?cells[operation]:cells.at(-1);
+            return {actionCount:cell?[...cell.querySelectorAll('a,button,[role="button"]')].filter(visible).length:0,
+              actions:cell?[...cell.querySelectorAll('a,button,[role="button"]')].filter(visible).slice(0,8).map(action):[]};
+          });
+          return {headers,operationColumn:operation>=0?operation:null,rows};
+        });
+      }).catch(()=>[]);
+      let safeUrl={origin:null,path:null};try{const u=new URL(frame.url());safeUrl={origin:u.origin,path:u.pathname}}catch{}
+      reports.push({page:pageIndex,frame:frameIndex,main:frame===current.mainFrame(),name:frame.name()||null,url:safeUrl,tables:data});
+      if(data.length) {
+        const tables=frame.locator('table,[role="grid"]');
+        for(let tableIndex=0;tableIndex<Math.min(data.length,4);tableIndex++) {
+          const table=tables.nth(tableIndex), headers=table.locator('thead th,[role="columnheader"]');
+          let column=-1;
+          for(let h=0;h<await headers.count().catch(()=>0);h++) if((await headers.nth(h).innerText().catch(()=>'' )).trim()==='操作') {column=h;break;}
+          const row=table.locator('tbody tr,[role="row"]').filter({visible:true}).first();
+          const cells=row.locator('td,[role="gridcell"]'); const count=await cells.count().catch(()=>0);
+          const cell=column>=0&&column<count?cells.nth(column):count?cells.nth(count-1):null;
+          if(cell&&await cell.isVisible().catch(()=>false)) await cell.screenshot({path:path.join(outDir,`list-page-${pageIndex}-frame-${frameIndex}-operation.png`)}).catch(()=>{});
+        }
+      }
+    }
+  }
+  fs.writeFileSync(path.join(outDir,'operation-column.json'),JSON.stringify(scrubEvidence({kind,frames:reports}),null,2));
+}
+
 let browser;
 try {
   const cfg = loadConfig(configPath);
@@ -113,7 +154,9 @@ try {
   await session.page.screenshot({ path: path.join(outDir, 'entry-before.png'), fullPage: true,
     mask: [session.page.locator('.userStatus-name, [class*="account-name"]')], maskColor: '#000000', style: evidenceMaskStyle }).catch(() => {});
   await stage('enter-site', async () => ({ ok: true, kind: session.site?.kind || 'session' }));
-  const page = await stage('open-editor', () => openContentEditor(session.page, { cfg, kind: 'product' }));
+  const page = await stage('open-editor', () => openContentEditor(session.page, {
+    cfg, kind: 'product', onEntry: captureOperationColumn,
+  }));
   await stage('editor-ready', () => waitForEditorReady(page, { kind: 'product', timeout: 30000 }));
   const shot = path.join(outDir, '01-editor-ready.png');
   const editorFrame = page.frames().find(frame => frame !== page.mainFrame() && /tiptap|canvas|editor/iu.test(frame.url() + frame.name()));

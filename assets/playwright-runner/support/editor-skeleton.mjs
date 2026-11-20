@@ -12,6 +12,7 @@ import { openTarget, pageMap, targetLocator } from './navigation.mjs';
 import { performWithPatterns } from './interaction-patterns.mjs';
 import { SkeletonError, publicReason } from './skeleton-errors.mjs';
 import { locateControl, midsceneEnabled, setMidsceneAdapter, visualAssert as midsceneVisualAssert } from './midscene-bridge.mjs';
+import { clickPreviewForURL, ENTRY_NAV_TIMEOUT_MS, operationColumnIndex, previewURLFromAction, selectRowAction } from './row-actions.mjs';
 
 export { SkeletonError, midsceneEnabled, setMidsceneAdapter };
 export { CODES } from './skeleton-errors.mjs';
@@ -126,34 +127,148 @@ async function clickAnywhere(page, text, timeout = 6000) {
   return false;
 }
 
-async function clickEdit(page, kind) {
-  const frameSel = kind === 'article' ? 'iframe[name="article"]' : 'iframe[name="prod"]';
-  const locator = page.frameLocator(frameSel);
-  const edit = locator.locator('a[href*="invokeAction=prod_new_update"], a[href*="article_edit"], a.edit-detail').first();
-  if (await edit.isVisible().catch(() => false)) {
-    await edit.click({ timeout: 5000 });
-    return true;
-  }
-  return clickAnywhere(page, '编辑', 4000);
+async function actionDescription(locator, index) {
+  return locator.evaluate((element, order) => {
+    const icon = element.querySelector('i,svg,[class*="icon" i]');
+    const attr = (node, name) => node?.getAttribute?.(name) || '';
+    return {
+      index: order,
+      title: attr(element, 'title') || attr(icon, 'title'),
+      aria: attr(element, 'aria-label') || attr(icon, 'aria-label'),
+      text: (element.innerText || element.textContent || '').trim().slice(0, 80),
+      className: typeof element.className === 'string' ? element.className : '',
+      iconClass: typeof icon?.className === 'string' ? icon.className : attr(icon, 'class'),
+      href: attr(element, 'href') || attr(element, 'data-href') || attr(element, 'data-url') || attr(element, 'data-route'),
+    };
+  }, index).catch(() => ({ index }));
 }
 
-async function openDetail(page, kind) {
+async function rowActionLocator(page, purpose, deadline) {
+  for (const frame of page.frames()) {
+    const tables = frame.locator('table, [role="grid"]');
+    for (let tableIndex = 0; tableIndex < await tables.count().catch(() => 0); tableIndex += 1) {
+      const table = tables.nth(tableIndex);
+      const headers = table.locator('thead th, thead td, [role="columnheader"]');
+      const headerLabels = [];
+      for (let i = 0; i < await headers.count().catch(() => 0); i += 1) {
+        headerLabels.push((await headers.nth(i).innerText().catch(() => '')).trim());
+      }
+      const rows = table.locator('tbody tr, [role="row"]');
+      for (let rowIndex = 0; rowIndex < await rows.count().catch(() => 0); rowIndex += 1) {
+        if (Date.now() >= deadline) return null;
+        const row = rows.nth(rowIndex);
+        if (!await row.isVisible().catch(() => false)) continue;
+        const cells = row.locator('td, [role="gridcell"]');
+        const cellCount = await cells.count().catch(() => 0);
+        const operationIndex = operationColumnIndex(headerLabels, cellCount);
+        const cell = operationIndex >= 0 ? cells.nth(operationIndex) : null;
+        if (!cell || !await cell.isVisible().catch(() => false)) continue;
+        const controls = cell.locator('a, button, [role="button"]');
+        const count = await controls.count().catch(() => 0);
+        if (count !== 5) continue;
+        const actions = [];
+        for (let i = 0; i < count; i += 1) actions.push(await actionDescription(controls.nth(i), i));
+        const chosen = selectRowAction(actions, purpose);
+        if (!chosen) continue;
+        const locator = controls.nth(chosen.index);
+        if (!await locator.isVisible().catch(() => false)) {
+          await row.hover({ timeout: Math.min(1500, Math.max(1, deadline - Date.now())) }).catch(() => {});
+          await locator.waitFor({ state: 'visible', timeout: Math.min(1200, Math.max(1, deadline - Date.now())) }).catch(() => {});
+        }
+        // The tooltip can be the only accessible label on icon-only controls.
+        await locator.hover({ timeout: Math.min(1000, Math.max(1, deadline - Date.now())) }).catch(() => {});
+        const revealed = await actionDescription(locator, chosen.index);
+        if (!revealed.title && !revealed.aria && !revealed.text) {
+          for (const tip of [frame.locator('[role="tooltip"]'), frame.locator('.tooltip,.tooltip-inner,.ant-tooltip-inner')]) {
+            const tipCount = await tip.count().catch(() => 0);
+            for (let tipIndex = 0; tipIndex < tipCount; tipIndex += 1) {
+              const item = tip.nth(tipIndex);
+              if (!await item.isVisible().catch(() => false)) continue;
+              const tooltip = (await item.innerText().catch(() => '')).trim();
+              if (tooltip) { revealed.tooltip = tooltip.slice(0, 40); break; }
+            }
+            if (revealed.tooltip) break;
+          }
+        }
+        const safe = selectRowAction(actions.map((item, i) => i === chosen.index ? revealed : item), purpose);
+        if (!safe) continue;
+        return locator;
+      }
+    }
+  }
+  return null;
+}
+
+async function clickEdit(page, kind, deadline) {
+  const edit = await rowActionLocator(page, 'edit', deadline);
+  if (edit) {
+    if (Date.now() >= deadline) throw new SkeletonError('ENTRY_NAV_TIMEOUT', '详情编辑入口导航超过 60 秒');
+    const before = page.url();
+    const popup = page.context().waitForEvent('page', { timeout: Math.min(5000, Math.max(1, deadline - Date.now())) }).catch(() => null);
+    await edit.click({ timeout: Math.min(4000, Math.max(1, deadline - Date.now())) });
+    const destination = await popup;
+    if (destination) {
+      await destination.waitForLoadState('domcontentloaded', { timeout: Math.min(5000, Math.max(1, deadline - Date.now())) }).catch(() => {});
+      return destination;
+    }
+    if (page.url() !== before) return page;
+    return page;
+  }
+  const frameSel = kind === 'article' ? 'iframe[name="article"]' : 'iframe[name="prod"]';
+  const locator = page.frameLocator(frameSel);
+  const legacy = locator.locator('a[href*="invokeAction=prod_new_update"], a[href*="article_edit"], a.edit-detail').first();
+  if (await legacy.isVisible().catch(() => false)) {
+    const details = await actionDescription(legacy, 0);
+    selectRowAction([details], 'edit');
+    if (Date.now() >= deadline) throw new SkeletonError('ENTRY_NAV_TIMEOUT', '详情编辑入口导航超过 60 秒');
+    await legacy.click({ timeout: Math.min(4000, Math.max(1, deadline - Date.now())) });
+    return page;
+  }
+  return null;
+}
+
+export async function captureFrontendPreviewURL(page, options = {}) {
+  const deadline = Date.now() + Math.min(options.timeout ?? 5000, ENTRY_NAV_TIMEOUT_MS);
+  const preview = await rowActionLocator(page, 'preview', deadline);
+  if (!preview) return null;
+  const action = await actionDescription(preview, 2);
+  const directURL = previewURLFromAction(action, page.url());
+  if (directURL && new URL(directURL).origin !== new URL(page.url()).origin) return directURL;
+  return clickPreviewForURL(page, preview, { timeout: Math.min(3000, Math.max(1, deadline - Date.now())) });
+}
+
+async function openDetail(page, kind, deadline, options = {}) {
   const label = kind === 'article' ? '文章' : '产品';
   const tab = kind === 'article' ? '正文' : '产品描述';
+  if (Date.now() >= deadline) throw new SkeletonError('ENTRY_NAV_TIMEOUT', '详情编辑入口导航超过 60 秒');
   const frameSel = kind === 'article' ? 'iframe[name="article"]' : 'iframe[name="prod"]';
-  await page.locator(frameSel).first().waitFor({ state: 'attached', timeout: 8000 }).catch(() => {});
-  await clickAnywhere(page, label, 5000);
-  if (!await clickEdit(page, kind)) throw new SkeletonError('NAV_FAILED', '未找到详情编辑入口');
-  await clickAnywhere(page, tab, 4000);
+  await page.locator(frameSel).first().waitFor({ state: 'attached', timeout: Math.min(5000, Math.max(1, deadline - Date.now())) }).catch(() => {});
+  await clickAnywhere(page, label, Math.min(3000, Math.max(1, deadline - Date.now())));
+  if (options.onEntry) await options.onEntry(page, kind);
+  const destination = await clickEdit(page, kind, deadline);
+  if (!destination) throw new SkeletonError('NAV_FAILED', '未找到详情编辑入口', { reason: 'ROW_EDIT_ACTION_NOT_FOUND' });
+  await clickAnywhere(destination, tab, Math.min(3000, Math.max(1, deadline - Date.now())));
+  return destination;
 }
 
 /** @param {import('@playwright/test').Page} page */
 export async function openContentEditor(page, options = {}) {
   const cfg = options.cfg ?? loadConfig(options.configPath);
+  const deadline = Date.now() + Math.min(options.entryTimeout ?? ENTRY_NAV_TIMEOUT_MS, ENTRY_NAV_TIMEOUT_MS);
+  const withinDeadline = (promise, message = '详情编辑入口导航超过 60 秒') => {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) return Promise.reject(new SkeletonError('ENTRY_NAV_TIMEOUT', message));
+    let timer;
+    return Promise.race([
+      promise,
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new SkeletonError('ENTRY_NAV_TIMEOUT', message)), remaining); }),
+    ]).finally(() => clearTimeout(timer));
+  };
   let surface = page;
   if (!options.skipEntry) {
-    try { surface = await openSiteArea(page, cfg, '内容管理'); }
+    try { surface = await withinDeadline(openSiteArea(page, cfg, '内容管理')); }
     catch (error) {
+      if (error instanceof SkeletonError && error.code === 'ENTRY_NAV_TIMEOUT') throw error;
       throw new SkeletonError('NAV_FAILED', '未能进入内容管理', { reason: publicReason(error, 'NAV_FAILED') });
     }
   }
@@ -161,11 +276,14 @@ export async function openContentEditor(page, options = {}) {
   let last = new SkeletonError('NAV_FAILED', '未能打开内容编辑器');
   for (const kind of order) {
     try {
-      await openDetail(surface, kind);
-      await waitForEditorReady(surface, { ...options, kind });
+      if (Date.now() >= deadline) throw new SkeletonError('ENTRY_NAV_TIMEOUT', '详情编辑入口导航超过 60 秒');
+      surface = await withinDeadline(openDetail(surface, kind, deadline, options));
+      await withinDeadline(waitForEditorReady(surface, { ...options, kind,
+        timeout: Math.min(options.readyTimeout ?? 20000, Math.max(1, deadline - Date.now())) }));
       return surface;
     } catch (error) {
       last = error instanceof SkeletonError ? error : new SkeletonError('NAV_FAILED', '未能打开内容编辑器');
+      if (error?.code === 'DELETE_GUARD') throw new SkeletonError('DELETE_GUARD', '拒绝点击已识别的删除/垃圾桶行操作');
       if (last.code === 'OVERLAY_BLOCKING') throw last;
     }
   }

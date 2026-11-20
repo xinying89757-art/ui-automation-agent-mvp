@@ -12,6 +12,7 @@ UNSAFE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".webm"}
 UNSAFE_DIRS = {"playwright-report", "traces"}
 JWT = re.compile(r"eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}")
 QUERY_SECRET = re.compile(r"(?i)(authorization|token|access_token|password)=[^&\s\"']+")
+URL_QUERY = re.compile(r"(https?://[^\s?#\"']+)\?(?:(?:s|c|session|sid|token|access_token|ticket)=|[^\s#\"'<>)]*&(?:s|c|session|sid|token|access_token|ticket)=)[^\s#\"'<>)]*", re.I)
 EMAIL = re.compile(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}")
 PIN = re.compile(r"(PIN码[:：]\s*)\S+")
 PHONE = re.compile(r"(?<!\d)1[3-9]\d{9}(?!\d)")
@@ -25,6 +26,7 @@ def scrub_text(value, cfg=None):
     text = redact(str(value), cfg or {})
     text = JWT.sub("[REDACTED]", text)
     text = QUERY_SECRET.sub(r"\1=[REDACTED]", text)
+    text = URL_QUERY.sub(r"\1?[REDACTED]", text)
     text = EMAIL.sub("[email]", text)
     text = PIN.sub(r"\1[REDACTED]", text)
     text = TEL.sub("tel:[REDACTED]", text)

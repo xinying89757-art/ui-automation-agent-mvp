@@ -25,3 +25,10 @@ test('snapshot files are unsafe and result json is not', () => {
   assert.equal(unsafeArtifact('shot.png'), true);
   assert.equal(unsafeArtifact('case-results.json'), false);
 });
+
+test('URL query strings are removed from diagnostics', () => {
+  const cleaned = scrubText('Navigation failed at https://example.test/path?s=session-ref&c=another-ref');
+  assert.equal(cleaned.includes('session-ref'), false);
+  assert.equal(cleaned.includes('another-ref'), false);
+  assert.match(cleaned, /https:\/\/example\.test\/path\?\[REDACTED\]/u);
+});

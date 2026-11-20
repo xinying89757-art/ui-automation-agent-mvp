@@ -39,6 +39,23 @@ class ProcessGapFixTests(unittest.TestCase):
         self.assertEqual(result['count'], 1)
         self.assertEqual(manifest['cases']['C1']['kb_bindings'][0]['source'], 'knowledge')
 
+    def test_placeholder_match_uses_page_to_disambiguate_same_visible_label(self):
+        pages = {'schema_version': 'page-map.v1', 'pages': {'editor': {}, 'content-admin': {}}, 'targets': {
+            'legacy.faq.add': {'label': '添加FAQ', 'selector': 'a:text("添加FAQ")', 'page': 'content-admin'},
+            'faq-editor.entry.faq.add': {'label': '添加FAQ', 'selector': 'button:text-is("添加FAQ")', 'page': 'editor'}}}
+        common.atomic_write(knowledge.ROOT / 'page-map.yaml', pages, as_yaml=True)
+        knowledge.sync_layout(pages=pages)
+        case_dir = self.root / 'run/cases/C1'
+        case_dir.mkdir(parents=True)
+        common.atomic_write(case_dir / 'case-spec.yaml', {
+            'start_page': 'editor', 'steps': [{'id': 'S1', 'verb': 'click', 'target': '?添加FAQ'}],
+            'assertions': []}, as_yaml=True)
+        result = knowledge.bind_spec_placeholders(self.root / 'run', {
+            'cases': {'C1': {'case_spec': 'cases/C1/case-spec.yaml'}}})
+        spec = common.read_yaml(case_dir / 'case-spec.yaml')
+        self.assertEqual(spec['steps'][0]['target'], 'faq-editor.entry.faq.add')
+        self.assertEqual(result['count'], 1)
+
     def test_all_placeholder_controls_are_present_in_initial_checklist(self):
         case_dir = self.root / 'run/cases/C1'
         case_dir.mkdir(parents=True)
@@ -114,6 +131,22 @@ class ProcessGapFixTests(unittest.TestCase):
             with self.assertRaises(common.UiaError):
                 knowledge.writeback(self.root / 'run', {'run_id': 'R', 'cases': {}})
         self.assertEqual((knowledge.ROOT / 'index.yaml').read_bytes(), before)
+
+    def test_layout_preserves_legacy_index_rows_and_unspecified_page_metadata(self):
+        pages = {'schema_version': 'page-map.v1', 'pages': {'editor': {}, 'content-admin': {}},
+                 'targets': {'button': {'label': '保存', 'selector': '.save', 'page': 'editor'}}}
+        rows = knowledge.sync_layout(pages=pages)
+        current = common.read_yaml(knowledge.ROOT / 'index.yaml')
+        legacy = dict(current['entries'][0])
+        legacy.update(id='target.legacy', page='content-admin', path='components/target-legacy.yaml')
+        legacy_file = knowledge.ROOT / legacy['path']
+        common.atomic_write(legacy_file, {'id': 'target.legacy', 'kind': 'component', 'selector': '.legacy'}, as_yaml=True)
+        current['entries'].append(legacy)
+        common.atomic_write(knowledge.ROOT / 'index.yaml', current, as_yaml=True)
+        pages['targets']['button'].pop('page')
+        updated = knowledge.sync_layout(pages=pages)
+        self.assertEqual(next(row for row in updated if row['id'] == 'target.button')['page'], 'editor')
+        self.assertIn('target.legacy', {row['id'] for row in updated})
 
 
 if __name__ == '__main__':

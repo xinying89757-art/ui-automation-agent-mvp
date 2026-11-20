@@ -84,11 +84,12 @@ def sync_layout(pages=None, entries=None, patterns=None, experience=None):
             if section == 'pages':
                 ident, page, kind = 'page.' + name, name, 'page'
             else:
-                page = row.get('page') or name.split('.', 1)[0]
+                page = row.get('page') or previous.get('target.' + name, {}).get('page') or name.split('.', 1)[0]
                 if page not in known_pages: page = next(iter(known_pages), 'unknown')
                 kind, ident = 'component', 'target.' + name
-            frame = row.get('frame') or (','.join(row.get('nested_frames', [])) if row.get('nested_frames') else '')
-            put(ident, kind, page, row, labels, row.get('route_prefix') or row.get('path') or row.get('entry'), frame)
+            old_index = previous.get(ident, {})
+            frame = row.get('frame') or (','.join(row.get('nested_frames', [])) if row.get('nested_frames') else '') or old_index.get('frame', '')
+            put(ident, kind, page, row, labels, row.get('route_prefix') or row.get('path') or row.get('entry') or old_index.get('route', ''), frame)
     for name, row in entries.get('entries', {}).items():
         put('entry.' + name, 'flow', row.get('page') or name, row, [name, row.get('label'), *row.get('aliases', [])], row.get('path_text'), row.get('frame'))
     for name, row in patterns.get('patterns', {}).items():
@@ -686,6 +687,7 @@ def bind_spec_placeholders(base, m):
             continue
         body = load_item(item) or {}
         known[item['id'].removeprefix('target.')] = (item, body)
+    index_by_id = {item.get('id'): item for item in index}
     def norm(value):
         return re.sub(r'[^a-z0-9\u4e00-\u9fff]+', '', unicodedata.normalize('NFKC', str(value or '')).casefold())
     bound = []
@@ -695,6 +697,7 @@ def bind_spec_placeholders(base, m):
         if not path or not path.is_file():
             continue
         spec = read_yaml(path) or {}
+        case_page = spec.get('start_page')
         bindings = case.setdefault('kb_bindings', [])
         changed = False
         def replace(value, preceding=''):
@@ -713,8 +716,9 @@ def bind_spec_placeholders(base, m):
                 alias = 'faq-editor.entry.faq.component.entry'
             if alias and alias in known and alias not in targets:
                 item, body = known[alias]
-                targets[alias] = {k: body[k] for k in ('selector', 'role', 'name', 'text', 'frame', 'nested_frames', 'scope', 'label', 'aliases', 'tags') if k in body}
-                targets[alias].update(page=item.get('page'), route=item.get('route', ''), source='confirmed-knowledge')
+                targets[alias] = {k: value for k, value in body.items()
+                                  if k not in {'id', 'kind', 'created_at', 'provenance'}}
+                targets[alias].update(page=item.get('page'), route=item.get('route', ''))
                 pages['targets'] = targets
                 atomic_write(_root() / 'page-map.yaml', pages, as_yaml=True)
                 runner_pages = common.ROOT / 'assets/playwright-runner/knowledge/page-map.yaml'
@@ -728,6 +732,10 @@ def bind_spec_placeholders(base, m):
                 return alias
             scored = []
             for name, row in targets.items():
+                known_item = index_by_id.get('target.' + name)
+                candidate_page = row.get('page') or (known_item or {}).get('page')
+                if case_page and candidate_page and candidate_page not in {case_page, '*'}:
+                    continue
                 labels = [name, row.get('label'), row.get('name'), row.get('text'), row.get('selector'),
                           *(row.get('aliases') or []), *(row.get('tags') or [])]
                 if name in known:
@@ -764,6 +772,8 @@ def bind_spec_placeholders(base, m):
         atomic_write(_root() / 'page-map.yaml', pages, as_yaml=True)
         runner_pages = common.ROOT / 'assets/playwright-runner/knowledge/page-map.yaml'
         if runner_pages.is_file() and _root().resolve() == (common.ROOT / 'knowledge').resolve(): atomic_write(runner_pages, pages, as_yaml=True)
+    unique = {(row['case_id'], row['placeholder'], row['target']): row for row in bound}
+    bound = [unique[key] for key in sorted(unique)]
     m['kb_reused_bindings'] = bound
     return {'bound': bound, 'count': len(bound)}
 

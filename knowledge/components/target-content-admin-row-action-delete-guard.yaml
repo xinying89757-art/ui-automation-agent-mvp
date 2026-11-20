@@ -1,0 +1,17 @@
+id: target.content-admin.row-action.delete-guard
+kind: component
+label: 内容管理列表行操作：删除保护
+page: content-admin
+row_action:
+  column: 操作
+  order: 5
+  tooltip: 删除
+  icon: red-trash
+  allowed_to_click: false
+hard_guard: true
+source: human-confirmed
+confirmed: true
+ask_once: true
+confirmed_by: 'Xinying: human-confirmed, ask-once; content-management row operation
+  buttons are ordered edit, copy, preview, share, delete.'
+created_at: '2026-11-20'

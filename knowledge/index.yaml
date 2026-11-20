@@ -510,6 +510,25 @@ entries:
   observed_runs:
   - EXPORT
   failure_runs: []
+- id: target.editor.component-panel
+  page: editor
+  route: 内容管理 › 产品详情 › 产品描述
+  frame: iframe[name="prod"]
+  tags:
+  - editor.component-panel
+  - faq.insert
+  version: unknown
+  status: verified
+  last_verified: '2026-11-19'
+  last_hit: '2026-11-19'
+  summary: 组件添加弹窗入口：产品描述编辑区「+」(button.placeholder-plus)，备选输入「/」
+  path: components/target-editor-component-panel.yaml
+  hit_count: 1
+  pass_count: 1
+  fail_count: 0
+  observed_runs:
+  - live-editor-smoke-FAQ-2026-11-19
+  failure_runs: []
 - id: target.faq.entry
   page: content-admin
   route: ''
@@ -2983,6 +3002,66 @@ entries:
   summary: For visible menu or listbox options that do not accept pointer clicks,
     focus the option, type its visible label to filter when supported, th
   path: patterns/pattern-menu_keyboard.yaml
+  hit_count: 0
+  pass_count: 0
+  fail_count: 0
+  observed_runs: []
+  failure_runs: []
+- id: target.content-admin.row-action.edit
+  page: content-admin
+  route: ''
+  frame: ''
+  tags:
+  - content-admin.row-action.edit
+  - 内容管理列表行操作：详情编辑入口
+  - human-confirmed
+  - ask-once
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: null
+  summary: 内容管理列表行操作：详情编辑入口
+  path: components/target-content-admin-row-action-edit.yaml
+  hit_count: 0
+  pass_count: 0
+  fail_count: 0
+  observed_runs: []
+  failure_runs: []
+- id: target.content-admin.row-action.preview
+  page: content-admin
+  route: ''
+  frame: ''
+  tags:
+  - content-admin.row-action.preview
+  - 内容管理列表行操作：前台预览入口
+  - human-confirmed
+  - ask-once
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: null
+  summary: 内容管理列表行操作：前台预览入口
+  path: components/target-content-admin-row-action-preview.yaml
+  hit_count: 0
+  pass_count: 0
+  fail_count: 0
+  observed_runs: []
+  failure_runs: []
+- id: target.content-admin.row-action.delete-guard
+  page: content-admin
+  route: ''
+  frame: ''
+  tags:
+  - content-admin.row-action.delete-guard
+  - 内容管理列表行操作：删除保护
+  - human-confirmed
+  - ask-once
+  version: unknown
+  status: unverified
+  last_verified: null
+  last_hit: null
+  summary: 内容管理列表行操作：删除保护
+  path: components/target-content-admin-row-action-delete-guard.yaml
   hit_count: 0
   pass_count: 0
   fail_count: 0

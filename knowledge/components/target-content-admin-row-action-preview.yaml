@@ -1,0 +1,17 @@
+id: target.content-admin.row-action.preview
+kind: component
+label: 内容管理列表行操作：前台预览入口
+page: content-admin
+row_action:
+  column: 操作
+  order: 3
+  tooltip: 预览
+  icon: green-eye
+  opens: frontend-detail
+capture_url_only: true
+source: human-confirmed
+confirmed: true
+ask_once: true
+confirmed_by: 'Xinying: human-confirmed, ask-once; content-management row operation
+  buttons are ordered edit, copy, preview, share, delete.'
+created_at: '2026-11-20'

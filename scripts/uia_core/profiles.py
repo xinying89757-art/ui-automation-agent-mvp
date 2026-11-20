@@ -14,7 +14,7 @@ import urllib.request
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from .common import ROOT, atomic_write, read_json, require, safe_id
+from .common import ROOT, UiaError, atomic_write, read_json, require, safe_id
 
 
 def runtime_root():
@@ -216,12 +216,17 @@ def invoke_login(cfg, runner=None, check_only=False, force=False, evidence=None,
             command.append("--manual")
             print("将打开浏览器；请使用当前配置的账号完成登录/验证码，最多等待 10 分钟。", file=sys.stderr, flush=True)
         if open_editor:
-            from .environment_gate import assert_private_credentials
-            assert_private_credentials(cfg)
             command.append("--open-editor")
         if evidence:
             command.extend(["--output", str(evidence)])
-        result = subprocess.run(command, cwd=runner, capture_output=True, text=True)
+        try:
+            # The whole login/site/editor gate has a hard 90 second ceiling.
+            # Entry navigation itself is capped at 60 seconds in the shared
+            # editor skeleton, leaving time to authenticate and write evidence.
+            result = subprocess.run(command, cwd=runner, capture_output=True, text=True,
+                                    timeout=90 if open_editor else 180)
+        except subprocess.TimeoutExpired:
+            raise UiaError("预检超过 90 秒", {"code": "PREFLIGHT_TIMEOUT", "timings": {"total_ms": 90000}})
         try:
             payload = json.loads(result.stdout)
         except (ValueError, TypeError):
@@ -229,8 +234,14 @@ def invoke_login(cfg, runner=None, check_only=False, force=False, evidence=None,
             diagnostic = scrub_text(result.stderr or "no stdout/stderr", cfg).strip()[:240]
             require(False, "Login helper did not produce JSON; check Node/browser installation",
                     {"exit_code": result.returncode, "diagnostic": diagnostic})
-        require(result.returncode == 0 and payload.get("ok"), payload.get("error", "Login failed"),
-                {"code": payload.get("code"), "choices": payload.get("choices", [])})
+        safe_details = {"code": payload.get("code"), "choices": payload.get("choices", [])}
+        if isinstance(payload.get("timings"), dict):
+            safe_details["timings"] = {key: int(value) for key, value in payload["timings"].items()
+                                        if key in {"authenticated_ms", "editor_ms", "total_ms"}
+                                        and isinstance(value, (int, float)) and not isinstance(value, bool)}
+        if payload.get("auth_path") in {"session", "password"}:
+            safe_details["auth_path"] = payload["auth_path"]
+        require(result.returncode == 0 and payload.get("ok"), payload.get("error", "Login failed"), safe_details)
         return {k: v for k, v in payload.items() if k != "ok"}
     finally:
         Path(temp).unlink(missing_ok=True)

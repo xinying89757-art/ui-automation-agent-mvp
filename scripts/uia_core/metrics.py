@@ -197,6 +197,8 @@ def calculate(base, m, final_report_at=None):
     hit = knowledge_hit_rate(base, m)
     rescued = m.get("rescued_by_midscene", 0)
     rescued_count = rescued if type(rescued) is int else 0
+    prep_attempts = [a for case in cases for a in case.get('attempts', [])
+                     if isinstance(a.get('prep_time_ms'), (int, float)) and a.get('prep_time_ms') >= 0]
     first_start = imported_at or m.get("created_at")
     first_lints = [c["spec_first_lint"] for c in cases if c.get("spec_first_lint") and c["spec_first_lint"].get("automatable") != "manual"]
     first_passed = sum(bool(row.get("passed")) for row in first_lints)
@@ -222,13 +224,19 @@ def calculate(base, m, final_report_at=None):
         "failure_class_counts": classes["counts"],
         "failure_class_shares": classes["shares"],
         "human_interventions": interventions,
+        "data_prep_time_ms_total": sum(a['prep_time_ms'] for a in prep_attempts),
+        "precondition_checks": {state: sum(a.get('precondition_check') == state for a in prep_attempts)
+                                for state in ('satisfied', 'not_satisfied')},
+        "preparation_actions": {state: sum(a.get('preparation') == state for a in prep_attempts)
+                                for state in ('reused', 'prepared')},
         "human_interventions_per_case": (interventions / len(cases)) if cases else None,
         "kb_hit_rate": hit,
         "knowledge_injected_tokens": {"count": len(injected), "p50": percentile(injected, .50), "p95": percentile(injected, .95)},
-        "rescued_by_midscene": rescued_count,
         "scope_violations": int(m.get("scope_violations", 0)),
         "leak_hits": len(m.get("leak_hits", [])),
         "unreviewed_assertion_changes": max(int(m.get("unreviewed_assertion_changes", 0)), assertion_changes),
+        "rescued_by_midscene": sum(int(a.get("rescued_by_midscene") or 0) for c in cases for a in (c.get("attempts") or [])) + int(m.get("rescued_by_midscene") or 0),
+        "missing_controls": sum(len(c.get("missing_controls") or []) for c in cases),
         "remote_checks": {status: sum(r.get("active", True) and r["status"] == status for r in m.get("remote_checks", {}).values()) for status in ("pending", "pass", "fail", "still-cached", "unreachable")},
         "measured_at": now(),
     }

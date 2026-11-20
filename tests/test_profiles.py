@@ -33,6 +33,16 @@ class ProfilesTest(unittest.TestCase):
     def setup_profile(self, name='operator', environment='p'):
         return profiles.setup(name, environment, 'en.example.test', credentials_file=self.creds)
 
+    def test_editor_preflight_subprocess_has_ninety_second_cap(self):
+        cfg = common.config(self.setup_profile()['config'])
+        dependency = profiles.runtime_root() / 'node_modules/@playwright/test'
+        dependency.mkdir(parents=True, exist_ok=True)
+        with patch('uia_core.profiles.subprocess.run', side_effect=subprocess.TimeoutExpired('node', 90)) as run:
+            with self.assertRaises(common.UiaError) as caught:
+                profiles.invoke_login(cfg, open_editor=True)
+        self.assertEqual(run.call_args.kwargs['timeout'], 90)
+        self.assertEqual(caught.exception.details['code'], 'PREFLIGHT_TIMEOUT')
+
     def test_private_setup_and_session_isolation(self):
         output = self.setup_profile()
         self.assertNotIn('offline-password', json.dumps(output))

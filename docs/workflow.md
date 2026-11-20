@@ -61,8 +61,7 @@ D 答复（页面=路径或 D1/D2）写入环境记忆及 `assets/playwright-run
 ## 重复运行与失败处理
 
 每批使用新的进程、batch ID 和默认浏览器上下文。fixture 使用 batch/case 组合的
-owner marker 准备独有数据，验证起点后才执行业务操作；无论断言成功与否都清理并
-验证恢复。只读用例同样验证前置状态及基线。
+owner marker 准备独有数据。每例先检查目标前置状态；已满足则复用，未满足才准备，记录检查结果、准备/复用及耗时。只清理本轮创建的数据；不要求把既有业务数据恢复成原值。只读用例也记录前置检查。
 
 稳定版本指纹包含 spec、静态本地导入、显式动态依赖、fixture、运行器配置、
 相关数据规则和 case-spec（历史运行仍包含 Intent 与复用计划）。编辑后重新计数，原始尝试及代码快照继续保留。
@@ -80,7 +79,7 @@ owner marker 准备独有数据，验证起点后才执行业务操作；无论�
 全量 go 先跑 3 条代表用例作为冒烟，达到通过率门槛后才跑剩余用例。首个结果超过 26 分钟则中止后续批次。两项都可用命令行改。
 
 清理失败写入共享 fixture 污染标记，同批后续依赖用例也在准备前检查标记；独立
-fixtures 可继续。清理恢复需要实际证据，通过 `resolve-fixture` 清除对应标记。
+fixtures 可继续。本轮新建数据清理需要实际证据，通过 `resolve-fixture` 清除对应标记。
 
 执行中断时 active_batch 收据仍在。先确认原进程已退出；若已有完整 reporter 结果，
 `recover` 导入它，否则保存中断证据后 abandon。被中断的写操作必须检查和恢复数据，
@@ -110,3 +109,27 @@ Xinying 已授权测试站及账号自由修改、保存、发布；实际可行
 report/close-out 自动执行知识回写。已执行成功的操作步骤可在最终断言失败时回写已到达入口、已定位/交互控件和已走路线；断言与业务语义不作为知识证据。完整的入口与定位器成功记录仍按重复验证更新稳定性计数。两次独立失败会将同版本知识设为 `needs_review`，默认不注入。`kb prune` 超过 90 天未验证标为 stale；180 天无命中仅列删除候选，不删文件。历史扁平 `entries.yaml`/`page-map.yaml` 由 `knowledge merge` 迁移到按页面/组件/流程/模式拆分的 YAML 文件。
 
 缺失 page-map 控件是探索任务，不是生成门禁结论。每个 case/target 最多两次失败探索；`next` 在第二次有证据失败后返回 `缺控件：…` 分类任务。写入 catalog 但未绑定 `?placeholder` 不算该规格目标已发现，且不能重置失败上限。每次成功后运行 lint/gen，并继续调用 `next`；只有所有用例均结论并已生成最终报告后才结束。
+
+## 前置方式、轮次与交付诊断
+
+前置条件可分类为 `api`、`ui_agent` 或 `user_preset`。`preconditions classify` 可用
+`--prep-method` 指定；`api` 可附 `--api-list open-api.md`，只按 Markdown 中的关键词/接口名匹配，
+不发起 API 请求。所有 `user_preset` 项集中为一段批量确认；同一需求的新轮次沿用已确认答案，
+不按用例重复提问。
+
+同一需求换轮次或环境时创建独立 run，结果不会覆盖：
+
+```bash
+python3 scripts/uia.py rounds create --from-run REQ-r1 --round 2 --run-id REQ-r2-gray --profile gray
+python3 scripts/uia.py rounds create --from-run REQ-r1 --round 2 --run-id REQ-r2-prod --profile production --excel /path/to/cases.xlsx
+python3 scripts/uia.py rounds compare --run REQ-r2-gray
+```
+
+新轮复制已确认 case-spec；上一轮通过且脚本存在的用例复用脚本，其他已有脚本直接重跑。
+只有新增、变更或缺少确认规格/脚本的用例才重新探索/生成。可选 `--excel` 对齐更新后的来源。
+`reports/round-comparison.*` 按环境对比复用、重跑、重新探索和通过/失败变化。每次报告同时生成 `reports/process-issues.md/json`，
+记录人工介入事项、数据准备总耗时、未运行原因及公共步骤候选。
+
+只有确认期望映射的断言执行且留下 reporter 证据才可计通过；缺少断言或证据的用例为 `unasserted`。
+前台断言可标记 `category: frontend`，通过 `remote-checks bundle` 导出无认证包；回执仍由
+现有 `remote-checks ingest` 导入。

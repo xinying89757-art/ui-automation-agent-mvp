@@ -3,6 +3,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { checkEnvironment, contextOptions, loadConfig, launchOptions, resolveConfig, WorkflowError } from '../support/environment.mjs';
 import { authenticatedSession, openSiteArea, privateWrite, snapshotSession } from '../support/auth.mjs';
+import { createContentEditor, openSession as openSkeletonSession } from '../support/editor-skeleton.mjs';
 import { scrubText } from '../support/redact.mjs';
 
 function safeError(error, cfg) {
@@ -37,21 +38,36 @@ async function publicTarget(browser, cfg) {
 
 export async function runPreflight(cfg, browser, { force = false, manual = false } = {}) {
   const started = Date.now();
-  const session = await authenticatedSession(browser, cfg, { force, allowLogin: true, manual });
-  const authenticatedMs = Date.now() - started;
-  const editorStarted = Date.now();
+  // Use the editor skeleton's shared session-first login, site selection, and editor entry.
+  // authenticatedSession loads saved storage state first and allows one password fallback.
+  let session;
+  let authenticatedMs = null;
+  let editorStarted = null;
+  const authPath = () => session?.reused ? 'session' : session?.refreshed ? 'password' : null;
   try {
-    await openSiteArea(session.page, cfg, '编辑网站');
+    session = await openSkeletonSession(browser, { cfg, force, manual });
+    authenticatedMs = Date.now() - started;
+    editorStarted = Date.now();
+    const editor = createContentEditor(session.page, { cfg });
+    const selected = await editor.enterSite();
+    await editor.openContentEditor();
     const editorMs = Date.now() - editorStarted;
     const targets = { admin: { url: cfg.targets.admin, reachable: true, target_visible: true, authenticated: true,
-      selected_site: session.site?.host ?? null, selection: session.site?.kind ?? null } };
+      selected_site: session.site?.host ?? null, selection: selected?.kind ?? session.site?.kind ?? null } };
     const publicResult = await publicTarget(browser, cfg);
     if (publicResult) targets.public = publicResult;
     return { status: 'authenticated', environment: session.environment, targets,
       editor: { opened: true, area: '编辑网站' },
       reused: session.reused, refreshed: session.refreshed,
       timings: { authenticated_ms: authenticatedMs, editor_ms: editorMs, total_ms: Date.now() - started } };
-  } finally { await session.context.close(); }
+  } catch (error) {
+    error.preflight = {
+      auth_path: authPath(),
+      timings: { ...(authenticatedMs !== null ? { authenticated_ms: authenticatedMs } : {}),
+        ...(editorStarted !== null ? { editor_ms: Date.now() - editorStarted } : {}), total_ms: Date.now() - started },
+    };
+    throw error;
+  } finally { await session?.context?.close(); }
 }
 
 export async function runSession(cfg, browser, { checkOnly = false, force = false, manual = false } = {}) {
@@ -93,8 +109,10 @@ export async function main(args = process.argv.slice(2)) {
     console.log(JSON.stringify({ ok: true, ...result }));
   } catch (error) {
     const known = error instanceof WorkflowError;
-    console.log(JSON.stringify({ ok: false, code: known ? error.code : 'BROWSER_OPERATION_FAILED',
-      error: safeError(error, cfg), choices: known ? error.choices : ['检查运行依赖', '重新执行预检', '暂停相关用例'] }));
+    const typed = typeof error?.code === 'string' && error.code;
+    console.log(JSON.stringify({ ok: false, code: known ? error.code : typed || 'BROWSER_OPERATION_FAILED',
+      error: safeError(error, cfg), choices: known ? error.choices : ['检查运行依赖', '重新执行预检', '暂停相关用例'],
+      ...(error.preflight ? { auth_path: error.preflight.auth_path, timings: error.preflight.timings } : {}) }));
     process.exitCode = 2;
   } finally { await browser?.close(); }
 }

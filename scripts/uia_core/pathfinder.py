@@ -258,6 +258,36 @@ def _control(text):
     return name[:20]
 
 
+def _derived_target(text, fallback=''):
+    """Keep target names tied to source language instead of generated case IDs."""
+    text = str(text or '')
+    quoted = _quoted(text)
+    if quoted:
+        return quoted[:24]
+    for token in ('上移', '下移', '删除', '添加FAQ', '问题', 'FAQ', '保存', '取消'):
+        if token in text:
+            if token == '问题':
+                match = re.search(r'问题\s*\d+', text)
+                return match.group(0).replace(' ', '') if match else token
+            return token
+    # Use the action phrase when it names an operation; an unidentifiable target
+    # remains an explicit exploration task instead of an invented stub identifier.
+    match = re.search(r'(?:点击|选择|打开|进入|删除|新增|添加|查看|检查|观察)([^，,。；;]{1,12})', text)
+    if match:
+        candidate = re.sub(r'[“”「」"\s]', '', match.group(1))[:20]
+        return candidate or fallback
+    return fallback
+
+
+def _derived_expectation_target(text):
+    text = str(text or '')
+    if '上移' in text and '下移' in text and '删除' in text:
+        return '问答操作入口'
+    if '被删除的问答' in text or '被移除的问答' in text:
+        return '问答组'
+    return _derived_target(text)
+
+
 def _slug_target(name, fallback):
     token = re.sub(r'[^\w.\-\u4e00-\u9fff]+', '', name or '')[:24]
     return '?' + (token or fallback)
@@ -359,7 +389,8 @@ def build_case(cid, case, source, pages):
             target = opened_page or _slug_target(control or entry_page, 'start')
         else:
             catalog = _target_in_catalog(control, pages)
-            target = catalog or _slug_target(control, '操作' + step['id'])
+            semantic = control or _derived_target(step['text'])
+            target = catalog or _slug_target(semantic, '待探索')
         step_claims = []
         operation = _claim(cid, step['id'], 1, 'operation', step['text'], '中')
         step_claims.append(operation)
@@ -384,8 +415,9 @@ def build_case(cid, case, source, pages):
             else:
                 claim = _claim(cid, step['id'], next_index, 'expected', line, '中')
             step_claims.append(claim)
+            semantic = observable or _derived_expectation_target(line)
             expectations.append({'excel': line, 'value': observable, 'vague': claim['confidence'] == '低',
-                                 'target': _slug_target(observable or '结果' + cid + step['id'], '结果')})
+                                 'target': _slug_target(semantic, '待探索')})
             next_index += 1
         claims.extend(step_claims)
         rendered.append({'id': step['id'], 'text': step['text'], 'verb': verb, 'value': value,
@@ -816,6 +848,11 @@ def project_specs(base, m):
         case['case_spec'] = str(path.relative_to(base))
         case['spec_origin'] = 'pathfinder'
         case['spec_hash'] = file_hash(path)
+        if any(str(value).lstrip('?？') == '待探索' for value in [spec.get('start_page'),
+               *(row.get('target') for row in spec.get('steps', [])),
+               *(check.get('target') for assertion in spec.get('assertions', []) for check in assertion.get('checks', []))]):
+            case.update(stage='discovery', work_status='pending', exploration_required=['?待探索'])
+            case.pop('classification', None)
         written.append(cid)
     if m.get('pathfinder') is not None:
         m['pathfinder']['projected'] = written
@@ -860,6 +897,10 @@ def _case_spec(cid, brief, pages):
             host['verb'] = 'assert'
             host.pop('value', None)
             checks = [{'target': host['target'], 'op': 'disabled'}]
+            expected_line = str(item.get('excel') or '')
+            if all(token in expected_line for token in ('上移', '下移', '删除')):
+                checks = [{'target': _target_in_catalog(token, pages) or _slug_target(token, token), 'op': 'disabled'}
+                          for token in ('上移', '下移', '删除')]
         elif item.get('value') and not item.get('vague'):
             checks = [{'target': item['target'], 'op': 'text', 'value': item['value']}]
         else:

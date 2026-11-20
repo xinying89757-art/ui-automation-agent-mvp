@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>Product frame</title></head>
+<body>
+  <button type="button" id="nav-product">产品</button>
+  <a id="edit-link" href="https://shop.example.test/prod_new_update?invokeAction=prod_new_update" hidden>编辑</a>
+  <button type="button" id="desc" hidden>产品描述</button>
+  <iframe id="tiptap-iframe" hidden title="tiptap" src="canvas.html"></iframe>
+  <script>
+    document.getElementById('nav-product').addEventListener('click', () => {
+      document.getElementById('edit-link').hidden = false;
+    });
+    document.getElementById('edit-link').addEventListener('click', event => {
+      event.preventDefault();
+      document.getElementById('desc').hidden = false;
+    });
+    document.getElementById('desc').addEventListener('click', () => {
+      document.getElementById('tiptap-iframe').hidden = false;
+    });
+  </script>
+</body>
+</html>

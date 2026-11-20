@@ -273,7 +273,7 @@ def begin_batch(base, m, case_ids):
     batch = {"id": batch_id, "case_ids": case_ids, "versions": versions,
              "scripts": {c['case_id']: c['registration']['script'] for c in selected},
              "owner_pid": os.getpid(),
-             "started_at": now(), "directory": str(directory.relative_to(base)),
+             "started_at": now(), "deadline_at": m.get('go_budget_deadline_at'), "directory": str(directory.relative_to(base)),
              "report": str((directory / "case-results.json").relative_to(base)), "command": command}
     m["active_batch"] = batch
     event(m, "batch_started", batch_id=batch_id, case_ids=case_ids)
@@ -290,6 +290,7 @@ def execute_process(base, batch, cfg):
                UIA_KNOWLEDGE_FILE=str(knowledge_overlay),
                UIA_RESULTS_DIR=str(directory), UIA_CONTAMINATION_DIR=str(base / "state/contaminated"))
     stop = threading.Event()
+    budget_hit = threading.Event()
 
     def pump():
         write_heartbeat(base, batch, True)
@@ -305,11 +306,29 @@ def execute_process(base, batch, cfg):
                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                     text=True, start_new_session=os.name != "nt")
             atomic_write(directory / "process.json", {"pid": proc.pid, "batch_id": batch["id"], "started_at": now()})
+            timer = None
+            if batch.get('deadline_at'):
+                deadline = batch['deadline_at']
+                def stop_at_deadline():
+                    if proc.poll() is None:
+                        budget_hit.set()
+                        if os.name == 'nt': proc.terminate()
+                        else: os.killpg(proc.pid, signal.SIGTERM)
+                try:
+                    import datetime as _dt
+                    due = _dt.datetime.fromisoformat(str(deadline).replace('Z', '+00:00'))
+                    remaining = max(0, (due - _dt.datetime.now(_dt.timezone.utc)).total_seconds())
+                except (TypeError, ValueError): remaining = None
+                if remaining is not None:
+                    timer = threading.Timer(remaining, stop_at_deadline)
+                    timer.daemon = True
+                    timer.start()
             try:
                 for line in proc.stdout:
                     log.write(redact(line, cfg))
                     log.flush()
-                return proc.wait()
+                code = proc.wait()
+                return 124 if budget_hit.is_set() else code
             except BaseException:
                 if os.name == "nt":
                     proc.terminate()
@@ -325,6 +344,8 @@ def execute_process(base, batch, cfg):
                     proc.wait()
                 raise
     finally:
+        if 'timer' in locals() and timer:
+            timer.cancel()
         stop.set()
         writer.join(timeout=1)
         write_heartbeat(base, batch, False)
@@ -352,6 +373,12 @@ def consume_batch(base, m, exit_code=None):
         lifecycle = row.get("lifecycle", {})
         result = row.get("result")
         require(result in RESULTS, "Unknown reporter result")
+        if result == "passed":
+            spec = read_yaml(inside(base, c['case_spec'])) if c.get('case_spec') else None
+            from .assertions import assess
+            assertion_review = assess(spec, row)
+            if not assertion_review['complete']:
+                result = 'unasserted'
         clean = lifecycle.get("cleanup_verified") is True
         cleanup_pending = lifecycle.get("cleanup_pending") is True and (base / batch["directory"] / ("remote-" + cid + ".json")).is_file()
         prepared = lifecycle.get("setup_verified") is True
@@ -371,6 +398,9 @@ def consume_batch(base, m, exit_code=None):
                    "executed": cid in by_id and row.get("playwright_status") not in {"skipped", None},
                    "setup_verified": prepared, "cleanup_verified": clean, "cleanup_pending": cleanup_pending,
                    "setup_started": row.get("setup_started", False),
+                    "precondition_check": lifecycle.get("precondition_check"),
+                    "preparation": lifecycle.get("preparation"),
+                    "prep_time_ms": lifecycle.get("prep_time_ms", 0),
                    "duration_ms": row.get("duration_ms", 0), "errors": row.get("errors", []),
                    "attachments": row.get("attachments", []),
                    "assertions": row.get("assertions", []), "failure_stage": row.get("failure_stage")}
@@ -380,6 +410,8 @@ def consume_batch(base, m, exit_code=None):
             attempt["read_back"] = row["read_back"]
         if row.get("saves"):
             attempt["saves"] = row["saves"]
+        if row.get("rescued_by_midscene"):
+            attempt["rescued_by_midscene"] = int(row["rescued_by_midscene"])
         if result == "passed" and c.get("repair_baseline_script"):
             attempt["repair_baseline_script"] = c["repair_baseline_script"]
             attempt["repair_script"] = c.get("registration", {}).get("script")

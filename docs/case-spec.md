@@ -44,6 +44,8 @@ excel 和非空 checks。检查使用 visible/hidden/text/contains/value/attribu
 attribute 另需 attribute 名；left_of 的 value 是另一个命名目标，比较实际横坐标。text 允许字符串或按顺序的字符串列表，值类型必须正确。close 后必须有 hidden 断言。
 excel 必须是导入期望的整个单元格或完整非空行，包含编号、空格和标点，不做 trim/正则改写。
 一个期望有多个业务子句时，用多个 checks 完整验证；生成器不会判断自然语言语义，Codex 必须审查。
+确认期望必须由真实可执行 assertion 覆盖。reporter 记录断言 ID、通过状态和执行证据；任一确认期望
+没有可执行断言或证据时，用例标为 `unasserted`，不能计通过。
 
 `spec lint` 检查结构、跨用例相同 checks、词表及数据类型、未知目标、业务问题、fixture
 导入、图标字符、弹窗 scope、重复角色名及 snapshot refs。首次 lint 结果记在 manifest，
@@ -73,7 +75,9 @@ TC-0048 保留空字符串及纯空格，不把禁用态代替 Excel 要求的�
 
 ## Phase 4：远程文件、请求时序与 FAQ
 
-完整文件协议见 [remote-checks.md](remote-checks.md)。`defer_public` 关联带 `resource` 的 page-map 目标，断言用 `remote_file`，条件支持 contains、equals、按指定二级标题截取的 ordered_pairs。`excel` 原文不能改写。本机脚本用 `// @deferred A2` 标识交接覆盖；该断言不记为本机 PASS。远程等待期间数据保留，最终回执后恢复核验；清理 pending 不能计通过。
+完整文件协议见 [remote-checks.md](remote-checks.md)。`defer_public` 关联带 `resource` 的 page-map 目标，断言用 `remote_file`，条件支持 contains、equals、按指定二级标题截取的 ordered_pairs。`excel` 原文不能改写。本机脚本用 `// @deferred A2` 标识交接覆盖；该断言不记为本机 PASS。远程等待期间保留准备状态；只清理本轮创建的数据，不回滚已存在的数据值。
+
+断言可标记 `category: frontend`，适用于需要可访问公开前台的 HTTP 断言。它仍使用 `remote_file` 和同一 remote-check 请求、检查器及回执，不会记为失败或挂起；待执行时结果分类为 `frontend`。
 
 远程 `remote_file` 条件也支持 `not_contains`、`max_length`、`truncated_at` 和 `faq_page`。`truncated_at` 的 `value` 是 N、`text` 是预期完整文本，正文必须恰为前 N 个字符且不含第 N+1 个字符。`faq_page` 对 JSON-LD 的 FAQPage 对象逐个核对对象数与问答集合，不允许跨对象拼接问答。页面目标可引用 `knowledge/patterns.yaml` 中的交互模式；spec generator 会为嵌套 iframe、重绘后重新定位、遮挡滚动/收起生成对应 runtime 调用。
 

@@ -128,6 +128,83 @@ def export(base, m):
     return str(directory / 'request.json')
 
 
+def export_frontend_bundle(base, m):
+    """Package the current remote-check request for credential-free Playwright execution."""
+    import zipfile
+    directory = base / 'remote-checks'
+    request_file = directory / 'request.json'
+    require(request_file.is_file(), 'No remote-check request to export')
+    request = read_json(request_file)
+    require(any(row.get('category') == 'frontend' for row in request.get('checks', [])),
+            'No frontend-category assertions in the current request')
+    bundle = directory / 'frontend-bundle'
+    if bundle.exists():
+        shutil.rmtree(bundle)
+    (bundle / 'tests').mkdir(parents=True)
+    shutil.copyfile(request_file, bundle / 'request.json')
+    shutil.copyfile(Path(__file__).resolve().parents[1] / 'templates/remote-check.mjs', bundle / 'check.mjs')
+    atomic_write(bundle / 'package.json', {'name': 'uia-frontend-checks', 'private': True, 'type': 'module',
+                                            'scripts': {'test': 'playwright test'},
+                                            'devDependencies': {'@playwright/test': '^1.64.1'}})
+    (bundle / 'playwright.config.mjs').write_text("import { defineConfig } from '@playwright/test';\nexport default defineConfig({ testDir: './tests', workers: 1, reporter: 'list' });\n", encoding='utf-8')
+    test_source = r'''import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { createHash } from 'node:crypto';
+import { test, expect, request } from '@playwright/test';
+import { checkOne } from '../check.mjs';
+const directory = path.dirname(fileURLToPath(import.meta.url));
+const bytes = fs.readFileSync(path.join(directory, '../request.json'));
+const payload = JSON.parse(bytes);
+const results = [];
+test('公开前台远程断言', async () => {
+  const base = process.env.UIA_SITE_BASE_URL;
+  expect(base, '请设置 UIA_SITE_BASE_URL').toBeTruthy();
+  const site = new URL(base);
+  expect(['http:', 'https:']).toContain(site.protocol);
+  expect(site.username + site.password).toBe('');
+  const api = await request.newContext({ baseURL: site.origin });
+  try {
+    for (const check of payload.checks) {
+      const adapter = async (raw) => {
+        const source = new URL(raw);
+        const response = await api.get(source.pathname + source.search, { timeout: check.timeout_ms });
+        return new Response(await response.body(), { status: response.status(), headers: response.headers() });
+      };
+      const result = await checkOne(check, adapter);
+      results.push(result);
+      expect(result.status, `${check.case_id}/${check.assertion_id}: ${result.reason}`).toBe('pass');
+    }
+  } finally { await api.dispose(); }
+});
+test.afterAll(() => {
+  const output = { schema_version: 'uia-remote-results.v1', run_id: payload.run_id,
+    request_sha256: createHash('sha256').update(bytes).digest('hex'), results };
+  fs.writeFileSync(path.join(directory, '../results.json.tmp'), JSON.stringify(output, null, 2) + '\n');
+  fs.renameSync(path.join(directory, '../results.json.tmp'), path.join(directory, '../results.json'));
+});
+'''
+    (bundle / 'tests/frontend.spec.mjs').write_text(test_source, encoding='utf-8')
+    (bundle / 'README.md').write_text(
+        '# 公开前台 Playwright 检查包\n\n'
+        '此包只包含当前 run 的无认证 remote-checks 请求、检查器和 Playwright 测试；不含账号、认证状态或运行目录。\n\n'
+        '```bash\n'
+        'npm i\n'
+        'UIA_SITE_BASE_URL=https://example.test npx playwright test\n'
+        '```\n\n'
+        '`UIA_SITE_BASE_URL` 使用本机可访问的公开站点 origin，不含账号信息。执行后将同目录的 `results.json` '
+        '带回原 run，使用 `python3 scripts/uia.py remote-checks ingest --run RUN results.json` 导入。\n', encoding='utf-8')
+    archive = directory / 'frontend-bundle.zip'
+    if archive.exists():
+        archive.unlink()
+    with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED) as output:
+        for file in sorted(bundle.rglob('*')):
+            if file.is_file():
+                output.write(file, file.relative_to(bundle.parent))
+    return {'directory': str(bundle), 'zip': str(archive), 'request_sha256': file_hash(request_file),
+            'checks': len(request.get('checks', []))}
+
+
 def collect(base, m, batch, cid, attempt):
     file = base / batch['directory'] / ('remote-' + cid + '.json')
     if not file.is_file() or attempt['result'] != 'passed':
@@ -148,6 +225,7 @@ def collect(base, m, batch, cid, attempt):
         identity = digest([m['run_id'], batch['id'], cid, item['assertion_id']])[:24]
         immediate = bool(item.get('max_latency_seconds'))
         request = {**item, 'id': identity, 'case_id': cid,
+                   'category': assertions[item['assertion_id']].get('category'),
                    'cache_bust': True, 'immediate': immediate,
                    'earliest_check_at': (saved if immediate else saved + dt.timedelta(hours=1)).isoformat(),
                    'deadline': (saved + dt.timedelta(hours=2)).isoformat(), 'timeout_ms': 10000}
@@ -525,6 +603,9 @@ def fold(m, cid):
                  stage='feedback' if stable else 'execution', work_status='finished' if stable else 'runnable')
     elif status == 'fail':
         c.update(result='business_failure', pass_streak=0, stability='unstable', stage='finished', work_status='finished')
+    elif status == 'pending' and any(r['request'].get('category') == 'frontend' for r in entries):
+        c.update(result='frontend', pass_streak=0, stability='not_run', stage='remote', work_status='frontend')
+        c['classification']['reason'] = '前台断言已导出，等待可访问公开站点的执行端回执'
     else:
         c.update(result={'pending':'remote_pending', 'unreachable':'remote_unreachable', 'still-cached':'remote_cached'}[status],
                  pass_streak=0, stability='not_run', stage='remote', work_status='remote_pending')
@@ -577,6 +658,8 @@ def ingest(base, m, file):
             local = c['attempts'][-1]
             require(local['result'] == 'passed' and local['setup_verified'] and (local['cleanup_verified'] or local.get('cleanup_pending')), 'Local lifecycle did not pass')
             require(row['http_status'] is not None and 200 <= row['http_status'] < 300 and all(row['conditions']), 'Pass contradicts observations')
+            require(isinstance(row.get('evidence'), list) and len(row['evidence']) == len(req['conditions']),
+                    'Remote pass needs recorded assertion evidence')
             require(not req.get('max_latency_seconds') or (checked - timestamp(req['saved_at'])).total_seconds() <= req['max_latency_seconds'], 'Late fetch cannot prove immediate update')
         if row['status'] == 'still-cached':
             require(checked < timestamp(req['earliest_check_at']), 'Cache grace period already ended')

@@ -34,6 +34,25 @@ assertions:
 node /path/to/remote-checks/check.mjs
 ```
 
+### 前台 Playwright 包
+
+case-spec 的 assertion 标记 `category: frontend` 后，本机完成保存和请求生成，再运行：
+
+```bash
+python3 scripts/uia.py remote-checks bundle --run RUN
+```
+
+命令生成 `remote-checks/frontend-bundle/` 和 `frontend-bundle.zip`。包包含原始 `request.json`、同版
+`check.mjs`、Playwright 测试和 README，不含 run/state、凭证或浏览器状态。Mac 上解压后运行：
+
+```bash
+npm i
+UIA_SITE_BASE_URL=https://example.test npx playwright test
+```
+
+执行端使用 Playwright API request，不需安装浏览器。结果仍按原 request 字节 SHA-256 写入 `results.json`；
+导回原 run 后执行 `remote-checks ingest`，沿用现有校验、恢复和报告归并流程。
+
 脚本总是读取自身目录的 `request.json`，原子写入同目录 `results.json`。每条仅 fetch 一次，有超时和 1 MiB 响应上限；不自动等待、不轮询。普通检查根据 `earliest_check_at` 调度。带 `max_latency_seconds` 的立即检查会设置 `immediate: true`、`cache_bust: true`，并把 `earliest_check_at` 设为 `saved_at`；脚本追加每检查唯一的 `uia_cb` 查询参数，结果 `variant` 标为 `cache_busted`。其他检查的 variant 是 `default`，导入会核对实际 variant 与请求一致。
 
 调度会先运行不需要 hold 的用例，再准备 deferred 用例，所有准备完成后才生成最终 `request.json`。数据 hold 写入私有 `.auth/remote-holds/`，供同环境的其他 run/clone 阻止数据修改；只读用例仍可运行。导入或 restore 完成恢复后清除 hold。
@@ -105,7 +124,7 @@ node /path/to/remote-checks/check.mjs
 
 远程读取临时数据时，不能提前恢复后再把不匹配判成产品错误。因此默认 fixture 在发出远程检查后保留已保存的数据，**清理标为 pending，而不是 verified**；本机受保护 `state/fixture-snapshots/` 先保存原始快照。普通用例仍立即恢复。
 
-所有活跃检查均收到 pass/fail/unreachable 后，ingest 在本机使用共享认证模块恢复数据，按准备的反序恢复重叠快照，并重读核验。still-cached 或尚未回传的检查继续保留准备状态。恢复失败保留证据及 pending，禁止计通过；可重试：
+所有活跃检查均收到 pass/fail/unreachable 后，ingest 在本机使用共享认证模块清理本轮创建的数据，并核验清理结果。已存在的数据值不恢复成历史快照。still-cached 或尚未回传的检查继续保留准备状态。清理失败保留证据及 pending，禁止计通过；可重试：
 
 ```bash
 .venv/bin/python scripts/uia.py remote-checks restore --run RUN

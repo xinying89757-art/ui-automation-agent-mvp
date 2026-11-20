@@ -220,7 +220,8 @@
             "$ref": "#/$defs/check"
           },
           "minItems": 1
-        }
+        },
+        "category": {"enum": ["frontend"]}
       }
     },
     "check": {

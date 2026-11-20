@@ -27,15 +27,25 @@ def assert_private_credentials(cfg):
 
 
 def block_run(m, error):
-    """Mark every case environment-blocked and record the redacted reason."""
+    """Mark only the selected batch environment-blocked and keep other cases queued."""
     reason = scrub_text(str(error), m.get("config"))[:500]
     details = error.details if isinstance(getattr(error, "details", None), dict) else {}
     code = details.get("code")
+    timings = details.get("timings") if isinstance(details.get("timings"), dict) else {}
+    timings = {key: int(value) for key, value in timings.items()
+               if key in {"authenticated_ms", "editor_ms", "total_ms"}
+               and isinstance(value, (int, float)) and not isinstance(value, bool)}
+    auth_path = details.get("auth_path") if details.get("auth_path") in {"session", "password"} else None
     if code and code not in reason:
         reason = f"{code}: {reason}"
     m["preflight"] = {**(m.get("preflight") or {}), "status": "blocked", "checked_at": now(),
-                      "errors": [reason], "failure_class": "environment"}
-    for case in m.get("cases", {}).values():
+                      "errors": [reason], "failure_class": "environment",
+                      **({"timings_ms": timings} if timings else {}),
+                      **({"auth_path": auth_path} if auth_path else {})}
+    selected = set(m.get('selected_cases') or m.get('cases', {}))
+    for cid, case in m.get("cases", {}).items():
+        if cid not in selected:
+            continue
         case.update(result="environment_blocked", stage="finished", work_status="finished",
                     pass_streak=0, stability="not_run" if not case.get("attempts") else "unstable",
                     failure_class="environment",
@@ -43,7 +53,9 @@ def block_run(m, error):
                                     **({"code": code} if code else {})})
     m.setdefault("history", [])
     event(m, "environment_blocked", reason=reason, code=code)
-    return {"status": "blocked", "failure_class": "environment", "reason": reason, "code": code}
+    return {"status": "blocked", "failure_class": "environment", "reason": reason, "code": code,
+            **({"timings_ms": timings} if timings else {}),
+            **({"auth_path": auth_path} if auth_path else {})}
 
 
 def enforce_editor(base, evidence_rel):
@@ -76,6 +88,7 @@ def public_preflight_result(proof, elapsed_seconds):
     return {
         "status": "passed" if passed else "blocked",
         "failure_class": None if passed else "environment",
+        "auth_path": "session" if proof.get("reused") else "password" if proof.get("refreshed") else None,
         "checks": {
             "login": bool(login_ok),
             "site_reachable": bool(site_reachable),
@@ -105,8 +118,14 @@ def live_preflight(cfg, runner=None):
         code = error.details.get("code") if isinstance(error.details, dict) else None
         if code and code not in reason:
             reason = f"{code}: {reason}"
+        details = error.details if isinstance(error.details, dict) else {}
+        timings = details.get("timings") if isinstance(details.get("timings"), dict) else {}
+        timings = {key: int(value) for key, value in timings.items()
+                   if key in {"authenticated_ms", "editor_ms", "total_ms"}
+                   and isinstance(value, (int, float)) and not isinstance(value, bool)}
         return {"status": "blocked", "failure_class": "environment", "reason": reason, "code": code,
                 "checks": {"login": False, "site_reachable": False, "site_selected": False, "editor_opened": False},
+                "timings_ms": timings, "auth_path": details.get("auth_path") if details.get("auth_path") in {"session", "password"} else None,
                 "elapsed_seconds": round(time.perf_counter() - started, 3)}
     proof = read_json(evidence) if evidence.is_file() else {}
     result = public_preflight_result(proof, time.perf_counter() - started)
@@ -119,6 +138,27 @@ def preflight_run(base, m):
     """Login, select the site, and open the editor. Block the run on failure."""
     from . import runtime
     from .profiles import invoke_login
+    from .common import elapsed, file_hash
+    # Reuse only a recent passed proof whose evidence, configuration and auth
+    # state are unchanged. Any failure falls through to a fresh live check.
+    recorded = m.get('preflight') or {}
+    evidence = recorded.get('evidence')
+    proof_path = Path(base) / evidence if evidence else None
+    auth = (m.get('config', {}).get('auth') or {}).get('storage_state')
+    try:
+        fresh = recorded.get('status') == 'passed' and recorded.get('config_hash') == m.get('config_hash') \
+            and recorded.get('auth_sha256') == (file_hash(auth) if auth else None) \
+            and proof_path and proof_path.is_file() and file_hash(proof_path) == recorded.get('sha256') \
+            and elapsed(recorded.get('checked_at')) <= 300
+        if fresh:
+            enforce_editor(base, evidence)
+            proof = read_json(proof_path)
+            summary = public_preflight_result(proof, 0)
+            if summary['status'] == 'passed':
+                clear_stale_environment_blockers(m)
+                return {**summary, 'evidence': evidence, 'cached': True}
+    except (OSError, ValueError, TypeError):
+        pass
     evidence = "evidence/go-environment-" + now().replace(":", "-") + ".json"
     try:
         invoke_login(m["config"], base / "runner", evidence=base / evidence, open_editor=True)
@@ -135,5 +175,23 @@ def preflight_run(base, m):
         summary = public_preflight_result(proof, 0)
         if summary["status"] != "passed":
             return block_run(m, UiaError("环境预检未通过：登录、目标网站或内容编辑器未就绪"))
+        clear_stale_environment_blockers(m)
         return {**summary, "evidence": evidence}
     return {"status": recorded.get("status") or "passed", "evidence": evidence}
+
+
+def clear_stale_environment_blockers(m):
+    """A later successful preflight invalidates only unexecuted environment verdicts."""
+    from .common import event
+    selected = set(m.get('selected_cases') or m.get('cases', {}))
+    cleared = []
+    for cid, case in m.get('cases', {}).items():
+        if cid not in selected or case.get('result') != 'environment_blocked' or case.get('attempts'):
+            continue
+        case.update(result=None, stability='not_run', pass_streak=0, stage='spec', work_status='pending')
+        case.pop('classification', None)
+        case.pop('failure_class', None)
+        cleared.append(cid)
+    if cleared:
+        event(m, 'stale_environment_blockers_cleared', case_ids=cleared)
+    return cleared

@@ -7,7 +7,7 @@ import { scrubText, unsafeArtifact } from './redact.mjs';
 
 export default class UiaReporter implements Reporter {
   private cases: Record<string, unknown>[] = [];
-  private assertions = new Map<string, { id: string; passed: boolean }[]>();
+  private assertions = new Map<string, { id: string; passed: boolean; evidence: { source: string; started_at: string; duration_ms: number } }[]>();
   private successfulSteps = new Map<string, string[]>();
   private startedAt = new Date().toISOString();
   private output: string;
@@ -50,7 +50,8 @@ export default class UiaReporter implements Reporter {
     const id = /^assert:(A\d+)$/u.exec(step.title)?.[1];
     if (id) {
       const rows = this.assertions.get(test.id) ?? [];
-      rows.push({ id, passed: !step.error });
+      rows.push({ id, passed: !step.error, evidence: { source: 'playwright-reporter',
+        started_at: step.startTime.toISOString(), duration_ms: step.duration } });
       this.assertions.set(test.id, rows);
     }
     const processStep = /^uia-step:([A-Za-z0-9_.-]+)$/u.exec(step.title)?.[1];
@@ -70,21 +71,57 @@ export default class UiaReporter implements Reporter {
     }
     const errors = result.errors.map(error => this.clean(error.message ?? String(error)));
     const message = errors.join('\n');
-    const passed = result.status === 'passed' && lifecycle.setup_verified === true && (lifecycle.cleanup_verified === true || lifecycle.cleanup_pending === true);
-    const judged = passed ? { result: 'passed', failure_class: null }
+    const spec = this.binding(caseId)?.spec;
+    const isDeferred = (assertion: any) => assertion.checks?.length > 0 && assertion.checks.every((check: any) => check.op === 'remote_file');
+    const localAssertions = (spec?.assertions ?? []).filter((assertion: any) => !isDeferred(assertion));
+    const remoteExpected = (spec?.assertions ?? []).filter(isDeferred);
+    const expected = (spec?.assertions ?? []).map((assertion: any) => assertion.id);
+    const actual = this.assertions.get(test.id) ?? [];
+    const deferred = this.deferredAssertions(caseId, remoteExpected);
+    const assertionEvidence = localAssertions.length > 0
+      ? localAssertions.every((assertion: any) => actual.some(row => row.id === assertion.id && row.evidence))
+      : remoteExpected.length > 0 || (spec?.assertions?.length ?? 0) === 0 && actual.length > 0;
+    const completeEvidence = assertionEvidence && remoteExpected.every((assertion: any) =>
+      deferred.some(row => row.id === assertion.id && row.recorded && row.evidence));
+    const passed = result.status === 'passed' && lifecycle.setup_verified === true && (lifecycle.cleanup_verified === true || lifecycle.cleanup_pending === true) && completeEvidence;
+    const judged = result.status === 'passed' && !completeEvidence ? { result: 'unasserted', failure_class: null }
+      : passed ? { result: 'passed', failure_class: null }
       : classifyFailure(message, result.status, this.locatorNeverResolved(message));
     const status = judged.result;
+    const annotations = result.annotations?.length ? result.annotations : test.annotations;
+    const rescued = annotations.filter(item => item.type === 'rescued_by_midscene').length;
     this.cases.push({ case_id: caseId, result: status, failure_class: judged.failure_class, playwright_status: result.status,
+      rescued_by_midscene: rescued,
       setup_started: result.attachments.some(a => a.name === 'uia-setup-started'),
       duration_ms: result.duration, retry: result.retry, errors, lifecycle,
-      assertions: this.assertions.get(test.id) ?? [],
+      assertions: actual, deferred_assertions: deferred, expected_assertions: expected,
       successful_steps: this.successfulSteps.get(test.id) ?? [],
-      failure_stage: passed ? null : judged.failure_class === 'environment' ? 'environment' : /UIA_SAVE_NOT_PERSISTED/u.test(message) ? "save_not_persisted" : /UIA_ENVIRONMENT_BLOCKED/u.test(message) ? "environment_or_session" : /UIA_SETUP_FAILED/u.test(message) ? "data_preparation" : this.locatorNeverResolved(message) ? "locator_resolution" : /UIA_BUSINESS_FAILURE/u.test(message) ? "business_assertion" : "locator_or_timing",
+      failure_stage: passed ? null : judged.failure_class === 'environment' ? 'environment' : /UIA_SAVE_NOT_PERSISTED/u.test(message) ? "save_not_persisted" : /UIA_SETUP_FAILED/u.test(message) ? "data_preparation" : this.locatorNeverResolved(message) ? "locator_resolution" : /UIA_BUSINESS_FAILURE/u.test(message) ? "business_assertion" : "locator_or_timing",
       read_back: this.readBack(caseId),
       saves: this.saveObservations(caseId),
       script: test.location.file, line: test.location.line,
       attachments: result.attachments.filter(a => this.keepAttachment(a)).map(a => ({ name: a.name, path: a.path })) });
     this.flush('running', false);
+  }
+  private binding(caseId: string | undefined): any {
+    if (!caseId) return null;
+    try {
+      const file = process.env.UIA_CASES_FILE ?? path.join(process.env.UIA_RUN_ROOT ?? '.', 'state/cases.json');
+      return JSON.parse(fs.readFileSync(file, 'utf8'))[caseId] ?? null;
+    } catch { return null; }
+  }
+  private deferredAssertions(caseId: string | undefined, expected: any[]): any[] {
+    if (!caseId || !expected.length || !process.env.UIA_RESULTS_DIR) return [];
+    try {
+      const file = path.join(process.env.UIA_RESULTS_DIR, `remote-${caseId}.json`);
+      const rows = JSON.parse(fs.readFileSync(file, 'utf8')) as any[];
+      return expected.map(assertion => {
+        const row = rows.find(item => item.assertion_id === assertion.id && item.expected === assertion.excel &&
+          Array.isArray(item.conditions) && item.conditions.length === assertion.checks.length);
+        return { id: assertion.id, recorded: Boolean(row), evidence: row ? {
+          source: 'remote-check-request', saved_at: row.saved_at } : null };
+      });
+    } catch { return []; }
   }
   private readBack(caseId: string | undefined): unknown {
     if (!caseId || !process.env.UIA_RESULTS_DIR) return null;

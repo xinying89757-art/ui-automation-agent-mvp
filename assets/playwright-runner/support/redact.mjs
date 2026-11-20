@@ -2,6 +2,7 @@
 
 const JWT = /eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g;
 const QUERY_SECRET = /(authorization|token|access_token|password)=[^&\s"']+/gi;
+const URL_QUERY = /(https?:\/\/[^\s?#"']+)\?(?:(?:s|c|session|sid|token|access_token|ticket)=|[^\s#"'<>)]*&(?:s|c|session|sid|token|access_token|ticket)=)[^\s#"'<>)]*/gi;
 const EMAIL = /[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/g;
 const PIN = /(PIN码[:：]\s*)\S+/g;
 const PHONE = /(?<!\d)1[3-9]\d{9}(?!\d)/g;
@@ -10,6 +11,7 @@ export function scrubText(value) {
   return String(value)
     .replace(JWT, '[REDACTED]')
     .replace(QUERY_SECRET, '$1=[REDACTED]')
+    .replace(URL_QUERY, '$1?[REDACTED]')
     .replace(EMAIL, '[email]')
     .replace(PIN, '$1[REDACTED]')
     .replace(PHONE, '[phone]');

@@ -92,10 +92,10 @@ Excel → 保留原文 → 先绑定/执行现有脚本 → case-spec → lint �
 - 导入时根据用例原文生成一份前置条件清单，只问人一次。缺权限账号、4.0 编辑器、
   全新站点、多语言/简体/小语种、根目录已有 llms.txt、未迁移站点未满足时继续等待，
   不记成 not_suitable。FAQ 条数、分类、导航、首页 Meta、网站简称、快速联系、社媒
-  由夹具自己快照、设置并恢复。
+  每例先检查目标状态，满足则复用、不满足才准备；只清理本轮创建的数据，不把既有值恢复原样。
 - 默认每批最多 10 条。同一批复用一个编辑器会话，用例之间只收起弹窗。
-- Excel 要求公开文件更新时须实际读取公开文件；前台不可达则等待环境，不能改成编辑器值断言。
-- 每日 `stability_passes: 1`，一次清理成功就是交付。夜间回归改为 `2`。
+- Excel 要求公开文件更新时须实际读取公开文件；需要公开前台的 assertion 标记 `category: frontend`，交付独立 Playwright 包供可访问端执行。
+- 每日 `stability_passes: 1`，本轮创建数据的清理成功就是交付门槛。夜间回归改为 `2`。
 - 通过的批次把定位记入 run-local 知识；长期写回需审核。元素名只保留短文本，不用面板整段 innerText。
 - 登录、环境/数据缺失和业务歧义进入问题队列。先把能跑的用例跑完，再集中提问。
 
@@ -190,8 +190,10 @@ python3 scripts/uia.py validate --run REQ-001
 重点覆盖不同 Excel 布局、跨工作表重名 ID、负向空值、公共流程复用、问题答复与恢复、
 中断恢复、数据清理失败隔离，以及代码修改后成功计数重置。
 
-新用例默认走 case-spec；旧 intent/reuse-plan、asset-matcher/profile-builder/asset-miner 文件保留兼容。Xinying 已授权配置测试站自由修改、保存、发布；实际可行时恢复数据。
+新用例默认走 case-spec；旧 intent/reuse-plan、asset-matcher/profile-builder/asset-miner 文件保留兼容。Xinying 已授权配置测试站自由修改、保存、发布。
+
+跨环境或新轮次用 `uia.py rounds create` 建立独立 run；确认规格和上一轮通过脚本会复用，结果用 `rounds compare` 对比。交付报告附 `process-issues.md/json`。
 
 用例规格技能位于 [uia-case-spec](.agents/skills/uia-case-spec/SKILL.md)。
 
-公开文件需要远程读取时，参见 [远程文件交接协议](docs/remote-checks.md)。本机先完成保存和准备，生成 `runs/<id>/remote-checks/request.json` 与不含认证的 `check.mjs`；远端 Node 18+ 执行后，将 `results.json` 交回 `uia.py remote-checks ingest`。数据在交接期间保留，回执后自动恢复并核验；到期使用 `remote-checks restore`。
+公开文件需要远程读取时，参见 [远程文件交接协议](docs/remote-checks.md)。本机先完成保存和准备，生成 `runs/<id>/remote-checks/request.json` 与不含认证的 `check.mjs`；远端 Node 18+ 执行后，将 `results.json` 交回 `uia.py remote-checks ingest`。`category: frontend` 用例可再执行 `remote-checks bundle` 导出 Mac Playwright 包。

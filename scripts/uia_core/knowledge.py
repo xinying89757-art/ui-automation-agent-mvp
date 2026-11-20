@@ -39,12 +39,15 @@ def sync_layout(pages=None, entries=None, patterns=None, experience=None):
     entries = entries if entries is not None else catalog('entries.yaml')
     patterns = patterns if patterns is not None else catalog('patterns.yaml')
     experience = experience if experience is not None else catalog('experience.yaml')
-    previous = {x['id']: x for x in (catalog('index.yaml').get('entries') or [])}
+    previous_rows = catalog('index.yaml').get('entries') or []
+    previous = {x['id']: x for x in previous_rows}
     rows, files = [], []
     known_pages = set(pages.get('pages', {}))
     def put(ident, kind, page, value, labels, route='', frame=None):
         old_index = previous.get(ident, {})
-        filename = kind + 's/' + _slug(ident.replace('.', '-')) + '.yaml'
+        # Chinese-only IDs all collapsed to ``item.yaml`` in the old slugger.
+        slug = _slug(ident.replace('.', '-'))
+        filename = kind + 's/' + (slug if slug != 'item' else slug + '-' + common.digest(ident)[:10]) + '.yaml'
         old_path = _root() / old_index.get('path', filename)
         old_body = read_yaml(old_path) if old_path.is_file() else {}
         verified = []
@@ -81,17 +84,36 @@ def sync_layout(pages=None, entries=None, patterns=None, experience=None):
             if section == 'pages':
                 ident, page, kind = 'page.' + name, name, 'page'
             else:
-                page = row.get('page') or name.split('.', 1)[0]
+                page = row.get('page') or previous.get('target.' + name, {}).get('page') or name.split('.', 1)[0]
                 if page not in known_pages: page = next(iter(known_pages), 'unknown')
                 kind, ident = 'component', 'target.' + name
-            frame = row.get('frame') or (','.join(row.get('nested_frames', [])) if row.get('nested_frames') else '')
-            put(ident, kind, page, row, labels, row.get('route_prefix') or row.get('path') or row.get('entry'), frame)
+            old_index = previous.get(ident, {})
+            frame = row.get('frame') or (','.join(row.get('nested_frames', [])) if row.get('nested_frames') else '') or old_index.get('frame', '')
+            put(ident, kind, page, row, labels, row.get('route_prefix') or row.get('path') or row.get('entry') or old_index.get('route', ''), frame)
     for name, row in entries.get('entries', {}).items():
         put('entry.' + name, 'flow', row.get('page') or name, row, [name, row.get('label'), *row.get('aliases', [])], row.get('path_text'), row.get('frame'))
     for name, row in patterns.get('patterns', {}).items():
         put('pattern.' + name, 'pattern', row.get('page') or '*', row, [name, row.get('description')], row.get('route'), row.get('frame'))
     for name, row in experience.get('entries', {}).items():
         put('experience.' + name, 'flow', row.get('page') or '*', row, [name, row.get('summary')], row.get('route'), row.get('frame'))
+    # Preserve index entries whose source record is not in a compatibility
+    # catalog. They can still be referenced by older specs.
+    present_ids = {row['id'] for row in rows}
+    rows.extend(copy.deepcopy(row) for row in previous_rows if row.get('id') not in present_ids)
+    indexed_paths = {row['path'] for row in rows}
+    indexed_ids = {row['id'] for row in rows}
+    for kind_dir in ('pages', 'components', 'flows', 'patterns'):
+        folder = _root() / kind_dir
+        if not folder.is_dir():
+            continue
+        for stale in folder.glob('*.yaml'):
+            if stale.relative_to(_root()).as_posix() in indexed_paths:
+                continue
+            old = read_yaml(stale) or {}
+            # Remove only duplicate projections whose logical record is still
+            # represented in the new index; unrelated files remain for lint.
+            if old.get('id') in indexed_ids:
+                stale.unlink()
     for relative, payload in files:
         atomic_write(_root() / relative, payload, as_yaml=True)
     atomic_write(_root() / 'index.yaml', {'schema_version': 'uia-knowledge-index.v2', 'entries': rows}, as_yaml=True)
@@ -445,7 +467,7 @@ def exploration_knowledge(purpose=None, entry=None):
             'exploration_for_missing_controls': bool(missing)}
 
 
-def writeback(base, m):
+def _writeback_unchecked(base, m):
     """Persist only entries backed by successful execution and repeated use."""
     pages = catalog('page-map.yaml') or {'schema_version': 'page-map.v1', 'pages': {}, 'targets': {}}
     experience = catalog('experience.yaml') or {'schema_version': 'uia-experience.v1', 'entries': {}}
@@ -602,7 +624,8 @@ def writeback(base, m):
         existing = experience['entries'].get(key)
         if existing != item: experience['entries'][key] = item; changes.append({'kind': 'experience', 'name': key, 'case_ids': sorted(case_ids)})
     atomic_write(_root() / 'page-map.yaml', pages, as_yaml=True)
-    atomic_write(common.ROOT / 'assets/playwright-runner/knowledge/page-map.yaml', pages, as_yaml=True)
+    if _root().resolve() == (common.ROOT / 'knowledge').resolve():
+        atomic_write(common.ROOT / 'assets/playwright-runner/knowledge/page-map.yaml', pages, as_yaml=True)
     atomic_write(_root() / 'experience.yaml', experience, as_yaml=True)
     sync_layout(pages=pages, experience=experience)
     if any(row.get('kind') == 'partial_route' for row in changes):
@@ -612,6 +635,249 @@ def writeback(base, m):
               'partial_count': sum(row.get('kind', '').startswith('partial_') for row in changes), 'at': now()}
     m['knowledge_writeback'] = result
     return result
+
+
+def writeback(base, m):
+    """Write knowledge transactionally; restore catalogs if validation fails."""
+    import shutil
+    import subprocess
+    root = _root()
+    had_index = (root / 'index.yaml').is_file()
+    mirror = common.ROOT / 'assets/playwright-runner/knowledge'
+    roots = list(dict.fromkeys([root, mirror]))
+    snapshots = {}
+    for folder in roots:
+        if folder.exists():
+            snapshots[folder] = {p.relative_to(folder): p.read_bytes() for p in folder.rglob('*') if p.is_file()}
+        else:
+            snapshots[folder] = None
+    try:
+        result = _writeback_unchecked(base, m)
+        if had_index:
+            validate()
+        checker = common.ROOT / 'scripts/check_knowledge.py'
+        if had_index and checker.is_file() and root.resolve() == (common.ROOT / 'knowledge').resolve():
+            check = subprocess.run(['python3', str(checker)],
+                                   cwd=common.ROOT, capture_output=True, text=True, timeout=30)
+            require(check.returncode == 0, 'Knowledge check failed after write-back; changes rolled back')
+        return result
+    except Exception:
+        for folder, files in snapshots.items():
+            if folder.exists():
+                shutil.rmtree(folder)
+            if files is not None:
+                folder.mkdir(parents=True, exist_ok=True)
+                for relative, content in files.items():
+                    target = folder / relative
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_bytes(content)
+        raise
+
+
+def bind_spec_placeholders(base, m):
+    """Bind uniquely named spec placeholders to deterministic known targets."""
+    import unicodedata
+    from .common import atomic_write, file_hash
+    pages = catalog('page-map.yaml') or {'schema_version': 'page-map.v1', 'pages': {}, 'targets': {}}
+    targets = pages.get('targets', {})
+    index = load_index()
+    known = {}
+    for item in index:
+        if not item.get('id', '').startswith('target.'):
+            continue
+        body = load_item(item) or {}
+        known[item['id'].removeprefix('target.')] = (item, body)
+    index_by_id = {item.get('id'): item for item in index}
+    def norm(value):
+        return re.sub(r'[^a-z0-9\u4e00-\u9fff]+', '', unicodedata.normalize('NFKC', str(value or '')).casefold())
+    bound = []
+    applied = []
+    for cid, case in m.get('cases', {}).items():
+        rel = case.get('case_spec')
+        path = Path(base) / rel if rel else None
+        if not path or not path.is_file():
+            continue
+        spec = read_yaml(path) or {}
+        case_page = spec.get('start_page')
+        bindings = case.setdefault('kb_bindings', [])
+        changed = False
+        # Apply explicit run.json bindings first. These are the result of a previous
+        # deterministic KB match or a confirmed exploration and must survive go resumes.
+        recorded = {row.get('placeholder'): row.get('target') for row in bindings
+                    if isinstance(row, dict) and row.get('placeholder') and row.get('target')
+                    and row.get('source') != 'knowledge-page'}
+        recorded.update(case.get('target_bindings') or {})
+        def apply_recorded(value):
+            nonlocal changed
+            if not isinstance(value, str):
+                return value
+            target = recorded.get(value)
+            if target:
+                changed = True
+                applied.append({'case_id': cid, 'placeholder': value, 'target': target,
+                                'source': next((row.get('source', 'run-binding') for row in bindings
+                                                if isinstance(row, dict) and row.get('placeholder') == value), 'run-binding')})
+                bound.append({'case_id': cid, 'placeholder': value, 'target': target,
+                              'source': applied[-1]['source']})
+                return target
+            return value
+        if isinstance(spec.get('start_page'), str):
+            page_binding = recorded.get(spec['start_page'])
+            if page_binding in (pages.get('pages') or {}):
+                spec['start_page'] = apply_recorded(spec['start_page'])
+        for step in spec.get('steps', []):
+            if isinstance(step, dict): step['target'] = apply_recorded(step.get('target'))
+        for assertion in spec.get('assertions', []):
+            for check in assertion.get('checks', []):
+                if isinstance(check, dict): check['target'] = apply_recorded(check.get('target'))
+
+        # A page placeholder may describe an editor context rather than a locator.
+        # Resolve it through confirmed entry flows and the page-map's declared entry.
+        def resolve_page(value):
+            if not isinstance(value, str) or not value.startswith(('?', '？')):
+                return value
+            needle = norm(value.lstrip('?？'))
+            page_names = set((pages.get('pages') or {}))
+            page_candidates = []
+            for page_name, page_row in (pages.get('pages') or {}).items():
+                labels = [page_name, page_row.get('entry'), page_row.get('label'), *(page_row.get('aliases') or [])]
+                score = max((100 if needle == norm(label) else 80 if norm(label) and
+                             (needle in norm(label) or norm(label) in needle) else 0
+                             for label in labels), default=0)
+                if score: page_candidates.append((score, page_name))
+            # Confirmed entry flows often name the editor context even when the
+            # page-map entry itself is generic (e.g. 产品描述 editor → FAQ panel).
+            entry_file = _root() / 'entries.yaml'
+            entry_doc = read_yaml(entry_file) if entry_file.is_file() else {}
+            if 'editor' in page_names and any(token in needle for token in
+                    (norm('编辑器'), norm('组件选择面板'), norm('FAQ组件'), norm('FAQ问答操作'))):
+                page_candidates.append((80, 'editor'))
+            for folder in (_root() / 'flows',):
+                for flow_file in folder.glob('*.yaml') if folder.is_dir() else []:
+                    flow = read_yaml(flow_file) or {}
+                    if not flow.get('confirmed'):
+                        continue
+                    text = ' '.join([str(flow.get('label') or ''), str(flow.get('path_text') or ''),
+                                     ' '.join(map(str, flow.get('aliases') or []))])
+                    if needle and needle in norm(text):
+                        inferred = 'editor' if any(token in norm(text) for token in ('产品描述','faq','编辑面板','组件')) else None
+                        if inferred in page_names: page_candidates.append((80, inferred))
+            if page_candidates:
+                page_best = {}
+                for score, name in page_candidates:
+                    page_best[name] = max(score, page_best.get(name, 0))
+                page_candidates = [(score, name) for name, score in page_best.items()]
+                page_candidates.sort(key=lambda row: (-row[0], row[1]))
+                best = page_candidates[0]
+                if len(page_candidates) == 1 or page_candidates[1][0] < best[0]:
+                    record = {'placeholder': value, 'target': best[1], 'score': best[0], 'source': 'knowledge-page'}
+                    if record not in bindings: bindings.append(record)
+                    bound.append({'case_id': cid, **record})
+                    applied.append({'case_id': cid, 'placeholder': value, 'target': best[1],
+                                    'source': 'knowledge-page'})
+                    return best[1]
+            return value
+        if isinstance(spec.get('start_page'), str) and spec['start_page'].startswith(('?', '？')):
+            old = spec['start_page']
+            spec['start_page'] = resolve_page(old)
+            changed = changed or spec['start_page'] != old
+        case_page = spec.get('start_page')
+        def replace(value, preceding=''):
+            nonlocal changed
+            if not isinstance(value, str) or not value.startswith('?'):
+                return value
+            needle = norm(value[1:])
+            if len(needle) < 2:
+                return value
+            alias = None
+            if any(token in needle for token in ('组件选择面板', '组件添加弹窗', 'componentpanel')):
+                alias = 'editor.component-panel'
+            elif needle in {'网页组件', '网页组件菜单'}:
+                alias = 'faq-editor.group-controls.faqwebcomponents'
+            elif needle == 'faq':
+                alias = 'faq-editor.entry.faq.component.entry'
+            if alias and alias in known and alias not in targets:
+                item, body = known[alias]
+                targets[alias] = {k: value for k, value in body.items()
+                                  if k not in {'id', 'kind', 'created_at'}}
+                targets[alias].update(page=item.get('page'), route=item.get('route', ''))
+                pages['targets'] = targets
+                from .entries import save_catalog
+                save_catalog('page-map.yaml', pages)
+            if alias and alias in targets:
+                record = {'placeholder': value, 'target': alias, 'score': 100, 'source': 'knowledge-alias'}
+                if record not in bindings: bindings.append(record)
+                bound.append({'case_id': cid, **record})
+                applied.append({'case_id': cid, 'placeholder': value, 'target': alias, 'source': record['source']})
+                changed = True
+                return alias
+            scored = []
+            for name, row in targets.items():
+                known_item = index_by_id.get('target.' + name)
+                candidate_page = row.get('page')
+                if not candidate_page and name.startswith('faq-editor.') and 'editor' in (pages.get('pages') or {}):
+                    candidate_page = 'editor'
+                if not candidate_page:
+                    candidate_page = (known_item or {}).get('page')
+                if case_page in (pages.get('pages') or {}) and candidate_page and candidate_page not in {case_page, '*'}:
+                    continue
+                labels = [name, row.get('label'), row.get('name'), row.get('text'), row.get('selector'),
+                          *(row.get('aliases') or []), *(row.get('tags') or [])]
+                if name in known:
+                    item, body = known[name]
+                    labels.extend([item.get('summary'), *(item.get('tags') or []), body.get('selector'),
+                                   body.get('label'), body.get('name'), body.get('text'), body.get('faq')])
+                score = max((100 if needle == norm(label) else
+                             80 if norm(label) and (needle in norm(label) or norm(label) in needle) else 0
+                             for label in labels), default=0)
+                if score >= 80:
+                    scored.append((score, name))
+            scored.sort(key=lambda item: (-item[0], item[1]))
+            if not scored:
+                return value
+            # A concrete case page wins first; when no page is known, use the best
+            # semantic match and a stable catalog-name tie-break instead of discarding
+            # every candidate because another page has the same visible label.
+            if case_page in (pages.get('pages') or {}):
+                page_scored = [(score, name) for score, name in scored
+                               if ((targets[name].get('page') or
+                                    ('editor' if name.startswith('faq-editor.') and 'editor' in (pages.get('pages') or {}) else None) or
+                                    (index_by_id.get('target.' + name) or {}).get('page'))) in {case_page, '*'}]
+                if page_scored: scored = page_scored
+            if len(scored) > 1 and scored[0][0] == scored[1][0]:
+                same_page = [row for row in scored if (targets[row[1]].get('page') or
+                             ('editor' if row[1].startswith('faq-editor.') and 'editor' in (pages.get('pages') or {}) else None) or
+                             (index_by_id.get('target.' + row[1]) or {}).get('page')) == case_page]
+                if len(same_page) == 1: scored = same_page
+                else: scored = sorted(scored, key=lambda row: row[1])
+            name, score = scored[0][1], scored[0][0]
+            record = {'placeholder': value, 'target': name, 'score': score, 'source': 'knowledge'}
+            if record not in bindings:
+                bindings.append(record)
+            bound.append({'case_id': cid, **record})
+            applied.append({'case_id': cid, 'placeholder': value, 'target': name, 'source': record['source']})
+            changed = True
+            return name
+        previous = ''
+        for step in spec.get('steps', []):
+            if isinstance(step, dict):
+                step['target'] = replace(step.get('target'), previous)
+                previous = str(step.get('target') or '')
+        for assertion in spec.get('assertions', []):
+            for check in assertion.get('checks', []):
+                check['target'] = replace(check.get('target'))
+        if changed:
+            atomic_write(path, spec, as_yaml=True)
+            case['spec_hash'] = file_hash(path)
+    if pages != catalog('page-map.yaml'):
+        from .entries import save_catalog
+        save_catalog('page-map.yaml', pages)
+    unique = {(row['case_id'], row['placeholder'], row['target']): row for row in bound}
+    bound = [unique[key] for key in sorted(unique)]
+    m['kb_reused_bindings'] = bound
+    unique_applied = {(row['case_id'], row['placeholder'], row['target']): row for row in applied}
+    m['kb_bindings_applied'] = [unique_applied[key] for key in sorted(unique_applied)]
+    return {'bound': bound, 'applied': m['kb_bindings_applied'], 'count': len(bound)}
 
 
 def _spec_targets(base, case):

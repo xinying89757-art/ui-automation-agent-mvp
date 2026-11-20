@@ -1,0 +1,850 @@
+/**
+ * Shared content-editor page object.
+ * Login material comes from the private config or UIA_ACCOUNT/UIA_PASSWORD.
+ * Stable Playwright locators run first. Midscene runs only after they fail, and only when configured.
+ */
+import fs from 'node:fs';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { credentials, loginOnce, openSiteArea, selectTargetSite, authenticatedSession } from './auth.mjs';
+import { loadConfig } from './environment.mjs';
+import { openTarget, pageMap, targetLocator } from './navigation.mjs';
+import { performWithPatterns } from './interaction-patterns.mjs';
+import { SkeletonError, publicReason } from './skeleton-errors.mjs';
+import { locateControl, midsceneEnabled, setMidsceneAdapter, visualAssert as midsceneVisualAssert } from './midscene-bridge.mjs';
+import { clickPreviewForURL, ENTRY_NAV_TIMEOUT_MS, operationColumnIndex, previewURLFromAction, selectRowAction } from './row-actions.mjs';
+
+export { SkeletonError, midsceneEnabled, setMidsceneAdapter };
+export { CODES } from './skeleton-errors.mjs';
+
+const EDITABLE = '.tiptap.ProseMirror, [contenteditable="true"]:not(.cm-content)';
+// Rich-text editors win over any other editable (e.g. a hidden CodeMirror HTML-source pane in the same page).
+const RICH_EDITABLE = '.tiptap.ProseMirror';
+const CLOSE_LABEL = /^(关闭|我知道了|知道了|×)$/u;
+
+function sessionOf(options = {}) {
+  if (options.session) return options.session;
+  const session = { rescues: [], keyboardFallbacks: 0, lastReadBack: null };
+  options.session = session;
+  return session;
+}
+
+function noteRescue(page, session, control) {
+  const row = { control: String(control).slice(0, 120), at: new Date().toISOString(), case_id: session.caseId || null };
+  session.rescues.push(row);
+  const dir = process.env.UIA_RESULTS_DIR;
+  if (dir) {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.appendFileSync(path.join(dir, 'rescued-by-midscene.jsonl'), JSON.stringify(row) + '\n');
+  }
+  return import('@playwright/test').then(({ test }) => {
+    try { test.info().annotations.push({ type: 'rescued_by_midscene', description: row.control }); }
+    catch { /* Outside a Playwright test the JSONL record is enough. */ }
+  }).catch(() => {});
+}
+
+/** Credentials from a private file or env. Never from source literals. */
+export function resolveCredentials(cfg, env = process.env) {
+  if (cfg?.auth?.credentials_file) return credentials(cfg);
+  const account = env.UIA_ACCOUNT;
+  const password = env.UIA_PASSWORD;
+  if (typeof account === 'string' && account.trim() && typeof password === 'string' && password)
+    return { account: account.trim(), password };
+  throw new SkeletonError('LOGIN_FAILED', '缺少环境变量或 .auth 凭据引用');
+}
+
+async function submitLoginForm(page, cfg, env) {
+  const value = resolveCredentials(cfg, env);
+  const field = page.locator('#loginName');
+  if (!await field.isVisible().catch(() => false))
+    await page.goto(cfg.environment.login_url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+  await page.locator('#loginName').fill(value.account);
+  await page.locator('#password').fill(value.password);
+  await page.locator('#loginSubmit').click();
+  await page.waitForFunction(() => {
+    const input = document.querySelector('#loginName');
+    const loggedOut = input && input.getClientRects().length > 0;
+    const dashboard = document.querySelector('.contentShow, .wrap-webSite');
+    return !loggedOut && Boolean(dashboard && dashboard.getClientRects().length);
+  }, null, { timeout: 15000 });
+}
+
+/** @param {import('@playwright/test').Page} page */
+export async function login(page, options = {}) {
+  const cfg = options.cfg ?? loadConfig(options.configPath);
+  try {
+    if (options.fixture) {
+      await page.goto(options.fixture, { waitUntil: 'domcontentloaded' });
+      await submitLoginForm(page, cfg, options.env);
+      return { ok: true, reused: false };
+    }
+    await loginOnce(page, cfg);
+    return { ok: true, reused: false };
+  } catch (error) {
+    if (error instanceof SkeletonError) throw error;
+    throw new SkeletonError('LOGIN_FAILED', '登录失败', { reason: publicReason(error, 'LOGIN_FAILED') });
+  }
+}
+
+/** Opens an authenticated browser context. The summary does not include the account or site host. */
+export async function openSession(browser, options = {}) {
+  const cfg = options.cfg ?? loadConfig(options.configPath);
+  try {
+    const session = await authenticatedSession(browser, cfg, { allowLogin: true, force: Boolean(options.force), manual: Boolean(options.manual) });
+    return session;
+  } catch (error) {
+    const reason = publicReason(error, 'LOGIN_FAILED');
+    const code = reason === 'ENVIRONMENT_UNREACHABLE' || reason === 'ENVIRONMENT_MISMATCH' ? 'NAV_FAILED' : 'LOGIN_FAILED';
+    throw new SkeletonError(code, '登录或环境失败', { reason });
+  }
+}
+
+export async function enterSite(page, options = {}) {
+  const cfg = options.cfg ?? loadConfig(options.configPath);
+  try {
+    const selected = await selectTargetSite(page, cfg);
+    return { ok: true, kind: selected?.kind ?? 'site' };
+  } catch (error) {
+    throw new SkeletonError('NAV_FAILED', '未能进入目标站点', { reason: publicReason(error, 'NAV_FAILED') });
+  }
+}
+
+async function clickExact(root, text, timeout = 2500) {
+  const loc = root.getByText(text, { exact: true }).first();
+  if (!await loc.isVisible().catch(() => false)) return false;
+  await loc.click({ timeout });
+  return true;
+}
+
+async function clickAnywhere(page, text, timeout = 6000) {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    for (const frame of page.frames()) {
+      if (await clickExact(frame, text, 1500)) return true;
+    }
+    await page.waitForTimeout(150);
+  }
+  return false;
+}
+
+async function actionDescription(locator, index) {
+  return locator.evaluate((element, order) => {
+    const icon = element.querySelector('i,svg,[class*="icon" i]');
+    const attr = (node, name) => node?.getAttribute?.(name) || '';
+    return {
+      index: order,
+      title: attr(element, 'title') || attr(icon, 'title'),
+      aria: attr(element, 'aria-label') || attr(icon, 'aria-label'),
+      text: (element.innerText || element.textContent || '').trim().slice(0, 80),
+      className: typeof element.className === 'string' ? element.className : '',
+      iconClass: typeof icon?.className === 'string' ? icon.className : attr(icon, 'class'),
+      href: attr(element, 'href') || attr(element, 'data-href') || attr(element, 'data-url') || attr(element, 'data-route'),
+    };
+  }, index).catch(() => ({ index }));
+}
+
+async function rowActionLocator(page, purpose, deadline) {
+  for (const frame of page.frames()) {
+    const tables = frame.locator('table, [role="grid"]');
+    for (let tableIndex = 0; tableIndex < await tables.count().catch(() => 0); tableIndex += 1) {
+      const table = tables.nth(tableIndex);
+      const headers = table.locator('thead th, thead td, [role="columnheader"]');
+      const headerLabels = [];
+      for (let i = 0; i < await headers.count().catch(() => 0); i += 1) {
+        headerLabels.push((await headers.nth(i).innerText().catch(() => '')).trim());
+      }
+      const rows = table.locator('tbody tr, [role="row"]');
+      for (let rowIndex = 0; rowIndex < await rows.count().catch(() => 0); rowIndex += 1) {
+        if (Date.now() >= deadline) return null;
+        const row = rows.nth(rowIndex);
+        if (!await row.isVisible().catch(() => false)) continue;
+        const cells = row.locator('td, [role="gridcell"]');
+        const cellCount = await cells.count().catch(() => 0);
+        const operationIndex = operationColumnIndex(headerLabels, cellCount);
+        const cell = operationIndex >= 0 ? cells.nth(operationIndex) : null;
+        if (!cell || !await cell.isVisible().catch(() => false)) continue;
+        const controls = cell.locator('a, button, [role="button"]');
+        const count = await controls.count().catch(() => 0);
+        if (count !== 5) continue;
+        const actions = [];
+        for (let i = 0; i < count; i += 1) actions.push(await actionDescription(controls.nth(i), i));
+        const chosen = selectRowAction(actions, purpose);
+        if (!chosen) continue;
+        const locator = controls.nth(chosen.index);
+        if (!await locator.isVisible().catch(() => false)) {
+          await row.hover({ timeout: Math.min(1500, Math.max(1, deadline - Date.now())) }).catch(() => {});
+          await locator.waitFor({ state: 'visible', timeout: Math.min(1200, Math.max(1, deadline - Date.now())) }).catch(() => {});
+        }
+        // The tooltip can be the only accessible label on icon-only controls.
+        await locator.hover({ timeout: Math.min(1000, Math.max(1, deadline - Date.now())) }).catch(() => {});
+        const revealed = await actionDescription(locator, chosen.index);
+        if (!revealed.title && !revealed.aria && !revealed.text) {
+          for (const tip of [frame.locator('[role="tooltip"]'), frame.locator('.tooltip,.tooltip-inner,.ant-tooltip-inner')]) {
+            const tipCount = await tip.count().catch(() => 0);
+            for (let tipIndex = 0; tipIndex < tipCount; tipIndex += 1) {
+              const item = tip.nth(tipIndex);
+              if (!await item.isVisible().catch(() => false)) continue;
+              const tooltip = (await item.innerText().catch(() => '')).trim();
+              if (tooltip) { revealed.tooltip = tooltip.slice(0, 40); break; }
+            }
+            if (revealed.tooltip) break;
+          }
+        }
+        const safe = selectRowAction(actions.map((item, i) => i === chosen.index ? revealed : item), purpose);
+        if (!safe) continue;
+        return locator;
+      }
+    }
+  }
+  return null;
+}
+
+async function clickEdit(page, kind, deadline) {
+  const edit = await rowActionLocator(page, 'edit', deadline);
+  if (edit) {
+    if (Date.now() >= deadline) throw new SkeletonError('ENTRY_NAV_TIMEOUT', '详情编辑入口导航超过 60 秒');
+    const before = page.url();
+    const popup = page.context().waitForEvent('page', { timeout: Math.min(5000, Math.max(1, deadline - Date.now())) }).catch(() => null);
+    await edit.click({ timeout: Math.min(4000, Math.max(1, deadline - Date.now())) });
+    const destination = await popup;
+    if (destination) {
+      await destination.waitForLoadState('domcontentloaded', { timeout: Math.min(5000, Math.max(1, deadline - Date.now())) }).catch(() => {});
+      return destination;
+    }
+    if (page.url() !== before) return page;
+    return page;
+  }
+  const frameSel = kind === 'article' ? 'iframe[name="article"]' : 'iframe[name="prod"]';
+  const locator = page.frameLocator(frameSel);
+  const legacy = locator.locator('a[href*="invokeAction=prod_new_update"], a[href*="article_edit"], a.edit-detail').first();
+  if (await legacy.isVisible().catch(() => false)) {
+    const details = await actionDescription(legacy, 0);
+    selectRowAction([details], 'edit');
+    if (Date.now() >= deadline) throw new SkeletonError('ENTRY_NAV_TIMEOUT', '详情编辑入口导航超过 60 秒');
+    await legacy.click({ timeout: Math.min(4000, Math.max(1, deadline - Date.now())) });
+    return page;
+  }
+  return null;
+}
+
+export async function captureFrontendPreviewURL(page, options = {}) {
+  const deadline = Date.now() + Math.min(options.timeout ?? 5000, ENTRY_NAV_TIMEOUT_MS);
+  const preview = await rowActionLocator(page, 'preview', deadline);
+  if (!preview) return null;
+  const action = await actionDescription(preview, 2);
+  const directURL = previewURLFromAction(action, page.url());
+  if (directURL && new URL(directURL).origin !== new URL(page.url()).origin) return directURL;
+  return clickPreviewForURL(page, preview, { timeout: Math.min(3000, Math.max(1, deadline - Date.now())) });
+}
+
+async function openDetail(page, kind, deadline, options = {}) {
+  const label = kind === 'article' ? '文章' : '产品';
+  const tab = kind === 'article' ? '正文' : '产品描述';
+  if (Date.now() >= deadline) throw new SkeletonError('ENTRY_NAV_TIMEOUT', '详情编辑入口导航超过 60 秒');
+  const frameSel = kind === 'article' ? 'iframe[name="article"]' : 'iframe[name="prod"]';
+  await page.locator(frameSel).first().waitFor({ state: 'attached', timeout: Math.min(5000, Math.max(1, deadline - Date.now())) }).catch(() => {});
+  await clickAnywhere(page, label, Math.min(3000, Math.max(1, deadline - Date.now())));
+  if (options.onEntry) await options.onEntry(page, kind);
+  const destination = await clickEdit(page, kind, deadline);
+  if (!destination) throw new SkeletonError('NAV_FAILED', '未找到详情编辑入口', { reason: 'ROW_EDIT_ACTION_NOT_FOUND' });
+  await clickAnywhere(destination, tab, Math.min(3000, Math.max(1, deadline - Date.now())));
+  return destination;
+}
+
+/** @param {import('@playwright/test').Page} page */
+export async function openContentEditor(page, options = {}) {
+  const cfg = options.cfg ?? loadConfig(options.configPath);
+  const deadline = Date.now() + Math.min(options.entryTimeout ?? ENTRY_NAV_TIMEOUT_MS, ENTRY_NAV_TIMEOUT_MS);
+  const withinDeadline = (promise, message = '详情编辑入口导航超过 60 秒') => {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) return Promise.reject(new SkeletonError('ENTRY_NAV_TIMEOUT', message));
+    let timer;
+    return Promise.race([
+      promise,
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new SkeletonError('ENTRY_NAV_TIMEOUT', message)), remaining); }),
+    ]).finally(() => clearTimeout(timer));
+  };
+  let surface = page;
+  if (!options.skipEntry) {
+    try { surface = await withinDeadline(openSiteArea(page, cfg, '内容管理')); }
+    catch (error) {
+      if (error instanceof SkeletonError && error.code === 'ENTRY_NAV_TIMEOUT') throw error;
+      throw new SkeletonError('NAV_FAILED', '未能进入内容管理', { reason: publicReason(error, 'NAV_FAILED') });
+    }
+  }
+  const order = options.kind === 'article' || options.kind === 'product' ? [options.kind] : ['product', 'article'];
+  let last = new SkeletonError('NAV_FAILED', '未能打开内容编辑器');
+  for (const kind of order) {
+    try {
+      if (Date.now() >= deadline) throw new SkeletonError('ENTRY_NAV_TIMEOUT', '详情编辑入口导航超过 60 秒');
+      surface = await withinDeadline(openDetail(surface, kind, deadline, options));
+      await withinDeadline(waitForEditorReady(surface, { ...options, kind,
+        timeout: Math.min(options.readyTimeout ?? 20000, Math.max(1, deadline - Date.now())) }));
+      return surface;
+    } catch (error) {
+      last = error instanceof SkeletonError ? error : new SkeletonError('NAV_FAILED', '未能打开内容编辑器');
+      if (error?.code === 'DELETE_GUARD') throw new SkeletonError('DELETE_GUARD', '拒绝点击已识别的删除/垃圾桶行操作');
+      if (last.code === 'OVERLAY_BLOCKING') throw last;
+    }
+  }
+  throw last;
+}
+
+async function frameChain(frame) {
+  const chain = [];
+  let current = frame;
+  while (current?.parentFrame?.()) {
+    try {
+      const element = await current.frameElement();
+      const selector = await element.evaluate(node => node.id ? `#${CSS.escape(node.id)}` : node.getAttribute('name') ? `iframe[name="${node.getAttribute('name')}"]` : 'iframe');
+      chain.unshift(selector);
+    } catch { break; }
+    current = current.parentFrame();
+  }
+  return chain;
+}
+
+async function dismissOverlays(frame) {
+  const overlay = frame.locator('.blocking-overlay, [data-uia-overlay="blocking"]').first();
+  if (!await overlay.isVisible().catch(() => false)) return;
+  const close = overlay.locator('button, [role="button"], a').filter({ hasText: CLOSE_LABEL }).first();
+  if (await close.isVisible().catch(() => false)) await close.click({ timeout: 2000 }).catch(() => {});
+  if (await overlay.isVisible().catch(() => false))
+    throw new SkeletonError('OVERLAY_BLOCKING', '遮罩挡住了编辑器');
+}
+
+/** Re-resolves the editable root after iframe redraws. */
+export async function resolveEditor(page, options = {}) {
+  const preferred = options.kind === 'article' ? 'article' : options.kind === 'product' ? 'prod' : '';
+  const ordered = [...page.frames()].sort((a, b) => {
+    const score = frame => (preferred && frame.name() === preferred ? 0 : frame.url().includes('canvas') ? 1 : 2);
+    return score(a) - score(b);
+  });
+  for (const selector of [RICH_EDITABLE, EDITABLE]) {
+    for (const frame of ordered) {
+      const editable = frame.locator(selector).first();
+      if (!await editable.count().catch(() => 0)) continue;
+      if (!await editable.isVisible().catch(() => false)) continue;
+      await dismissOverlays(frame);
+      const chain = await frameChain(frame);
+      return { frame, editable: frame.locator(selector).first(), chain };
+    }
+  }
+  return null;
+}
+
+export async function waitForEditorReady(page, options = {}) {
+  const timeout = options.timeout ?? 20000;
+  const deadline = Date.now() + timeout;
+  let last = '编辑器未出现';
+  while (Date.now() < deadline) {
+    try {
+      const resolved = await resolveEditor(page, options);
+      if (resolved) return { ready: true, chain: resolved.chain };
+    } catch (error) {
+      if (error instanceof SkeletonError && error.code === 'OVERLAY_BLOCKING') throw error;
+      last = error instanceof Error ? error.message : last;
+    }
+    await page.waitForTimeout(200);
+  }
+  throw new SkeletonError('EDITOR_NOT_READY', '编辑器未就绪', { reason: last.slice(0, 120) });
+}
+
+async function focusEditable(page, options = {}) {
+  let resolved = await resolveEditor(page, options);
+  if (!resolved) resolved = await waitForEditorReady(page, options).then(() => resolveEditor(page, options));
+  if (!resolved) throw new SkeletonError('EDITOR_NOT_READY', '没有可编辑区域');
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const before = await resolved.editable.elementHandle();
+    await resolved.editable.click({ timeout: 3000 });
+    await page.waitForTimeout(40);
+    const again = await resolveEditor(page, options);
+    if (!again) continue;
+    const after = await again.editable.elementHandle();
+    const same = before && after ? await before.evaluate((node, other) => node === other, after).catch(() => false) : false;
+    resolved = again;
+    if (same) return resolved;
+  }
+  return resolved;
+}
+
+async function readEditorText(page, options = {}) {
+  for (const frame of page.frames()) {
+    const persisted = frame.locator('#persisted');
+    if (await persisted.count().catch(() => 0) && String(await persisted.innerText().catch(() => '')).trim())
+      return persisted.innerText();
+  }
+  const resolved = await resolveEditor(page, options);
+  if (!resolved) return '';
+  return resolved.editable.innerText().catch(() => '');
+}
+
+async function findCard(page, name, selector = '.slash-card, [data-component]') {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+  for (const frame of page.frames()) {
+    const panels = frame.locator([
+      '[data-component-panel]', '[data-component-menu]', '.component-panel', '.component-menu',
+      '.slash-menu', '.slash-menu-list', '[role="menu"]', '[role="listbox"]', '[role="dialog"]',
+    ].join(', '));
+    const panelCount = await panels.count().catch(() => 0);
+    for (let index = 0; index < panelCount; index += 1) {
+      const panel = panels.nth(index);
+      if (!await panel.isVisible().catch(() => false)) continue;
+      const scoped = panel.locator(selector).filter({ hasText: new RegExp(`^${escaped}$`, 'u') });
+      const count = await scoped.count().catch(() => 0);
+      for (let cardIndex = 0; cardIndex < count; cardIndex += 1) {
+        const card = scoped.nth(cardIndex);
+        if (await card.isVisible().catch(() => false)) return card;
+      }
+      const textMatch = panel.getByText(name, { exact: true });
+      if (await textMatch.count().catch(() => 0) === 1 && await textMatch.isVisible().catch(() => false)) return textMatch;
+    }
+    const cards = frame.locator(selector).filter({ hasText: new RegExp(`^${escaped}$`, 'u') });
+    const count = await cards.count().catch(() => 0);
+    for (let index = 0; index < count; index += 1) {
+      const card = cards.nth(index);
+      if (await card.isVisible().catch(() => false)) return card;
+    }
+  }
+  return page.locator(selector).filter({ hasText: name }).first();
+}
+
+async function findPlusButton(page) {
+  const selectors = [
+    'button.placeholder-plus', 'button[aria-label="添加组件"]', 'button[title="添加组件"]', '[data-action="add-component"]',
+    '[data-testid*="add-component"]', '.add-component-button', '.tiptap-plus-button',
+  ];
+  for (const frame of page.frames()) {
+    // Block-insert buttons are often revealed only while the pointer is over the editor body.
+    const surface = frame.locator('.tiptap-editor-wrapper, .tiptap.ProseMirror').first();
+    if (await surface.isVisible().catch(() => false)) await surface.hover({ timeout: 2000 }).catch(() => {});
+    for (const selector of selectors) {
+      const button = frame.locator(selector).first();
+      if (await button.isVisible().catch(() => false)) return button;
+    }
+    for (const label of ['+', '添加组件', '插入组件']) {
+      const button = frame.getByRole('button', { name: label, exact: true }).first();
+      if (await button.isVisible().catch(() => false)) return button;
+    }
+  }
+  return null;
+}
+
+async function openComponentPanel(page, options = {}) {
+  const plus = await findPlusButton(page);
+  if (plus) {
+    try {
+      await plus.click({ timeout: options.timeout ?? 3000 });
+      return { strategy: 'plus' };
+    } catch { /* The slash strategy below is the supported fallback. */ }
+  }
+  await focusEditable(page, options);
+  await page.keyboard.type('/');
+  return { strategy: 'slash' };
+}
+
+async function componentPresent(page, name) {
+  for (const frame of page.frames()) {
+    const node = frame.locator(`[data-component="${name}"].inserted-component, .inserted-component`).filter({ hasText: name }).first();
+    if (await node.isVisible().catch(() => false)) return true;
+  }
+  // Live editors often answer a card click with the component's own setup dialog/form (FAQ form,
+  // Markdown paste dialog) or a node whose type/class names the component, not a fixture marker.
+  const key = name.toLowerCase().replace(/[^a-z0-9]/gu, '');
+  for (const frame of page.frames()) {
+    const opened = await frame.locator('body').evaluate((body, { name, key }) => {
+      const visible = node => node.getBoundingClientRect().height > 0 && getComputedStyle(node).visibility !== 'hidden';
+      const menuOpen = [...body.querySelectorAll('.slash-menu, .slash-card')].some(visible);
+      const dialogs = [...body.querySelectorAll('[role="dialog"], .el-dialog, .modal, [class*="dialog" i], [class*="popup" i], [class*="modal" i]')]
+        .filter(visible).filter(node => !node.closest('.slash-menu'));
+      if (dialogs.some(node => (node.innerText || '').includes(name))) return true;
+      if (!key || menuOpen) return false;
+      return [...body.querySelectorAll('[data-type], [class]')].filter(visible).some(node =>
+        !node.closest('.slash-menu') && `${node.getAttribute('data-type') || ''} ${node.getAttribute('class') || ''}`.toLowerCase().replace(/[^a-z0-9 ]/gu, '').split(/\s+/u).some(token => token.includes(key)));
+    }, { name, key }).catch(() => false);
+    if (opened) return true;
+  }
+  return false;
+}
+
+async function keyboardFallback(page, name, session) {
+  session.keyboardFallbacks += 1;
+  const resolved = await focusEditable(page).catch(() => null);
+  if (!resolved) return false;
+  await page.keyboard.type(name);
+  await page.keyboard.press('Enter');
+  if (await componentPresent(page, name)) return true;
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
+  return componentPresent(page, name);
+}
+
+async function rescueClick(page, description, session, options = {}) {
+  if (!midsceneEnabled(options.env) && !options.adapter) return false;
+  const located = await locateControl(page, description, options);
+  if (!located) return false;
+  try {
+    await located.click({ timeout: 3000 });
+    await noteRescue(page, session, description);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Slash menu: click the card. Keyboard is only the fallback, and it must actually insert. */
+export async function insertComponent(page, name, options = {}) {
+  if (!name || typeof name !== 'string') throw new SkeletonError('CONTROL_MISSING', '组件名缺失');
+  const session = sessionOf(options);
+  const selector = options.cardSelector || '.slash-card, [data-component]';
+  let opened = await openComponentPanel(page, options);
+  try {
+    const card = await findCard(page, name, selector);
+    await card.waitFor({ state: 'visible', timeout: options.timeout ?? 4000 });
+    await card.scrollIntoViewIfNeeded().catch(() => {});
+    await card.click({ timeout: 3000 });
+  } catch {
+    if (opened.strategy === 'plus') {
+      await focusEditable(page, options);
+      await page.keyboard.type('/');
+      opened = { strategy: 'slash' };
+      try {
+        const card = await findCard(page, name, selector);
+        await card.waitFor({ state: 'visible', timeout: options.timeout ?? 4000 });
+        await card.scrollIntoViewIfNeeded().catch(() => {});
+        await card.click({ timeout: 3000 });
+      } catch { /* Try configured rescue and keyboard fallback below. */ }
+    }
+  }
+  if (!await componentPresent(page, name)) {
+    const rescued = await rescueClick(page, `slash card ${name}`, session, options);
+    if (!rescued) {
+      const typed = options.allowKeyboardFallback === false ? false : await keyboardFallback(page, name, session);
+      if (!typed) throw new SkeletonError('CONTROL_MISSING', '未找到可点击的组件卡片');
+    }
+  }
+  if (!await componentPresent(page, name)) throw new SkeletonError('CONTROL_MISSING', '组件卡片点击后没有插入');
+  return { ok: true, strategy: opened.strategy, keyboardFallbacks: session.keyboardFallbacks, rescued: session.rescues.length };
+}
+
+export async function typeText(page, text, options = {}) {
+  if (typeof text !== 'string') throw new SkeletonError('CONTROL_MISSING', '文本必须是字符串');
+  await focusEditable(page, options);
+  await page.keyboard.type(text);
+  let value = await readEditorText(page, options);
+  if (!value.includes(text)) {
+    const again = await focusEditable(page, options);
+    await again.editable.click();
+    await page.keyboard.type(text);
+    value = await readEditorText(page, options);
+  }
+  if (!value.includes(text)) throw new SkeletonError('EDITOR_NOT_READY', '重绘后文本没有留在编辑器里');
+  return { ok: true };
+}
+
+export async function selectMenuItem(page, name, options = {}) {
+  const session = sessionOf(options);
+  const item = () => {
+    const exact = new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')}$`, 'u');
+    return page.locator('[role="menuitem"], [role="option"], [data-menu-item]').filter({ hasText: exact }).first();
+  };
+  let found = null;
+  for (const frame of page.frames()) {
+    const candidate = frame.locator('[role="menuitem"], [role="option"], [data-menu-item]').filter({ hasText: name }).first();
+    if (await candidate.isVisible().catch(() => false)) { found = candidate; break; }
+  }
+  try {
+    const target = found || item();
+    await target.waitFor({ state: 'visible', timeout: 3000 });
+    await target.scrollIntoViewIfNeeded().catch(() => {});
+    await target.click({ timeout: 3000 });
+  } catch {
+    session.keyboardFallbacks += 1;
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('Enter');
+    const selected = page.frames();
+    let ok = false;
+    for (const frame of selected) {
+      ok = await frame.locator(`[data-menu-item="${name}"][data-selected="1"], [role="menuitem"][aria-selected="true"]`).count().then(count => count > 0).catch(() => false);
+      if (ok) break;
+    }
+    if (!ok) {
+      const rescued = await rescueClick(page, `menu item ${name}`, session, options);
+      if (!rescued) throw new SkeletonError('CONTROL_MISSING', '菜单项不可点');
+    }
+  }
+  return { ok: true, keyboardFallbacks: session.keyboardFallbacks };
+}
+
+async function findSave(page) {
+  const selectors = ['.topBts_menu_save', 'button.save', '#save'];
+  for (const frame of page.frames()) {
+    for (const selector of selectors) {
+      const button = frame.locator(selector).first();
+      if (await button.isVisible().catch(() => false)) return button;
+    }
+    const labeled = frame.getByRole('button', { name: '保存', exact: true }).first();
+    if (await labeled.isVisible().catch(() => false)) return labeled;
+  }
+  return null;
+}
+
+export async function saveEditor(page, options = {}) {
+  const button = await findSave(page);
+  if (!button) {
+    const session = sessionOf(options);
+    const rescued = await rescueClick(page, 'editor save button', session, options);
+    if (!rescued) throw new SkeletonError('CONTROL_MISSING', '未找到保存按钮');
+  } else {
+    try { await button.click({ timeout: 5000 }); }
+    catch {
+      const session = sessionOf(options);
+      const rescued = await rescueClick(page, 'editor save button', session, options);
+      if (!rescued) throw new SkeletonError('SAVE_FAILED', '保存按钮点击失败');
+    }
+  }
+  const timeout = options.timeout ?? 8000;
+  const waits = [];
+  // Some editors submit from a popup but render the completion layer in the
+  // authenticated opener. Search that page and every nested frame as one scope.
+  const pages = [...new Set([page, ...page.context().pages()])].filter(current => !current.isClosed());
+  const searched = [];
+  for (const [pageIndex, current] of pages.entries()) {
+    for (const frame of current.frames()) {
+      let location = { page: pageIndex, main: frame === current.mainFrame(), name: frame.name() || null, path: null };
+      try { location.path = new URL(frame.url()).pathname; } catch {}
+      searched.push(location);
+      waits.push(frame.locator('[data-uia-saved="1"], .save-ok').first()
+      .waitFor({ state: 'visible', timeout }).then(() => 'editor-marker'));
+      waits.push(frame.getByText(/保存成功|保存完成|已保存/u).first()
+      .waitFor({ state: 'visible', timeout }).then(() => 'success-notice'));
+      waits.push(frame.waitForFunction(() => /保存成功|保存完成|已保存/u.test(document.body?.innerText || ''), null, { timeout })
+        .then(() => 'success-body-text'));
+      waits.push(frame.waitForFunction(() => document.body?.getAttribute('data-uia-saved') === '1', null, { timeout })
+      .then(() => 'editor-marker'));
+    }
+  }
+  try { return { ok: true, signal: await Promise.any(waits) }; }
+  catch {
+    const observed = await Promise.all(pages.flatMap((current, pageIndex) => current.frames().map(async frame => {
+      let path = null;
+      try { path = new URL(frame.url()).pathname; } catch {}
+      const location = { page: pageIndex, main: frame === current.mainFrame(), name: frame.name() || null, path };
+      const success = await frame.getByText(/保存成功|保存完成|已保存/u).all().then(async nodes => {
+        for (const node of nodes) if (await node.isVisible().catch(() => false)) return true;
+        return false;
+      }).catch(() => false);
+      const validation = await frame.getByText(/请输入|不能为空|必填|请选择|保存失败|操作失败|错误/u).all().then(async nodes => {
+        for (const node of nodes) if (await node.isVisible().catch(() => false)) return true;
+        return false;
+      }).catch(() => false);
+      const bodySuccess = await frame.evaluate(() => /保存成功|保存完成|已保存/u.test(document.body?.innerText || '')).catch(() => false);
+      return { ...location, success_visible: success, success_body_text: bodySuccess, validation_visible: validation };
+    })));
+    throw new SkeletonError('SAVE_FAILED', '保存没有完成信号', { searched, observed });
+  }
+}
+
+export async function readBack(page, record = {}, options = {}) {
+  let current = page;
+  if (record?.reopen?.length) {
+    await current.reload({ waitUntil: 'domcontentloaded' }).catch(() => {});
+    for (const target of record.reopen) current = await openTarget(current, target, options);
+  }
+  const ctx = options.caseContext;
+  const map = options.map ?? safePageMap();
+  if (ctx && record?.save_target && map?.targets?.[record.save_target]?.network) {
+    const { verifyPersisted, readFieldValue } = await import('./remote-checks.mjs');
+    await verifyPersisted(current, ctx, record, map.targets[record.save_target].network,
+      async () => readFieldValue(targetLocator(current, record.target, { map })));
+    return current;
+  }
+  const text = await readEditorText(current, options);
+  if (record?.value != null && record.value !== '' && !String(text).includes(String(record.value)))
+    throw new SkeletonError('READBACK_MISMATCH', '保存后读回与预期不一致');
+  sessionOf(options).lastReadBack = { ok: true };
+  return current;
+}
+
+function safePageMap() {
+  try { return pageMap(); }
+  catch { return { targets: {}, pages: {} }; }
+}
+
+function patternsFor(entry, verb, target) {
+  const patterns = [...(entry?.patterns ?? [])];
+  const blob = `${target} ${entry?.selector ?? ''} ${entry?.role ?? ''}`;
+  const menu = /menu|listbox|suggest|command|slash|dropdown|option|menuitem/iu.test(blob);
+  if (verb === 'click' && menu && !patterns.includes('MENU_KEYBOARD')) patterns.push('MENU_KEYBOARD');
+  return patterns;
+}
+
+export async function actVerified(page, verb, target, value, patterns, options = {}) {
+  const map = options.map ?? safePageMap();
+  const entry = map.targets?.[target] ?? map.pages?.[target];
+  if (!entry) throw new SkeletonError('CONTROL_MISSING', '知识库没有这个控件');
+  const session = sessionOf(options);
+  const chosen = patterns?.length ? patterns : patternsFor(entry, verb, target);
+  const locate = () => targetLocator(page, target, { map });
+  const action = async node => {
+    if (verb === 'double_click') {
+      const { doubleClick } = await import('../flows/network-control.mjs');
+      await doubleClick(page, node);
+    } else if (verb === 'attempt_click') {
+      const { attemptClick } = await import('../flows/network-control.mjs');
+      await attemptClick(page, node);
+    } else if (verb === 'click' || verb === 'close') await node.click();
+    else if (verb === 'hover') await node.hover();
+    else if (verb === 'check') await node.check();
+    else if (verb === 'uncheck') await node.uncheck();
+    else if (verb === 'fill') await node.fill(value ?? '');
+    else if (verb === 'press') await node.press(value ?? '');
+    else if (verb === 'select') await node.selectOption(value ?? '');
+    else if (verb === 'upload') await node.setInputFiles(value ?? '');
+    else throw new SkeletonError('CONTROL_MISSING', '不支持的动作');
+  };
+  try {
+    await performWithPatterns(page, locate, chosen, action);
+    return { ok: true, rescued: false };
+  } catch (error) {
+    const rescued = await rescueClick(page, target, session, options);
+    if (!rescued) throw new SkeletonError('CONTROL_MISSING', '稳定定位失败', { reason: publicReason(error, 'CONTROL_MISSING') });
+    return { ok: true, rescued: true };
+  }
+}
+
+export async function expectVerified(page, target, op, value, extra = {}) {
+  const { expect } = await import('@playwright/test');
+  const map = extra.map ?? safePageMap();
+  if (op === 'occurrence_count') {
+    await expect.poll(() => extra.observations?.[target]?.count?.() ?? 0).toBe(value);
+    return;
+  }
+  if (op === 'request_count') {
+    await expect.poll(() => extra.networks?.[target]?.count?.() ?? 0).toBe(value);
+    return;
+  }
+  const loc = () => targetLocator(page, target, { map });
+  if (!map.targets?.[target] && !map.pages?.[target]) throw new SkeletonError('CONTROL_MISSING', '知识库没有这个控件');
+  if (op === 'visible_text') {
+    await expect.poll(() => loc().innerText()).toBe(value);
+    return;
+  }
+  if (op === 'blocked') {
+    await expect.poll(() => loc().evaluate(el => el.matches(':disabled') || el.getAttribute('aria-disabled') === 'true' || /disabled/i.test(el.className) || getComputedStyle(el).pointerEvents === 'none')).toBe(true);
+    return;
+  }
+  if (op === 'left_of') {
+    const other = targetLocator(page, value, { map });
+    expect((await loc().boundingBox()).x).toBeLessThan((await other.boundingBox()).x);
+    return;
+  }
+  const method = {
+    visible: 'toBeVisible', hidden: 'toBeHidden', text: 'toHaveText', contains: 'toContainText', value: 'toHaveValue',
+    attribute: 'toHaveAttribute', count: 'toHaveCount', enabled: 'toBeEnabled', disabled: 'toBeDisabled',
+  }[op];
+  if (!method) throw new SkeletonError('CONTROL_MISSING', '不支持的断言');
+  const args = [];
+  if (op === 'attribute') args.push(extra.attribute);
+  if (value !== undefined && !['visible', 'hidden', 'enabled', 'disabled'].includes(op)) args.push(value);
+  await expect(loc())[method](...args);
+}
+
+export async function observeTarget(page, target, options = {}) {
+  const map = options.map ?? safePageMap();
+  const text = map.targets?.[target]?.observe_text;
+  if (typeof text !== 'string') throw new SkeletonError('CONTROL_MISSING', '没有可观察文本');
+  const { observeOccurrences } = await import('../flows/network-control.mjs');
+  return observeOccurrences(page, text);
+}
+
+export async function visualAssert(page, expectation, options = {}) {
+  return midsceneVisualAssert(page, expectation, options);
+}
+
+/** One-time DOM inventory. Names are visible control labels, never field values. */
+export async function collectEditorControls(page, options = {}) {
+  const controls = [];
+  for (const frame of page.frames()) {
+    let found = [];
+    try {
+      found = await frame.locator('body').evaluate(root => {
+        const visible = node => {
+          const css = getComputedStyle(node);
+          return css.display !== 'none' && css.visibility !== 'hidden' && node.getClientRects().length > 0;
+        };
+        const interesting = [...root.querySelectorAll('button, a, [role="button"], [role="menuitem"], [role="option"], .slash-card, [data-component], [data-menu-item]')];
+        return interesting.filter(visible).map(node => {
+          const name = (node.getAttribute('aria-label') || node.getAttribute('data-component') || node.textContent || '').trim().replace(/\s+/gu, ' ').slice(0, 80);
+          let selector = '';
+          let strategy = '';
+          if (node.id && root.querySelectorAll(`#${CSS.escape(node.id)}`).length === 1) {
+            selector = `#${CSS.escape(node.id)}`;
+            strategy = 'id';
+          } else if (node.getAttribute('data-component')) {
+            const value = node.getAttribute('data-component');
+            const css = `[data-component="${value.replace(/"/gu, '')}"]`;
+            if (root.querySelectorAll(css).length === 1) { selector = css; strategy = 'data-component'; }
+          } else if (node.getAttribute('data-menu-item')) {
+            const value = node.getAttribute('data-menu-item');
+            const css = `[data-menu-item="${value.replace(/"/gu, '')}"]`;
+            if (root.querySelectorAll(css).length === 1) { selector = css; strategy = 'data-menu-item'; }
+          }
+          const role = node.getAttribute('role') || (node.tagName === 'BUTTON' ? 'button' : node.tagName === 'A' ? 'link' : '');
+          return { name, selector, strategy, role, match_count: selector ? 1 : 0 };
+        }).filter(item => item.match_count === 1 && item.name && !item.name.includes('@'));
+      });
+    } catch { found = []; }
+    const chain = await frameChain(frame);
+    for (const item of found) {
+      controls.push({ ...item, frame: chain[0] || '', nested_frames: chain.slice(1), midscene: false });
+    }
+  }
+  let midscene = 'skipped';
+  const adapter = options.adapter;
+  if (adapter?.locateSelector || midsceneEnabled(options.env)) {
+    midscene = 'used';
+    const selector = adapter?.locateSelector ? await adapter.locateSelector(page, 'editor control') : '';
+    if (typeof selector === 'string' && selector && selector.length < 200) {
+      let matches = 0;
+      for (const frame of page.frames()) matches += await frame.locator(selector).count().catch(() => 0);
+      if (matches === 1) {
+        const chain = await frameChain(page.frames().find(frame => frame !== page.mainFrame()) || page.mainFrame());
+        controls.push({ name: 'midscene-control', selector, strategy: 'midscene', role: '', match_count: 1, frame: chain[0] || '', nested_frames: chain.slice(1), midscene: true });
+      }
+    }
+  }
+  return { controls, midscene };
+}
+
+/**
+ * @param {(() => import('@playwright/test').Page) | import('@playwright/test').Page} getPage
+ */
+export function createContentEditor(getPage, options = {}) {
+  const read = typeof getPage === 'function' ? getPage : () => getPage;
+  const session = sessionOf(options);
+  session.caseId = options.caseContext?.caseId || options.caseId || null;
+  const call = (fn, args) => fn(read(), ...args, { ...options, session });
+  return {
+    session,
+    login: extra => login(read(), { ...options, ...extra }),
+    enterSite: extra => enterSite(read(), { ...options, ...extra }),
+    openContentEditor: extra => openContentEditor(read(), { ...options, ...extra, session }),
+    waitForEditorReady: extra => waitForEditorReady(read(), { ...options, ...extra }),
+    insertComponent: (name, extra) => insertComponent(read(), name, { ...options, ...extra, session }),
+    typeText: (text, extra) => typeText(read(), text, { ...options, ...extra, session }),
+    selectMenuItem: (name, extra) => selectMenuItem(read(), name, { ...options, ...extra, session }),
+    save: extra => saveEditor(read(), { ...options, ...extra, session }),
+    readBack: record => readBack(read(), record, { ...options, session }),
+    openTarget: target => openTarget(read(), target, options),
+    actVerified: (verb, target, value, patterns) => actVerified(read(), verb, target, value, patterns, { ...options, session }),
+    expectVerified: (target, op, value, extra) => expectVerified(read(), target, op, value, { ...options, ...extra }),
+    observe: target => observeTarget(read(), target, options),
+    visualAssert: (expectation, extra) => visualAssert(read(), expectation, { ...options, ...extra }),
+    rescues: () => session.rescues.map(item => ({ ...item })),
+  };
+}
+
+export function fixtureUrl(name = 'index.html') {
+  return pathToFileURL(path.join(path.dirname(new URL(import.meta.url).pathname), '../fixtures/editor-nested', name)).href;
+}

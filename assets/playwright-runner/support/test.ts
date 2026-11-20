@@ -141,6 +141,8 @@ export const test = base.extend<{ caseContext: CaseContext; lifecycle: void; adm
       await info.attach('uia-lifecycle', { contentType: 'application/json', body: Buffer.from(JSON.stringify({
         case_id: caseContext.caseId, batch_id: caseContext.batchId,
         setup_verified: setupVerified, cleanup_verified: cleanupVerified, cleanup_pending: Boolean((caseContext as any).cleanupPending),
+        precondition_check: (state as any)?.precondition_check ?? 'not_applicable',
+        preparation: (state as any)?.preparation ?? 'reused', prep_time_ms: (state as any)?.prep_time_ms ?? 0,
         owner_marker: caseContext.ownerMarker, fixture_ids: entry.fixture_ids,
       })) });
       if (cleanupError) throw new Error(`UIA_CLEANUP_FAILED: ${String(cleanupError)}`);

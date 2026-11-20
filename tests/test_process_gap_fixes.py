@@ -124,6 +124,15 @@ class ProcessGapFixTests(unittest.TestCase):
             result = environment_gate.preflight_run(base, manifest)
         self.assertTrue(result['cached'])
 
+    def test_preflight_block_only_classifies_selected_cases(self):
+        manifest = {'run_id': 'R', 'config': {}, 'selected_cases': ['C1'], 'cases': {
+            'C1': {'attempts': [], 'stage': 'execution', 'work_status': 'runnable'},
+            'C2': {'attempts': [], 'stage': 'spec', 'work_status': 'pending'}}}
+        environment_gate.block_run(manifest, common.UiaError('entry failed'))
+        self.assertEqual(manifest['cases']['C1']['result'], 'environment_blocked')
+        self.assertIsNone(manifest['cases']['C2'].get('result'))
+        self.assertEqual(manifest['cases']['C2']['work_status'], 'pending')
+
     def test_writeback_rolls_back_when_knowledge_validation_fails(self):
         common.atomic_write(knowledge.ROOT / 'index.yaml', {'schema_version': 'uia-knowledge-index.v2', 'entries': []}, as_yaml=True)
         before = (knowledge.ROOT / 'index.yaml').read_bytes()

@@ -27,7 +27,7 @@ def assert_private_credentials(cfg):
 
 
 def block_run(m, error):
-    """Mark every case environment-blocked and record the redacted reason."""
+    """Mark only the selected batch environment-blocked and keep other cases queued."""
     reason = scrub_text(str(error), m.get("config"))[:500]
     details = error.details if isinstance(getattr(error, "details", None), dict) else {}
     code = details.get("code")
@@ -42,7 +42,10 @@ def block_run(m, error):
                       "errors": [reason], "failure_class": "environment",
                       **({"timings_ms": timings} if timings else {}),
                       **({"auth_path": auth_path} if auth_path else {})}
-    for case in m.get("cases", {}).values():
+    selected = set(m.get('selected_cases') or m.get('cases', {}))
+    for cid, case in m.get("cases", {}).items():
+        if cid not in selected:
+            continue
         case.update(result="environment_blocked", stage="finished", work_status="finished",
                     pass_streak=0, stability="not_run" if not case.get("attempts") else "unstable",
                     failure_class="environment",

@@ -23,7 +23,8 @@ whole knowledge directory into a prompt. The default has no token truncation. Us
 `--max-tokens` is opt-in. Treat `needs_review` records as excluded. A positive
 `re_explored_known_pages` is a process issue to report and correct.
 
-Before presenting the checklist, classify every unmatched workbook precondition; ai_prepare/explore are AI tasks, human_env joins the single upfront question block.
+Before presenting the HTML review, classify unmatched workbook preconditions;
+ai_prepare/explore are AI tasks and human_env becomes a scoped review question.
 For any page with an entry hint, always begin with `snapshot --entry` / `generator --entry`.
 Follow the hinted backend area first; never start component exploration in another area.
 A generator failure classified `subagent_start` is infrastructure failure and never a demo rung.
@@ -60,7 +61,7 @@ For a new requirement, start with `python3 scripts/uia.py go <xlsx> --profile <p
 The output includes the run's shared HTML review page. Add key checks and genuinely unresolved questions to
 `review-input.json` in the run directory, citing the relevant workbook, design, prototype, or verified knowledge.
 Regenerate with `review-page render --run R`. Review questions once per shared gap, with the related case IDs.
-Show the HTML to the reviewer once the checklist is ready. Routine steps with clear evidence remain available
+Show the HTML when questions and key assertions are ready. Routine steps with clear evidence remain available
 under 全部用例 for optional correction. Receive the exported JSON with `review-page ingest --run R --file FILE`.
 Use `review-handoff.json` to find the received decisions and unanswered questions for each case. Receipt is not
 application: translate decisions to affected case-spec steps, assertions and run scope, preserving the source text.
@@ -121,8 +122,8 @@ Report begins with 结论 / 需要你处理 / 流程指标; all visible statuses
    Use `wait` for an active batch. Missing PIDs are not evidence that it stopped.
 5. Do not regenerate compatible registered scripts. Generate per-case final specs
    directly; no skeleton stage. Reuse verified parameterized flows and fixtures.
-   After `import`, the run queues one precondition checklist. Unmet items wait.
-   Do not spend the first minutes marking every case blocked.
+   Unmet human-only conditions wait in the review or question queue. Do not mark
+   unrelated cases blocked.
 
 ## Responsibilities and waits
 

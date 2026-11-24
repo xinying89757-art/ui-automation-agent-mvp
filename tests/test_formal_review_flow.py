@@ -68,6 +68,22 @@ class FormalReviewFlowTest(unittest.TestCase):
         self.assertTrue(args.headed)
         self.assertTrue(args.rerun)
 
+    def test_historical_intent_run_is_read_only(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory).resolve()
+            common.atomic_write(base / 'cases/C1/automation-intent.yaml', {'intent': {}}, as_yaml=True)
+            run = {'cases': {'C1': {'case_id': 'C1', 'stage': 'finished',
+                                    'intent': 'cases/C1/automation-intent.yaml'}},
+                   'active_batch': None}
+            self.assertTrue(workflow.historical_intent_run(base, run))
+            self.assertEqual(workflow.next_task(base, run)['action'], 'historical_read_only')
+            args = cli.parser().parse_args(['report', '--run', 'R'])
+            with self.assertRaisesRegex(common.UiaError, '仅供查看'):
+                cli.dispatch(args, base / 'run.json', run)
+            for command in ('advance', 'match'):
+                with self.assertRaises(common.UiaError):
+                    cli.parser().parse_args([command, '--run', 'R'])
+
     def test_binding_a_reviewed_assertion_needs_no_entry_question(self):
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)
@@ -101,6 +117,27 @@ class FormalReviewFlowTest(unittest.TestCase):
                 self.assertEqual(workflow.unbound_review_ids(run, run['cases']['C1'], base), ['A1', 'A2'])
                 run['human_review']['decisions'][1]['value'] = '调整后的预期'
                 self.assertEqual(workflow.unbound_review_ids(run, run['cases']['C1']), ['A1', 'A2'])
+
+    def test_batch_cannot_execute_unbound_review_even_with_existing_script(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory).resolve()
+            preflight = base / 'preflight.json'
+            common.atomic_write(preflight, {})
+            cli_file = base / 'runner/node_modules/@playwright/test/cli.js'
+            cli_file.parent.mkdir(parents=True)
+            cli_file.write_text('')
+            case = {'case_id': 'C1', 'work_status': 'runnable',
+                    'registration': {'script': 'runner/tests/existing.spec.ts', 'fixture': {}}}
+            run = {'run_id': 'R', 'pipeline': 'case-spec.v1', 'initial_review_required': True,
+                   'config_hash': 'config', 'config': {'execution': {'batch_size': 10}, 'auth': {}},
+                   'preflight': {'status': 'passed', 'config_hash': 'config', 'evidence': 'preflight.json',
+                                 'sha256': common.file_hash(preflight), 'auth_sha256': None},
+                   'cases': {'C1': case}, 'human_review': {'pending': [], 'decisions': [
+                       {'id': 'A1', 'status': 'confirmed', 'cases': ['C1'], 'value': '显示结果'}]}}
+            with patch.object(runtime, 'refresh'), \
+                 patch('uia_core.remote_checks.hold_path', return_value=base / 'no-hold'):
+                with self.assertRaisesRegex(common.UiaError, '审核答复尚未完整落实'):
+                    runtime.begin_batch(base, run, ['C1'])
 
 
 if __name__ == '__main__':

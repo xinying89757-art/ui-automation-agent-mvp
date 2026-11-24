@@ -42,12 +42,14 @@ def opening(m, metrics, review):
     if remote:
         waiting.append('公开文件待远程验证：' + '、'.join(remote) + '；见 remote-checks/request.json，不计通过。')
     needs = waiting + ([f"异步审核单 {len(review['items'])} 项；断言建议默认不应用。"] if review['items'] else [])
-    metrics_text = (f"清单问题 {metrics['checklist_questions']}（入口问题 {metrics.get('entry_question_count', 0)}），清单回答 {metrics['checklist_answers']}，中途提问 {metrics['mid_run_questions']}，"
-                    f"计划外人工介入 {metrics['unplanned_interventions']}，会话轮次 {metrics['session_turns']}；"
+    if m.get('initial_review_required'):
+        interaction_text = f"HTML 审核 {metrics.get('human_review_submissions', 0)} 次，中途提问 {metrics['mid_run_questions']} 次，中途答复 {metrics.get('mid_run_answers', 0)} 次，"
+    else:
+        interaction_text = f"清单问题 {metrics['checklist_questions']}（入口问题 {metrics.get('entry_question_count', 0)}），清单回答 {metrics['checklist_answers']}，中途提问 {metrics['mid_run_questions']}，"
+    metrics_text = (interaction_text + f"计划外人工介入 {metrics['unplanned_interventions']}，会话轮次 {metrics['session_turns']}；"
                     f"脚本实际执行覆盖率 {metrics['script_coverage']['ratio']:.1%}；"
                     f"越权 {metrics['scope_violations']}，泄露 {metrics['leak_hits']}，未审核断言变更 {metrics['unreviewed_assertion_changes']}。")
-    metrics_text += (f" HTML 审核 {metrics.get('human_review_submissions', 0)} 次，中途答复 {metrics.get('mid_run_answers', 0)} 次。"
-                     + ''.join(f"{label} {value / 1000:.1f} 秒。" if value is not None else f"{label} 未记录。"
+    metrics_text += (''.join(f"{label} {value / 1000:.1f} 秒。" if value is not None else f"{label} 未记录。"
                                for label, value in [('前置准备', metrics.get('preparation_duration_ms')),
                                                     ('正式执行', metrics.get('execution_duration_ms'))]))
     if metrics.get('timing_unrecorded_attempts'):
@@ -64,7 +66,7 @@ def opening(m, metrics, review):
         metrics_text += f"每条用例人工介入 {metrics['human_interventions_per_case']:.2f}。"
     hit = metrics.get('kb_hit_rate') or {}
     if hit.get('rate') is not None:
-        metrics_text += f"知识检索 {hit.get('retrieved', 0)} 条，规格或脚本引用 {hit.get('used', 0)} 条。"
+        metrics_text += f"知识检索 {hit.get('retrieved', 0)} 条，规格或脚本文本匹配 {hit.get('used', 0)} 条。"
     verified = metrics.get('verified_knowledge_use') or {}
     metrics_text += f"有执行证据的知识使用 {verified.get('count', 0)} 条。"
     if metrics.get('rescued_by_midscene') is not None:

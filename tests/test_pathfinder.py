@@ -18,6 +18,22 @@ DEMO = SOURCE / 'skills/spec-pathfinder/trial/fixtures/demo'
 
 
 class PathfinderStageTests(unittest.TestCase):
+    def test_projection_preserves_agent_changes_on_resume(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            run = {'cases': {'C1': {'case_id': 'C1'}}, 'pathfinder': {}}
+            brief = {'cases': {'C1': {'locked': False}}}
+            with patch.object(pathfinder, 'load_compiled', return_value=brief), \
+                 patch.object(pathfinder, '_pages_catalog', return_value={}), \
+                 patch.object(pathfinder, '_case_spec', return_value={'case_id': 'C1', 'expected': '原始'}):
+                self.assertEqual(pathfinder.project_specs(base, run), ['C1'])
+                path = base / run['cases']['C1']['case_spec']
+                common.atomic_write(path, {'case_id': 'C1', 'expected': '人工审核后的预期'}, as_yaml=True)
+                run['cases']['C1']['spec_hash'] = None  # refresh clears the old execution hash
+                self.assertEqual(pathfinder.project_specs(base, run), [])
+                self.assertEqual(common.read_yaml(path)['expected'], '人工审核后的预期')
+                self.assertEqual(run['cases']['C1']['spec_origin'], 'agent')
+
     def test_human_review_allows_source_literals_without_allowing_invented_code(self):
         pathfinder._safe_human('预期：生成 canonical/#faqpage；框架为 #tiptap-iframe。',
                                ['生成 canonical/#faqpage；框架为 #tiptap-iframe。'])

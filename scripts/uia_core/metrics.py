@@ -82,7 +82,7 @@ def leak_scan(base, cfg):
 
 
 def knowledge_hit_rate(base, m):
-    """Share of retrieved knowledge entries that the case spec or script actually references."""
+    """Count retrieved entries with a text match in a spec or script; this is not execution proof."""
     path = Path(base) / (m.get("knowledge_match") or {}).get("file", "knowledge-match.json")
     empty = {"retrieved": 0, "used": 0, "rate": None}
     if not path.is_file():

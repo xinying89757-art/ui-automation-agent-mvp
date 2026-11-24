@@ -111,7 +111,7 @@ class MetricsReportTests(unittest.TestCase):
             self.assertEqual(measured["knowledge_injected_tokens"]["p95"], 90)
             text = reports.opening(manifest, measured, {"items": []})[2]["text"]
             self.assertIn("失败分类占比", text)
-            self.assertIn("知识检索 2 条，规格或脚本引用 1 条", text)
+            self.assertIn("知识检索 2 条，规格或脚本文本匹配 1 条", text)
             self.assertIn("有执行证据的知识使用 0 条", text)
             self.assertIn("Midscene 挽救 2", text)
 

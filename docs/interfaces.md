@@ -115,9 +115,9 @@ python3 scripts/uia.py next --run REQ-001
 python3 scripts/uia.py bind --run REQ-001 --cases TC-01 TC-02 --flows product-create --fixtures products
 ```
 
-`go` 在导入和 bind-specs 之后运行 spec-pathfinder。默认只做无代码 v1，写出 `runs/<id>/spec-pathfinder/<需求>/SPEC-human-v1.md` 与 `DOUBTS-v1.md`。`--code` 额外运行索引器并写出执行版、证据附录和 v1→v2 升级记录；索引 JSON 只留在该 run 目录。存疑并入同一次 `checklist.md`（D 为未知入口，E 为路径/预期/前端控件）。本运行保留答复；未验证的业务结论只作为候选，不跨运行自动当作确认结果。随后的 `spec gen` 消费确认稿中的入口、步骤和预期。
+`go` 在导入和 bind-specs 之后运行 spec-pathfinder。默认只做无代码 v1，写出 `runs/<id>/spec-pathfinder/<需求>/SPEC-human-v1.md` 与 `DOUBTS-v1.md`。`--code` 额外运行索引器并写出执行版、证据附录和 v1→v2 升级记录；索引 JSON 只留在该 run 目录。业务存疑汇入 HTML 审核，未知入口及控件先由 Agent 探索。已手工修改的规格在后续 `go` 中保留。
 
-导入响应会提示先运行 `bind-specs`，索引 `tests/*.spec.ts` 并优先回放已有脚本。页面探索使用
+导入响应会提示先运行 `bind-specs`，索引 `tests/*.spec.ts`。已有脚本在相关审核答复落实后执行。页面探索使用
 `python3 scripts/uia.py snapshot --run REQ-001 --node page|content-admin|editor`：登录、打开目标页面、
 输出脱敏 DOM 结构（含同源 `#backstage-innerpage`）后退出。禁止原始 page/body、cookie 或 storage dump。
 

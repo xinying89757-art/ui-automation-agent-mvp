@@ -175,7 +175,7 @@ class EntryHintsTests(unittest.TestCase):
         with patch.object(metrics, 'leak_scan', return_value=[]):
             measured = metrics.calculate(self.base, self.m)
         self.assertEqual(measured['entry_question_count'], 1)
-        self.assertIn('入口问题 1', reports.opening(self.m, measured, {'items': []})[-1]['text'])
+        self.assertIn('HTML 审核', reports.opening(self.m, measured, {'items': []})[-1]['text'])
 
     def test_pending_d_answer_applies_even_if_final_checklist_is_already_known(self):
         self.case('C1', '?内容编辑器', '具备特殊条件')

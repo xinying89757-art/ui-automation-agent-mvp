@@ -97,8 +97,8 @@ clicks; frame_hint applies only to later caller actions. Scope with `--frame '#b
   a slow editor, or cases waiting on a precondition are not a reason to stop the run.
   Data preconditions (FAQ count, categories, navigation, homepage meta, site short name,
   quick contact, social widgets) are prepared and restored by the fixture. Human-only
-  preconditions stay `waiting_human` until the one checklist is answered; do not classify
-  them `not_suitable`.
+  preconditions stay `waiting_human` until their HTML review item or focused question
+  is answered; do not classify them `not_suitable`.
 
 Output: real case results/evidence, registered scripts, reusable local flows and remaining
 gaps. Return to the orchestrator after each batch. Do not silently mark unexecuted cases

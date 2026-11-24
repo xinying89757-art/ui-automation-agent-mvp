@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
-from uia_core import common, experience, workflow, profiles, specs, cli, metrics, reports, entries, preconditions
+from uia_core import common, experience, workflow, profiles, specs, cli, metrics, reports, entries, preconditions, review_page
 from openpyxl import Workbook
 
 SOURCE = Path(__file__).resolve().parents[1]
@@ -180,6 +180,65 @@ class PhaseThreeTests(unittest.TestCase):
             self.assertEqual(run.call_count, 1)
             self.assertEqual(second['spec_tasks'], [])
             self.assertTrue((self.root / 'runs' / first['run_id'] / 'spec-pathfinder').is_dir())
+
+    def test_new_run_review_waits_only_for_affected_case_and_resumes(self):
+        auth = self.root / 'private.json'
+        common.atomic_write(auth, {'account': 'fake-private-user', 'password': 'fake-private-password'})
+        profiles.setup('offline', 'production', 'en.example.test', credentials_file=auth)
+        workbook = self.root / 'review.xlsx'
+        book = Workbook()
+        sheet = book.active
+        sheet.append(['用例ID', '用例标题', '前置条件', '操作步骤', '预期结果'])
+        sheet.append(['TC-0004', '窗口', '', '打开', '显示'])
+        sheet.append(['NEW-2', '新页面', '', '打开', '显示'])
+        book.save(workbook)
+
+        def preflight(base, run, evidence):
+            run['preflight'] = {'status': 'passed'}
+
+        def execute_ready(manifest, ready):
+            with common.locked_run(manifest) as (path, run):
+                for cid in ready:
+                    run['cases'][cid].update(result='passed', work_status='finished')
+                common.save(path, run)
+
+        with patch.object(experience, 'rows', return_value=[]), \
+             patch.object(profiles, 'invoke_login', return_value={}), \
+             patch('uia_core.runtime.preflight', side_effect=preflight), \
+             patch.object(experience, '_run_ready', side_effect=execute_ready) as execute, \
+             patch.object(reports, 'make_report', return_value={}):
+            first = experience.go(workbook, 'offline')
+            self.assertTrue(first['review_only'])
+            base = self.root / 'runs' / first['run_id']
+            manifest = base / 'run.json'
+            run = common.read_json(manifest)
+            common.atomic_write(base / review_page.INPUT, {'checks': [
+                {'id': 'Q1', 'title': '新页面预期', 'cases': ['NEW-2'], 'checks': ['显示结果']}]})
+            review_page.render(base, run)
+            payload = review_page._payload(base, run)
+            answer = base / 'review-export.json'
+            common.atomic_write(answer, {'run_id': first['run_id'], 'review_version': 1,
+                                         'revision': payload['revision'], 'decisions': []})
+            review_page.ingest(base, run, answer)
+            common.save(manifest, run)
+            experience.go(workbook, 'offline')
+            run = common.read_json(manifest)
+            self.assertEqual(execute.call_args.args[1], ['TC-0004'])
+            self.assertEqual(run['cases']['NEW-2']['work_status'], 'waiting_human')
+            self.assertIsNone(run['cases']['NEW-2']['result'])
+
+            payload = review_page._payload(base, run)
+            common.atomic_write(answer, {'run_id': first['run_id'], 'review_version': 1,
+                'revision': payload['revision'], 'decisions': [{'review_id': 'Q1', 'case_ids': ['NEW-2'],
+                    'status': 'confirmed', 'value': '显示结果'}]})
+            review_page.ingest(base, run, answer)
+            review_page.ingest(base, run, answer)
+            common.save(manifest, run)
+            resumed = experience.go(workbook, 'offline')
+            self.assertEqual(resumed['next']['action'], 'spec')
+            self.assertEqual(resumed['next']['case_ids'], ['NEW-2'])
+            self.assertEqual(resumed['next']['review_ids'], ['Q1'])
+            self.assertEqual(execute.call_count, 1)
 
     def test_go_prefers_source_matched_generated_case_spec_before_legacy_binding(self):
         auth = self.root / 'private.json'

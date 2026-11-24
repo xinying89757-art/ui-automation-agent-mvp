@@ -824,13 +824,20 @@ def project_specs(base, m):
         case = m['cases'].get(cid)
         if not case or brief.get('locked') or _legacy_locked(case):
             continue
-        spec = _case_spec(cid, brief, pages)
         path = Path(base) / 'cases' / cid / 'case-spec.yaml'
+        previous = case.get('pathfinder_projection_sha256')
+        if path.is_file() and (not previous or file_hash(path) != previous):
+            # An operator or agent took over this spec. A later go must not replace
+            # reviewed assertions with a fresh projection from the source workbook.
+            case['spec_origin'] = 'agent'
+            continue
+        spec = _case_spec(cid, brief, pages)
         path.parent.mkdir(parents=True, exist_ok=True)
         atomic_write(path, spec, as_yaml=True)
         case['case_spec'] = str(path.relative_to(base))
         case['spec_origin'] = 'pathfinder'
         case['spec_hash'] = file_hash(path)
+        case['pathfinder_projection_sha256'] = case['spec_hash']
         written.append(cid)
     if m.get('pathfinder') is not None:
         m['pathfinder']['projected'] = written

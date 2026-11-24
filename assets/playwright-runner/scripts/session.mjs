@@ -81,14 +81,21 @@ export async function main(args = process.argv.slice(2)) {
     const { chromium } = await import('@playwright/test');
     browser = await chromium.launch(launchOptions(cfg, !args.includes('--headed') && !args.includes('--manual')));
     const snapshotAt = args.indexOf('--snapshot');
+    const started = Date.now();
+    let stage = 'browser_start';
+    let step = null;
+    const progress = (next, current = null) => { stage = next; step = current; process.stderr.write(JSON.stringify({stage, step, elapsed_ms: Date.now() - started}) + '\n'); };
+    const heartbeat = snapshotAt >= 0 ? setInterval(() => progress(stage, step), 5000) : null;
+    heartbeat?.unref();
     const snapshotArea = snapshotAt >= 0 && args[snapshotAt + 1] && !args[snapshotAt + 1].startsWith('--')
       ? args[snapshotAt + 1] : undefined;
     const result = snapshotAt >= 0
-      ? { status: 'snapshot', structure: await snapshotSession(browser, cfg, {
+      ? { status: 'snapshot', structure: await snapshotSession(browser, cfg, { onProgress: progress,
         entrySteps: Number(option('--entry-steps') ?? 0), area: snapshotArea, manual: args.includes('--manual'), frame: option('--frame'), scope: option('--scope'), openTarget: option('--open-target'), goto: option('--goto'), steps: args.flatMap((arg, index) => arg === '--step' ? [args[index + 1]] : []), hover: option('--hover'), clicks: args.flatMap((arg, index) => arg === '--click' ? [args[index + 1]] : []) }) }
       : args.includes('--open-editor')
         ? await runPreflight(cfg, browser, { force: args.includes('--force'), manual: args.includes('--manual') })
         : await runSession(cfg, browser, { checkOnly: args.includes('--check-only'), force: args.includes('--force'), manual: args.includes('--manual') });
+    if (heartbeat) clearInterval(heartbeat);
     if (option('--output')) privateWrite(path.resolve(option('--output')), result);
     console.log(JSON.stringify({ ok: true, ...result }));
   } catch (error) {

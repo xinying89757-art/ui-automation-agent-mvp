@@ -97,16 +97,19 @@ export const test = base.extend<{ caseContext: CaseContext; lifecycle: void; adm
     }
     let state: unknown;
     let setupVerified = false;
+    let preparationMs: number | null = null;
     let cleanupVerified = false;
     let cleanupError: unknown;
     await info.attach('uia-setup-started', { contentType: 'application/json',
       body: Buffer.from(JSON.stringify({ case_id: caseContext.caseId, batch_id: caseContext.batchId })) });
     try {
       try {
+        const preparationStarted = Date.now();
         state = await hooks.prepare(caseContext);
         caseContext.fixtureState = state;
         setupVerified = await hooks.verifyPrepared(caseContext, state);
         if (!setupVerified) throw new Error('Prepared state was not verified');
+        preparationMs = Date.now() - preparationStarted;
       } catch (error) {
         throw new Error(`UIA_SETUP_FAILED: ${String(error)}`);
       }
@@ -141,6 +144,7 @@ export const test = base.extend<{ caseContext: CaseContext; lifecycle: void; adm
       await info.attach('uia-lifecycle', { contentType: 'application/json', body: Buffer.from(JSON.stringify({
         case_id: caseContext.caseId, batch_id: caseContext.batchId,
         setup_verified: setupVerified, cleanup_verified: cleanupVerified, cleanup_pending: Boolean((caseContext as any).cleanupPending),
+        preparation_ms: preparationMs,
         owner_marker: caseContext.ownerMarker, fixture_ids: entry.fixture_ids,
       })) });
       if (cleanupError) throw new Error(`UIA_CLEANUP_FAILED: ${String(cleanupError)}`);

@@ -271,6 +271,7 @@ def begin_batch(base, m, case_ids, headed=False, rerun=False):
         dest = directory / "snapshot/files" / name
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(inside(base / "runner", name), dest)
+        require(file_hash(dest) == snapshot[name], "Dependency changed while capturing batch snapshot", name)
     atomic_write(directory / "snapshot/versions.json", {"versions": versions, "files": snapshot})
     atomic_write(directory / "snapshot/cases.json", {cid: bindings[cid] for cid in case_ids})
     overlay = base / 'state/page-map-overlay.yaml'
@@ -310,6 +311,7 @@ def execute_process(base, batch, cfg):
     knowledge_overlay = Path(base) / "state/knowledge/llms-txt.json"
     env = dict(os.environ, UIA_BATCH_ID=batch["id"], UIA_CONFIG=str(directory / "config.json"),
                UIA_CASES_FILE=str(cases_file), UIA_STATE_DIR=str(base / "state/fixture-snapshots"),
+               UIA_BATCH_FILES_DIR=str(directory / "snapshot/files"),
                UIA_KNOWLEDGE_FILE=str(knowledge_overlay),
                UIA_RESULTS_DIR=str(directory), UIA_CONTAMINATION_DIR=str(base / "state/contaminated"))
     if (directory / 'page-map-overlay.yaml').is_file():
@@ -398,6 +400,8 @@ def consume_batch(base, m, exit_code=None):
                    "executed": cid in by_id and row.get("playwright_status") not in {"skipped", None},
                    "setup_verified": prepared, "cleanup_verified": clean, "cleanup_pending": cleanup_pending,
                    "setup_started": row.get("setup_started", False),
+                   "preparation_ms": lifecycle.get("preparation_ms"),
+                   "preparation_steps_ms": row.get("preparation_steps_ms"),
                    "duration_ms": row.get("duration_ms", 0), "errors": row.get("errors", []),
                    "attachments": row.get("attachments", []),
                    "assertions": row.get("assertions", []), "failure_stage": row.get("failure_stage")}
@@ -423,6 +427,8 @@ def consume_batch(base, m, exit_code=None):
         c["result"] = result
         if failure_class:
             c["failure_class"] = failure_class
+        else:
+            c.pop("failure_class", None)
         if result == "save_not_persisted":
             c["classification"] = {"reason": "保存未生效（后台读回不一致）", "suspected_product_defect": True, "at": now()}
         if result == "passed" and cleanup_pending:

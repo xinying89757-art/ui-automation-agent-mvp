@@ -34,6 +34,8 @@ preconditions.yaml。data_prep 引用 runner/knowledge/data-prep.yaml，例如 `
 没有 handler 的条目保持 TODO，不能伪造准备成功。mutation_scope 为已授权的功能名列表。
 start_page 来自 page-map 的 pages，或在 spec-pathfinder 尚未确认入口时写成 `?名称`。所有普通 target 必须是命名目标或 `?未知名字`，不接受选择器。
 `uia go` 会把 spec-pathfinder 确认稿投影为 case-spec。`spec gen` 在 `spec_origin: pathfinder` 时只接受与确认稿一致的步骤编号和 Excel 预期原文，不会再从原始表格另推一套操作。
+
+可选的 `file_dependencies` 列出运行器内相对路径，例如 `tests/markdown/fixtures/sample.md`。注册和批次快照将文件内容纳入版本；脚本在正式批次中从 `UIA_BATCH_FILES_DIR` 指向的快照读取，独立交付时读取包内文件。
 可选 `entry_route` 引用 `knowledge/entries.yaml` 中已确认的路线；生成器会用 `openTarget`/导航回放执行它。
 当用例对应已知路线（如 `article-editor-markdown-import`）时，优先将其作为 `entry_route` 或 `open` 步骤，
 不要把路线里的裸文本导航项复制成新 page-map targets。

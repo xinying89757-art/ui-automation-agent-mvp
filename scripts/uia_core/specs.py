@@ -127,6 +127,17 @@ def schema_errors(spec, source, env, data, pages):
     fail(all(isinstance(x, str) and x.strip() for x in spec['mutation_scope']), 'mutation_scope must contain names')
     fail(all(isinstance(x, str) and x.strip() for x in spec['questions']), 'questions must contain nonempty business questions')
     fail(isinstance(spec['data_prep'], dict), 'data_prep must be a mapping')
+    dependencies = spec.get('file_dependencies', [])
+    fail(isinstance(dependencies, list) and all(isinstance(x, str) and x.strip() for x in dependencies),
+         'file_dependencies must be a list of relative paths')
+    if isinstance(dependencies, list) and all(isinstance(x, str) for x in dependencies):
+        fail(len(dependencies) == len(set(dependencies)), 'file_dependencies must be unique')
+        runner = (ROOT / 'assets/playwright-runner').resolve()
+        for item in dependencies:
+            candidate = Path(item)
+            resolved = (runner / candidate).resolve()
+            fail(not candidate.is_absolute() and '..' not in candidate.parts and runner in resolved.parents and resolved.is_file(),
+                 'file dependency must be an existing file inside runner: ' + item)
     for key, value in (spec['data_prep'].items() if isinstance(spec['data_prep'], dict) else []):
         entry = data.get(key)
         fail(bool(entry), 'unknown data-prep item: ' + key)
@@ -710,7 +721,7 @@ def register_script(base, m, cid, script_path):
         require(set(refs[field]) == {x['id'] for x in spec[field]}, 'Coverage markers differ from case-spec ' + field)
     reg = {'case_id':cid, 'case_spec':True, 'script':'runner/' + relative,
            'fixture':{'hooks':'fixtures/case-spec.mjs', 'mutates':bool(spec['mutation_scope']), 'mutation_scope':spec['mutation_scope']},
-           'dependencies':['knowledge/page-map.yaml', 'knowledge/data-prep.yaml', 'knowledge/network.yaml', 'knowledge/patterns.yaml'], 'needs_public':pages['pages'][spec['start_page']].get('public', False) or ('public_frontend' in spec['required_env'] and not any(s['verb'] == 'defer_public' for s in spec['steps'])),
+           'dependencies':['knowledge/page-map.yaml', 'knowledge/data-prep.yaml', 'knowledge/network.yaml', 'knowledge/patterns.yaml'] + spec.get('file_dependencies', []), 'needs_public':pages['pages'][spec['start_page']].get('public', False) or ('public_frontend' in spec['required_env'] and not any(s['verb'] == 'defer_public' for s in spec['steps'])),
            'coverage':refs}
     previous = case.get('version')
     case.update(registration=reg, daily_spec=False, case_spec=str(spec_path(base, case).relative_to(base)),

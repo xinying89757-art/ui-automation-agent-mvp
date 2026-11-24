@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from .common import atomic_write, digest, event, file_hash, inside, read_json, require
+from .common import atomic_write, digest, event, file_hash, inside, now, read_json, require
 from .preconditions import QUESTION_KEY
 from .secrets import scrub_text
 
@@ -178,6 +178,10 @@ def ingest(base, run, path):
     if run.get('human_review') != result:
         run['human_review'] = result
         event(run, 'human_review_received', decisions=len(received), pending=len(pending))
+        submission = digest(list(received.values()))
+        interactions = run.setdefault('interaction_events', [])
+        if not any(item.get('submission') == submission for item in interactions):
+            interactions.append({'kind': 'human_review_submission', 'submission': submission, 'at': now()})
     atomic_write(base / RESULT, result)
     atomic_write(base / HANDOFF, handoff)
     return {'review_decisions': str(base / RESULT), 'decisions': list(received.values()), 'pending': pending,

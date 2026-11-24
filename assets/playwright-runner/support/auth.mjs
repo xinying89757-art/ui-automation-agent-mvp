@@ -355,17 +355,24 @@ export async function scopedStructure(page, { frame, scope } = {}) {
   });
 }
 
-export async function snapshotSession(browser, cfg, { area, manual = false, frame, scope, ...navigation } = {}) {
+export async function snapshotSession(browser, cfg, { area, manual = false, frame, scope, onProgress, ...navigation } = {}) {
+  onProgress?.('authentication');
   const session = await authenticatedSession(browser, cfg, { allowLogin: true, manual });
   try {
     let page = session.page;
+    onProgress?.('open_area');
     if (area) page = await openSiteArea(page, cfg, area);
     const { navigateSnapshot, urlPath } = await import('./navigation.mjs');
-    const reached = await navigateSnapshot(page, cfg, { ...navigation, frame, scope });
+    onProgress?.('route');
+    const reached = await navigateSnapshot(page, cfg, { ...navigation, frame, scope, onProgress });
     page = reached.page;
+    onProgress?.('editor_check');
+    onProgress?.('capture');
     let structure;
-    try { structure = await scopedStructure(page, { frame, scope }); }
+    let captureTimer;
+    try { structure = await Promise.race([scopedStructure(page, { frame, scope }), new Promise((_, reject) => { captureTimer = setTimeout(() => reject(new Error('Snapshot capture timed out')), 10000); })]); }
     catch { structure = { nodes: [], unavailable: true }; }
+    finally { clearTimeout(captureTimer); }
     Object.assign(structure, { frame: frame || null, scope: scope || 'body', path: urlPath(page.url()),
       ...(frame ? { frame_reached: !structure.unavailable } : {}),
       failed_step: reached.failed_step, steps: reached.steps, popups: reached.popups });

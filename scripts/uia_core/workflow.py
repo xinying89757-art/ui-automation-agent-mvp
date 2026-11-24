@@ -1039,7 +1039,7 @@ def bind_specs(base, m):
                 'script': spec.relative_to(base).as_posix(),
                 'fixture': {'hooks': 'fixtures/case-spec.mjs', 'mutates': bool(read_yaml(inside(base, c['case_spec']))['mutation_scope']),
                             'mutation_scope': read_yaml(inside(base, c['case_spec']))['mutation_scope']},
-                'dependencies': ['knowledge/page-map.yaml', 'knowledge/data-prep.yaml', 'knowledge/network.yaml']}
+                'dependencies': ['knowledge/page-map.yaml', 'knowledge/data-prep.yaml', 'knowledge/network.yaml', 'knowledge/patterns.yaml'] + read_yaml(inside(base, c['case_spec'])).get('file_dependencies', [])}
             duplicates = set(legacy_claims.get(cid, []))
             if old_script and old_script != c['registration']['script']:
                 duplicates.add(old_script)

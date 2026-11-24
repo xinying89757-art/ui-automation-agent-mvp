@@ -1,6 +1,7 @@
 import argparse
 import copy
 import json
+import io
 import sys
 import tempfile
 import unittest
@@ -165,8 +166,8 @@ class GenericProcessTests(unittest.TestCase):
     def test_snapshot_flags_forwarded_and_temp_config_removed(self):
         runner = self.base / 'runner'
         (runner / 'node_modules/@playwright/test').mkdir(parents=True)
-        with patch.object(profiles, 'ROOT', self.base), patch.object(profiles.subprocess, 'run') as run:
-            run.return_value = argparse.Namespace(returncode=0, stdout=json.dumps({'ok': True, 'structure': {'failed_step': {'index': 1}}}))
+        with patch.object(profiles, 'ROOT', self.base), patch.object(profiles.subprocess, 'Popen') as run:
+            run.return_value = argparse.Namespace(returncode=0, stdout=io.StringIO(json.dumps({'ok': True, 'structure': {'failed_step': {'index': 1}}})), stderr=io.StringIO(''), wait=lambda timeout=None: 0)
             result = profiles.invoke_snapshot(self.m['config'], runner, goto='/path', steps=['click:text=Open'])
             command = run.call_args.args[0]
             self.assertIn('--goto', command)

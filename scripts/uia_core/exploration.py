@@ -18,6 +18,7 @@ def save_snapshot_evidence(base, relative, args, result, cfg=None):
         'frame_reached': structure.get('frame_reached') if isinstance(structure, dict) else None,
         'result': result.get('result', 'ok') if isinstance(result, dict) else 'ok',
         'error': result.get('error') if isinstance(result, dict) else None,
+        'progress': result.get('progress') if isinstance(result, dict) else None,
     }
     text = json.dumps(payload, ensure_ascii=False)
     require(scrub_text(text, cfg) == text, 'Snapshot evidence contains sensitive metadata')

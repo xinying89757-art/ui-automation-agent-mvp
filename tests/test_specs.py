@@ -33,6 +33,14 @@ class CaseSpecTests(unittest.TestCase):
         self.spec['assertions'][0]['excel'] = self.source['expected'][0]
         self.assertEqual(self.errors(), [])
 
+    def test_file_dependencies_reject_missing_and_outside_paths(self):
+        self.spec['file_dependencies'] = ['package.json']
+        self.assertEqual(self.errors(), [])
+        self.spec['file_dependencies'] = ['../outside']
+        self.assertTrue(any('file dependency' in error for error in self.errors()))
+        self.spec['file_dependencies'] = ['missing-test-file.md']
+        self.assertTrue(any('file dependency' in error for error in self.errors()))
+
     def test_schema_rejects_implicit_targets_selectors_and_unknown_verbs(self):
         for change in ({'target': '#dialog'}, {'target': None}, {'verb': 'do_it'}, {'extra': 1}):
             before = copy.deepcopy(self.spec)

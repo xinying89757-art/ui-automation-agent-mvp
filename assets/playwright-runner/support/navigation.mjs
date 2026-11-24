@@ -259,6 +259,7 @@ export async function navigateSnapshot(page, cfg, { goto, openTarget: named, ste
   const results = [];
   let failed_step = null;
   for (const [index, [kind, action]] of actions.entries()) {
+    options.onProgress?.('route', index + 1);
     const opened = [];
     const context = page.context();
     const onPage = next => opened.push(next);

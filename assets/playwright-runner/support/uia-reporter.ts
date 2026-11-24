@@ -9,6 +9,7 @@ export default class UiaReporter implements Reporter {
   private cases: Record<string, unknown>[] = [];
   private assertions = new Map<string, { id: string; passed: boolean }[]>();
   private successfulSteps = new Map<string, string[]>();
+  private preparationSteps = new Map<string, number>();
   private startedAt = new Date().toISOString();
   private output: string;
   private secrets: string[];
@@ -47,6 +48,9 @@ export default class UiaReporter implements Reporter {
       (/waiting for locator/iu.test(message) && !resolved);
   }
   onStepEnd(test: TestCase, _result: TestResult, step: TestStep): void {
+    if (step.title.startsWith('uia-preparation:')) {
+      this.preparationSteps.set(test.id, (this.preparationSteps.get(test.id) ?? 0) + step.duration);
+    }
     const id = /^assert:(A\d+)$/u.exec(step.title)?.[1];
     if (id) {
       const rows = this.assertions.get(test.id) ?? [];
@@ -77,6 +81,7 @@ export default class UiaReporter implements Reporter {
     this.cases.push({ case_id: caseId, result: status, failure_class: judged.failure_class, playwright_status: result.status,
       setup_started: result.attachments.some(a => a.name === 'uia-setup-started'),
       duration_ms: result.duration, retry: result.retry, errors, lifecycle,
+      preparation_steps_ms: this.preparationSteps.get(test.id) ?? null,
       assertions: this.assertions.get(test.id) ?? [],
       successful_steps: this.successfulSteps.get(test.id) ?? [],
       failure_stage: passed ? null : judged.failure_class === 'environment' ? 'environment' : /UIA_SAVE_NOT_PERSISTED/u.test(message) ? "save_not_persisted" : /UIA_ENVIRONMENT_BLOCKED/u.test(message) ? "environment_or_session" : /UIA_SETUP_FAILED/u.test(message) ? "data_preparation" : this.locatorNeverResolved(message) ? "locator_resolution" : /UIA_BUSINESS_FAILURE/u.test(message) ? "business_assertion" : "locator_or_timing",

@@ -194,6 +194,15 @@ def calculate(base, m, final_report_at=None):
     interventions = (sum(x.get("kind") == "checklist_answer" for x in m.get("interaction_events", []))
                      + sum(x.get("kind") == "mid_run_question" for x in m.get("interaction_events", []))
                      + sum(x.get("kind") == "session_turn" and x.get("category") == "计划外" for x in m.get("interaction_events", [])))
+    reviews = sum(x.get('kind') == 'human_review_submission' for x in m.get('interaction_events', []))
+    if not reviews and m.get('human_review'):
+        reviews = 1
+    interventions += reviews
+    attempts = [a for case in cases for a in case.get('attempts', []) if a.get('executed')]
+    preparation = [a['preparation_ms'] + (a.get('preparation_steps_ms') or 0) for a in attempts if type(a.get('preparation_ms')) is int]
+    execution = [a['duration_ms'] for a in attempts if type(a.get('duration_ms')) is int]
+    answered = [q for q in m.get('questions', {}).values() if q.get('kind') == 'exploration' and q.get('status') == 'answered']
+    waits = [q['wait_seconds'] for q in answered if isinstance(q.get('wait_seconds'), (int, float))]
     hit = knowledge_hit_rate(base, m)
     rescued = m.get("rescued_by_midscene", 0)
     rescued_count = rescued if type(rescued) is int else 0
@@ -209,6 +218,11 @@ def calculate(base, m, final_report_at=None):
         "checklist_questions": m.get('checklist_question_count', 0),
         "entry_question_count": m.get('entry_question_count', 0),
         "mid_run_questions": sum(x.get('kind') == 'mid_run_question' for x in m.get('interaction_events', [])),
+        "mid_run_answers": len(answered),
+        "human_review_submissions": reviews,
+        "preparation_duration_ms": sum(preparation) if preparation else None,
+        "execution_duration_ms": sum(execution) if execution else None,
+        "human_wait_seconds": sum(waits) if waits else None,
         "time_to_first_result_seconds": elapsed(first_start, first_at) if first_start and first_at else None,
         "import_to_first_result_seconds": elapsed(imported_at, first_at) if imported_at and first_at else None,
         "pass_rate": (len(passed_cases) / len(executed_cases)) if executed_cases else None,

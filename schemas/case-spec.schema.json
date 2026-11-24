@@ -61,6 +61,11 @@
       "type": "object",
       "description": "Keys/types/scopes resolved from the extensible data-prep.yaml catalog."
     },
+    "file_dependencies": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
     "mutation_scope": {
       "type": "array",
       "items": {

@@ -11,7 +11,7 @@ from openpyxl import Workbook
 from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 from openpyxl.styles import Alignment, Font, PatternFill
 
-from .common import atomic_write, elapsed, file_hash, inside, now, read_json, summary
+from .common import atomic_write, elapsed, file_hash, inside, now, read_json, read_yaml, summary
 from .secrets import drop_unsafe_artifacts, scrub_text, unsafe_attachment
 from . import metrics as run_metrics
 
@@ -46,6 +46,10 @@ def opening(m, metrics, review):
                     f"计划外人工介入 {metrics['unplanned_interventions']}，会话轮次 {metrics['session_turns']}；"
                     f"脚本实际执行覆盖率 {metrics['script_coverage']['ratio']:.1%}；"
                     f"越权 {metrics['scope_violations']}，泄露 {metrics['leak_hits']}，未审核断言变更 {metrics['unreviewed_assertion_changes']}。")
+    metrics_text += (f" HTML 审核 {metrics.get('human_review_submissions', 0)} 次，中途答复 {metrics.get('mid_run_answers', 0)} 次。"
+                     + ''.join(f"{label} {value / 1000:.1f} 秒。" if value is not None else f"{label} 未记录。"
+                               for label, value in [('前置准备', metrics.get('preparation_duration_ms')),
+                                                    ('正式执行', metrics.get('execution_duration_ms'))]))
     if metrics.get('time_to_first_result_seconds') is not None:
         metrics_text += f"首个结果耗时 {metrics['time_to_first_result_seconds']:.1f} 秒。"
     if metrics.get('pass_rate') is not None:
@@ -291,11 +295,26 @@ th{background:#23415a;color:white}a{color:#0069a3}pre{white-space:pre-wrap}secti
                 protected.add(Path(credential).resolve())
             if m["config"].get("auth", {}).get("storage_state"):
                 protected.add(Path(m["config"]["auth"]["storage_state"] + ".meta.json").resolve())
+            declared = set()
+            for case in m.get('cases', {}).values():
+                if case.get('case_spec'):
+                    spec = read_yaml(inside(base, case['case_spec']))
+                    declared.update(spec.get('file_dependencies', []))
             for file in runner.rglob("*"):
                 rel = file.relative_to(runner)
                 if not file.is_file() or file.is_symlink() or file.resolve() in protected or any(part in {"node_modules", "results", ".auth", "test-results", "playwright-report"} for part in rel.parts):
                     continue
                 if file.name.startswith(".env") or file.name in {"cases.json", "auth.json", "storage-state.json", "error-context.md", "trace.zip", "playwright-results.json"} or ".local." in file.name:
+                    continue
+                if str(rel) in declared:
+                    content = file.read_bytes()
+                    try:
+                        decoded = content.decode('utf-8')
+                    except UnicodeDecodeError:
+                        decoded = None
+                    if decoded is not None and scrub_text(decoded, m['config']) != decoded:
+                        raise ValueError('Declared test file contains sensitive data')
+                    archive.writestr('runner/' + str(rel), content)
                     continue
                 if file.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp", ".webm"} or any(part in {"playwright-report", "traces", "test-results"} for part in rel.parts):
                     continue

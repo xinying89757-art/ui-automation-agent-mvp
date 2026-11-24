@@ -263,12 +263,40 @@ def invoke_snapshot(cfg, runner=None, area=None, manual=False, frame=None, scope
             command.extend(["--click", selector])
         for step in steps or []:
             command.extend(["--step", step])
-        result = subprocess.run(command, cwd=runner, capture_output=True, text=True, timeout=180 + 10 * len(steps or []))
+        import threading
+        import sys
+        progress = []
+        process = subprocess.Popen(command, cwd=runner, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        def consume_progress():
+            for line in process.stderr:
+                try:
+                    row = json.loads(line)
+                    if isinstance(row, dict) and row.get('stage') in {'browser_start', 'authentication', 'open_area', 'route', 'editor_check', 'capture'}:
+                        progress[:] = [row]
+                        print(json.dumps(row, ensure_ascii=False), file=sys.stderr, flush=True)
+                except (ValueError, TypeError):
+                    continue
+        reader = threading.Thread(target=consume_progress, daemon=True)
+        reader.start()
+        output = []
+        output_reader = threading.Thread(target=lambda: output.append(process.stdout.read()), daemon=True)
+        output_reader.start()
         try:
-            payload = json.loads(result.stdout)
+            process.wait(timeout=660 if manual else 120)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+            require(False, 'Snapshot timed out', {'progress': progress[-1] if progress else None})
+        finally:
+            reader.join(timeout=2)
+            output_reader.join(timeout=2)
+            process.stdout.close()
+            process.stderr.close()
+        try:
+            payload = json.loads(output[0] if output else '')
         except (ValueError, TypeError):
             require(False, "Snapshot helper did not produce redacted JSON")
-        require(result.returncode == 0 and payload.get("ok"), payload.get("error", "Snapshot failed"),
+        require(process.returncode == 0 and payload.get("ok"), payload.get("error", "Snapshot failed"),
                 {"code": payload.get("code"), "choices": payload.get("choices", [])})
         return {k: v for k, v in payload.items() if k != "ok"}
     finally:

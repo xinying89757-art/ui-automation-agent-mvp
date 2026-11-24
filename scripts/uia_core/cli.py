@@ -460,6 +460,14 @@ def dispatch(args, path, m):
         c.update(result=args.result, stage="finished", work_status="finished", pass_streak=0,
                  stability="not_run" if not c["attempts"] else "unstable",
                  classification={"reason": redact(args.reason, m["config"]), "evidence": args.evidence, "at": now()})
+        if c['attempts']:
+            c['classification']['batch_id'] = c['attempts'][-1].get('batch_id')
+        from .failures import judge_result
+        _, failure_class = judge_result(args.result, [])
+        if failure_class:
+            c['failure_class'] = failure_class
+        else:
+            c.pop('failure_class', None)
         for q in m["questions"].values():
             if q["status"] == "open" and args.case in q["case_ids"]:
                 q["case_ids"].remove(args.case)
@@ -749,12 +757,14 @@ def execute(args):
                     from .knowledge import exploration_knowledge
                     exploration_state = exploration_knowledge(args.purpose, args.entry)
                     evidence_result = {'entry': args.entry, 'entry_reached': False, 'result': 'failed',
-                                       'error': scrub_text(str(error), m['config'])[:500]}
+                                       'error': scrub_text(str(error), m['config'])[:500],
+                                       'progress': (error.details or {}).get('progress') if isinstance(error.details, dict) else None}
                     if args.evidence:
                         from .exploration import save_snapshot_evidence
                         save_snapshot_evidence(path.parent, args.evidence, args, evidence_result, m['config'])
                     m.setdefault('exploration', []).append({'at': now(), 'method': 'snapshot', 'purpose': scrub_text(args.purpose, m['config']),
-                                                          'entry': args.entry, 'entry_reached': False, 'result': 'failed', **exploration_state})
+                                                          'entry': args.entry, 'entry_reached': False, 'result': 'failed',
+                                                          'duration_ms': int((_time.monotonic() - t0) * 1000), **exploration_state})
                     save(path, m)
                     raise
                 failed = snapshot_result.get('structure', {}).get('failed_step')

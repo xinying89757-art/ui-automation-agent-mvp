@@ -191,3 +191,19 @@ class GenericProcessTests(unittest.TestCase):
             process.kill.assert_called_once()
         else:
             killpg.assert_called_once()
+
+    def test_login_timeout_stops_process_and_reports_stage(self):
+        runner = self.base / 'runner'
+        (runner / 'node_modules/@playwright/test').mkdir(parents=True)
+        process = unittest.mock.Mock()
+        process.pid = 12345
+        process.communicate.side_effect = [profiles.subprocess.TimeoutExpired('node', 180),
+                                           ('', '{"stage":"auth_site","step":null,"elapsed_ms":175000}\n')]
+        with patch.object(profiles, 'ROOT', self.base), patch.object(profiles.subprocess, 'Popen', return_value=process), patch.object(profiles.os, 'killpg') as killpg:
+            with self.assertRaises(common.UiaError) as error:
+                profiles.invoke_login(self.m['config'], runner)
+        self.assertEqual(error.exception.details['progress']['stage'], 'auth_site')
+        if profiles.os.name == 'nt':
+            process.kill.assert_called_once()
+        else:
+            killpg.assert_called_once()

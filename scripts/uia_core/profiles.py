@@ -223,15 +223,44 @@ def invoke_login(cfg, runner=None, check_only=False, force=False, evidence=None,
             command.append("--open-editor")
         if evidence:
             command.extend(["--output", str(evidence)])
-        result = subprocess.run(command, cwd=runner, capture_output=True, text=True)
+        process = subprocess.Popen(command, cwd=runner, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                   text=True, start_new_session=os.name != 'nt')
         try:
-            payload = json.loads(result.stdout)
+            stdout, stderr = process.communicate(timeout=660 if manual else 180)
+        except subprocess.TimeoutExpired:
+            if os.name == 'nt':
+                process.kill()
+            else:
+                import signal
+                os.killpg(process.pid, signal.SIGKILL)
+            stdout, stderr = process.communicate()
+            progress = None
+            for line in stderr.splitlines():
+                try:
+                    row = json.loads(line)
+                    if isinstance(row, dict) and row.get('stage') in {'browser_start', 'auth_environment',
+                            'auth_login', 'auth_cloud', 'auth_site', 'open_area', 'public_frontend'}:
+                        progress = {key: row.get(key) for key in ('stage', 'step', 'elapsed_ms')}
+                except (ValueError, TypeError):
+                    continue
+            require(False, '登录预检超时', {'code': 'LOGIN_TIMEOUT', 'progress': progress})
+        except BaseException:
+            if process.poll() is None:
+                if os.name == 'nt':
+                    process.kill()
+                else:
+                    import signal
+                    os.killpg(process.pid, signal.SIGKILL)
+                process.communicate()
+            raise
+        try:
+            payload = json.loads(stdout)
         except (ValueError, TypeError):
             from .secrets import scrub_text
-            diagnostic = scrub_text(result.stderr or "no stdout/stderr", cfg).strip()[:240]
+            diagnostic = scrub_text(stderr or "no stdout/stderr", cfg).strip()[:240]
             require(False, "Login helper did not produce JSON; check Node/browser installation",
-                    {"exit_code": result.returncode, "diagnostic": diagnostic})
-        require(result.returncode == 0 and payload.get("ok"), payload.get("error", "Login failed"),
+                    {"exit_code": process.returncode, "diagnostic": diagnostic})
+        require(process.returncode == 0 and payload.get("ok"), payload.get("error", "Login failed"),
                 {"code": payload.get("code"), "choices": payload.get("choices", [])})
         return {k: v for k, v in payload.items() if k != "ok"}
     finally:

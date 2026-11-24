@@ -56,7 +56,7 @@ def failure_class_for_case(case):
         errors.append(classification["reason"])
     text = "\n".join(str(item) for item in errors)
     result = case.get("result")
-    if result == "passed":
+    if result in {None, "passed"}:
         return None
     if is_environment(text) and result in {"automation_failure", "interrupted", "environment_blocked", None}:
         return "environment"

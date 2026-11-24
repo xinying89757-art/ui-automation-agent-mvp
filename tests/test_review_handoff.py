@@ -96,6 +96,8 @@ class ReviewHandoffTest(unittest.TestCase):
                                      'status': 'edited', 'value': '从产品进入'}]}
             atomic_write(base / 'export.json', report)
             result = review_page.ingest(base, run, base / 'export.json')
+            review_page.ingest(base, run, base / 'export.json')
+            self.assertEqual(sum(row['kind'] == 'human_review_submission' for row in run['interaction_events']), 1)
             handoff = read_json(result['review_handoff'])
             first, second = handoff['cases']
             self.assertEqual(first['decisions'][0]['value'], '从产品进入')

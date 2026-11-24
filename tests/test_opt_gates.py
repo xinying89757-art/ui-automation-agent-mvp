@@ -37,6 +37,10 @@ class FailureClassTests(unittest.TestCase):
         self.assertEqual(shares["counts"], {"environment": 1, "automation": 1, "product": 1, "suspended": 1})
         self.assertAlmostEqual(sum(shares["shares"].values()), 1.0)
 
+    def test_pending_and_passed_cases_ignore_stale_failure_class(self):
+        for result in (None, 'passed'):
+            self.assertIsNone(failures.failure_class_for_case({'result': result, 'failure_class': 'product'}))
+
 
 class MetricsReportTests(unittest.TestCase):
     def test_report_metrics_include_the_required_fields(self):

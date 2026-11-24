@@ -174,3 +174,16 @@ class GenericProcessTests(unittest.TestCase):
             self.assertIn('--step', command)
             self.assertFalse(Path(command[command.index('--config') + 1]).exists())
             self.assertEqual(result['structure']['failed_step']['index'], 1)
+
+    def test_snapshot_timeout_reports_last_stage(self):
+        runner = self.base / 'runner'
+        (runner / 'node_modules/@playwright/test').mkdir(parents=True)
+        process = unittest.mock.Mock()
+        process.stdout = io.StringIO('')
+        process.stderr = io.StringIO('{"stage":"route","step":2,"elapsed_ms":5000}\n')
+        process.wait.side_effect = [profiles.subprocess.TimeoutExpired('node', 120), 0]
+        with patch.object(profiles, 'ROOT', self.base), patch.object(profiles.subprocess, 'Popen', return_value=process):
+            with self.assertRaises(common.UiaError) as error:
+                profiles.invoke_snapshot(self.m['config'], runner)
+        self.assertEqual(error.exception.details['progress']['step'], 2)
+        process.kill.assert_called_once()

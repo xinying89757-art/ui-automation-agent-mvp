@@ -41,6 +41,27 @@ class CaseSpecTests(unittest.TestCase):
         self.spec['file_dependencies'] = ['missing-test-file.md']
         self.assertTrue(any('file dependency' in error for error in self.errors()))
 
+    def test_declared_data_changes_only_the_referencing_dependency_set(self):
+        with tempfile.TemporaryDirectory() as temp:
+            base = Path(temp).resolve()
+            runner = base / 'runner'
+            for name in ('test.ts', 'fixture.mjs', 'playwright.config.ts', 'package-lock.json',
+                         'package.json', 'tsconfig.json', 'support/uia-reporter.ts'):
+                target = runner / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text('')
+            sample = runner / 'sample.md'
+            sample.write_bytes(b'first')
+            other = runner / 'other.md'
+            other.write_bytes(b'unchanged')
+            first = {'script': 'runner/test.ts', 'fixture': {'hooks': 'fixture.mjs'}, 'dependencies': ['sample.md']}
+            second = {'script': 'runner/test.ts', 'fixture': {'hooks': 'fixture.mjs'}, 'dependencies': ['other.md']}
+            before_first = workflow.code_files(base, first)
+            before_second = workflow.code_files(base, second)
+            sample.write_bytes(b'second')
+            self.assertNotEqual(workflow.code_files(base, first), before_first)
+            self.assertEqual(workflow.code_files(base, second), before_second)
+
     def test_schema_rejects_implicit_targets_selectors_and_unknown_verbs(self):
         for change in ({'target': '#dialog'}, {'target': None}, {'verb': 'do_it'}, {'extra': 1}):
             before = copy.deepcopy(self.spec)

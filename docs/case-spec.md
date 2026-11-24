@@ -1,6 +1,6 @@
 # case-spec.v1
 
-可机读结构见 [JSON Schema](../schemas/case-spec.schema.json)；CLI 另检查 Excel 原文、跨用例重复及动态词表。
+可机读结构见 [JSON Schema](../schemas/case-spec.schema.json)；CLI 另检查 Excel 原文、跨用例共享检查提示及动态词表。
 
 每条已导入用例的 `runs/<id>/cases/<case>/case-spec.yaml` 是业务到代码的精简契约。
 `run.json` 仍是唯一进度源；case-spec、Markdown、coverage、清单都是输入或投影。
@@ -45,7 +45,7 @@ attribute 另需 attribute 名；left_of 的 value 是另一个命名目标，�
 excel 必须是导入期望的整个单元格或完整非空行，包含编号、空格和标点，不做 trim/正则改写。
 一个期望有多个业务子句时，用多个 checks 完整验证；生成器不会判断自然语言语义，Codex 必须审查。
 
-`spec lint` 检查结构、跨用例相同 checks、词表及数据类型、未知目标、业务问题、fixture
+`spec lint` 检查结构、跨用例相同 checks（提示而非阻断）、词表及数据类型、未知目标、业务问题、fixture
 导入、图标字符、弹窗 scope、重复角色名及 snapshot refs。首次 lint 结果记在 manifest，
 之后修复不改首轮分母。没有 spec 的其他导入用例保持待处理，不从工作簿分母删除。
 `spec gen` 输出每例一个文件；未知项抛出显式 TODO，数据准备无 handler 时不能注册为 runnable。

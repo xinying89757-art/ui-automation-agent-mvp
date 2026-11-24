@@ -43,8 +43,7 @@ save step, field target and intended value, a named reopen target sequence, and 
 that references its network rule. The generated test checks the save business response,
 reopens the editor and records redacted intended/actual evidence; mismatches are classified
 as save_not_persisted. Lint warns when a mutating save has no read-back declaration.
-Cross-case duplicate checks
-are invalid. Close steps require hidden assertions; technical teardown stays in fixtures.
+Checks shared across cases are allowed and reported as warnings; preserve each case’s independently required expectations. Close steps require hidden assertions; technical teardown stays in fixtures.
 
 Run spec lint, spec gen and optionally spec render through scripts/uia.py. Unknown
 steps emit throwing TODO markers and cannot run. Specs must import test/expect/

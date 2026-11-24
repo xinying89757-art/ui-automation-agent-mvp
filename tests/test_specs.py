@@ -256,7 +256,7 @@ class CaseSpecTests(unittest.TestCase):
             self.assertIn('performWithPatterns(page, () =>', generated)
             self.assertIn("target => target.click()", generated)
 
-    def test_lint_records_true_first_pass_and_cross_case_duplicates(self):
+    def test_lint_accepts_shared_cross_case_checks_and_records_first_pass(self):
         import yaml
         with tempfile.TemporaryDirectory() as temp:
             base = Path(temp)
@@ -272,12 +272,13 @@ class CaseSpecTests(unittest.TestCase):
                               'stage': 'spec', 'work_status': 'pending', 'result': None, 'attempts': []}
             m = {'cases': cases, 'questions': {}, 'history': []}
             result = specs.lint(base, m)
-            self.assertFalse(result['valid'])
-            self.assertEqual(result['first_pass']['passed'], 0)
+            self.assertTrue(result['valid'])
+            self.assertEqual(result['first_pass']['passed'], 2)
+            self.assertTrue(any('shared assertion' in w for w in result['cases']['T2']['warnings']))
             spec['assertions'][0]['checks'][0] = {'target': 'txt.title', 'op': 'text', 'value': '管理txt文件'}
             (base / 'cases/T2/case-spec.yaml').write_text(yaml.safe_dump(spec, allow_unicode=True))
             self.assertTrue(specs.lint(base, m)['valid'])
-            self.assertEqual(specs.lint(base, m)['first_pass']['passed'], 0)
+            self.assertEqual(specs.lint(base, m)['first_pass']['passed'], 2)
 
     def test_generator_todo_is_explicit_and_deterministic(self):
         import yaml

@@ -393,7 +393,7 @@ def coverage(body, file):
 def lint(base, m, case_ids=None, record=True, check_scripts=True):
     env, data, pages = catalogs(base)
     selected = case_ids or [cid for cid, c in m['cases'].items() if spec_path(base, c).is_file()]
-    # Cross-case duplication cannot be bypassed with --cases or a single-case generation.
+    # Include all cases so shared assertion observations remain visible in lint warnings.
     chosen = list(dict.fromkeys([*selected, *[cid for cid, c in m['cases'].items() if spec_path(base, c).is_file()]]))
     results, seen, explore, business = {}, {}, {}, {}
     for cid in chosen:
@@ -422,8 +422,8 @@ def lint(base, m, case_ids=None, record=True, check_scripts=True):
             signature = digest(sorted(assertion['checks'], key=lambda check: json.dumps(check, sort_keys=True, ensure_ascii=False)))
             if signature in seen and seen[signature][0] != cid:
                 other, aid = seen[signature]
-                results[cid]['errors'].append('identical assertion across cases: ' + other + '/' + aid)
-                results[other]['errors'].append('identical assertion across cases: ' + cid + '/' + assertion['id'])
+                results[cid].setdefault('warnings', []).append('shared assertion across cases: ' + other + '/' + aid)
+                results[other].setdefault('warnings', []).append('shared assertion across cases: ' + cid + '/' + assertion['id'])
             else:
                 seen[signature] = (cid, assertion['id'])
         reg = case.get('registration') or {}

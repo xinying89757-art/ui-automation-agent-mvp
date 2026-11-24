@@ -299,7 +299,7 @@ th{background:#23415a;color:white}a{color:#0069a3}pre{white-space:pre-wrap}secti
                     continue
                 if file.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp", ".webm"} or any(part in {"playwright-report", "traces", "test-results"} for part in rel.parts):
                     continue
-                if file.suffix in {".ts", ".js", ".mjs", ".json", ".md", ".pac", ".txt", ".yaml", ".yml"}:
+                if file.suffix in {".ts", ".js", ".mjs", ".json", ".md", ".markdown", ".pac", ".txt", ".yaml", ".yml"}:
                     overlay = base / "state/knowledge/llms-txt.json" if str(rel) == "knowledge/llms-txt.json" else None
                     content = overlay.read_text(encoding="utf-8") if overlay and overlay.is_file() else file.read_text(encoding="utf-8")
                     archive.writestr("runner/" + str(rel), scrub_text(content, m["config"]))

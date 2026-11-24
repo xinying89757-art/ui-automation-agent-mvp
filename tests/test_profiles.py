@@ -223,6 +223,7 @@ class ProfilesTest(unittest.TestCase):
         common.atomic_write(str(state) + '.meta.json', {'binding': 'private-binding'})
         m['config']['auth'].update(credentials_file=str(credential), storage_state=str(state))
         (base / 'runner/ignored.local.json').write_text('offline-password')
+        (base / 'runner/fixtures/sample.markdown').write_text('# Portable sample', encoding='utf-8')
         with patch('uia_core.knowledge.writeback', side_effect=AssertionError('report must not publish knowledge')):
             reports.make_report(base, m)
         extracted = self.root / 'relocated'
@@ -231,6 +232,7 @@ class ProfilesTest(unittest.TestCase):
             self.assertIn('runner/network/gray.pac', names)
             self.assertIn('runner/scripts/check-environment.mjs', names)
             self.assertIn('runner/environments.json', names)
+            self.assertEqual(archive.read('runner/fixtures/sample.markdown'), b'# Portable sample')
             self.assertNotIn('runner/fixtures/operator.json', names)
             self.assertNotIn('runner/fixtures/browser.json', names)
             self.assertNotIn('runner/fixtures/browser.json.meta.json', names)

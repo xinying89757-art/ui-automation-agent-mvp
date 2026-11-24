@@ -616,6 +616,9 @@ def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_m
                 # Keep compatible daily scripts; only missing scripts need template compilation.
                 if c.get('registration') and not c.get('case_spec'):
                     continue
+                if (read_yaml(specs.spec_path(base, c)) or {}).get('questions'):
+                    specs.lint(base, m, [cid])
+                    continue
                 try:
                     specs.generate(base, m, cid)
                 except UiaError as error:

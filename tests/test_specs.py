@@ -382,6 +382,42 @@ class CaseSpecTests(unittest.TestCase):
         apply_precondition_answer(manifest, q)
         self.assertEqual(case['work_status'], 'pending')
 
+    def test_new_business_question_is_scoped_and_answered_once(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory).resolve()
+            cases = {}
+            for cid in ('T1', 'T2'):
+                folder = base / 'cases' / cid
+                folder.mkdir(parents=True)
+                common.atomic_write(folder / 'source.json', dict(self.source, case_id=cid))
+                spec = copy.deepcopy(self.spec)
+                spec['case_id'] = cid
+                spec['questions'] = ['结果格式如何确认？'] if cid == 'T1' else []
+                common.atomic_write(folder / 'case-spec.yaml', spec, as_yaml=True)
+                cases[cid] = {'case_id': cid, 'source': f'cases/{cid}/source.json', 'source_hash': cid,
+                              'stage': 'spec', 'work_status': 'pending', 'result': None, 'attempts': []}
+            manifest = {'run_id': 'R', 'initial_review_required': True, 'interaction_mode': 'once',
+                        'human_review': {'decisions': [], 'pending': []}, 'cases': cases,
+                        'questions': {}, 'history': [], 'config': {}}
+            with patch('uia_core.preconditions.sync_preconditions'):
+                specs.lint(base, manifest)
+                q = next(iter(manifest['questions'].values()))
+                self.assertEqual((q['kind'], q['status'], q['case_ids']), ('product', 'open', ['T1']))
+                self.assertEqual(cases['T1']['work_status'], 'waiting_human')
+                self.assertEqual(cases['T2']['work_status'], 'pending')
+                specs.lint(base, manifest)
+                self.assertEqual(len(manifest['questions']), 1)
+                workflow.answer(manifest, q['id'], '以文档为准', base)
+                specs.lint(base, manifest)
+                self.assertEqual(len(manifest['questions']), 1)
+                self.assertEqual(q['status'], 'answered')
+                self.assertEqual(cases['T1']['work_status'], 'pending')
+                manifest['questions'] = {}
+                manifest['human_review']['decisions'] = [{'id': 'reviewed', 'title': '结果格式如何确认？',
+                                                           'cases': ['T1'], 'status': 'confirmed'}]
+                specs.lint(base, manifest)
+                self.assertEqual(manifest['questions'], {})
+
     def test_cli_scope_and_spec_commands(self):
         args = cli.parser().parse_args(['snapshot', '--run', 'x', '--node', 'editor', '--frame', '#backstage-innerpage', '--scope', '#box'])
         self.assertEqual(args.scope, '#box')

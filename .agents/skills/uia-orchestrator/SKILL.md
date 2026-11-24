@@ -129,7 +129,7 @@ Report begins with 结论 / 需要你处理 / 流程指标; all visible statuses
 
 The manifest is the only mutable progress state. New cases use case-spec.v1;
 legacy Intent/reuse-plan and both YAML knowledge schemas stay readable. Profile
-building, asset mining and asset matching are retired from the default flow.
+building and asset mining are optional specialist workflows; the old asset matcher is retired.
 
 Pause only for required login/access, missing environment/data, true business ambiguity,
 or a focused demonstration after bounded exploration. Deduplicate questions, reuse

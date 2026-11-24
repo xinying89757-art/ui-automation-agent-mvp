@@ -11,7 +11,7 @@ import yaml
 from pathlib import Path
 
 from .actions import keyboard_step
-from .common import ROOT, UiaError, digest, event, file_hash, inside, read_json, read_yaml, require, reset_case
+from .common import ROOT, UiaError, digest, event, file_hash, inside, now, read_json, read_yaml, require, reset_case
 
 SCHEMA = read_json(Path(__file__).resolve().parents[2] / 'schemas/case-spec.schema.json')
 VERBS = tuple(SCHEMA['$defs']['step']['properties']['verb']['enum'])
@@ -475,6 +475,25 @@ def lint(base, m, case_ids=None, record=True, check_scripts=True):
                     case.update(stage='finished', work_status='finished', result='not_suitable', classification={'reason': spec['automatable']['reason']})
         from .preconditions import sync_preconditions, QUESTION_KEY
         sync_preconditions(base, m)
+        if business and m.get('initial_review_required') and m.get('human_review'):
+            review = m['human_review']
+            reviewed = [*review.get('decisions', []), *review.get('pending', [])]
+            for text, owners in business.items():
+                review_id = 'business:' + digest(text)
+                covered = {cid for item in reviewed if item.get('id') == review_id or item.get('title') == text
+                           for cid in item.get('cases', [])}
+                outstanding = [cid for cid in owners if cid not in covered]
+                if not outstanding:
+                    continue
+                known_questions = set(m['questions'])
+                q = question(m, 'product', review_id, text, outstanding, attempted=['case-spec 业务预期待确认'])
+                if q['id'] not in known_questions:
+                    m.setdefault('interaction_events', []).append({'kind': 'mid_run_question', 'question_id': q['id'], 'at': now()})
+                q['requires_answer'] = True
+                if q['status'] in {'open', 'deferred'}:
+                    q['status'] = 'open'
+                    for cid in outstanding:
+                        m['cases'][cid]['work_status'] = 'waiting_human'
         if business and m.get('interaction_mode') != 'once':
             owners = sorted({c for ids in business.values() for c in ids})
             q = m['questions'].get(QUESTION_KEY)

@@ -23,7 +23,7 @@ Merge preserves legacy-readable catalogs, writes normalized split records, dedup
 
 ## Lifecycle
 
-Successful execution-backed write-back happens at report/close-out or through `uia.py kb writeback --run ID`. Stable entry/locator records require reuse by at least two cases or two successful executions. Reusable repair patterns require multiple cases with a classified failure followed by a successful repair. Provenance and freshness counters are idempotent per run; write-back never changes case assertions or business meaning. Two independent failures for a record in the same version make it `needs_review`, which is excluded from retrieval by default.
+Reports and remote-result ingestion do not publish long-term knowledge. Keep execution-backed observations as review candidates and run `uia.py kb writeback --run ID` only after the user reviews and approves the concrete changes. Stable entry/locator records require reuse by at least two cases or two successful executions. Reusable repair patterns require multiple cases with a classified failure followed by a successful repair. Provenance and freshness counters are idempotent per run; write-back never changes case assertions or business meaning. Two independent failures for a record in the same version make it `needs_review`, which is excluded from retrieval by default.
 
 `uia.py kb prune` marks records not verified for 90 days as stale. Records with no hits for 180 days are listed as deletion candidates; the command never deletes them. Review and removal happen through a human-reviewed PR.
 

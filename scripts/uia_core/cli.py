@@ -299,7 +299,7 @@ def parser():
             cmd.add_argument("--headed", action="store_true", help="Run this batch with a visible browser")
             cmd.add_argument("--rerun", action="store_true", help="Rerun a passed case and retain earlier attempts")
         if name == "report":
-            cmd.add_argument("--no-knowledge-writeback", action="store_true", help="Generate report without updating long-term knowledge")
+            cmd.add_argument("--no-knowledge-writeback", action="store_true", help="Compatibility flag; reports never update long-term knowledge automatically")
         if name == "recover":
             cmd.add_argument("--abandon", action="store_true")
             cmd.add_argument("--evidence")
@@ -346,7 +346,7 @@ def dispatch(args, path, m):
         if args.action == 'prune':
             stale_days = args.older_than_days or 90
             return knowledge.prune(stale_days, max(180, stale_days))
-        return {'writeback': knowledge.writeback(base, m), 'report': reports.make_report(base, m)}
+        return {'writeback': knowledge.writeback(base, m), 'report': reports.make_report(base, m, writeback=False)}
     if cmd == "hints":
         from .entries import add, confirm
         from .experience import sync_checklist
@@ -381,7 +381,13 @@ def dispatch(args, path, m):
         else:
             require(args.action == "restore" or args.file, args.action + " requires a JSON file")
             result = ingest(base, m, args.file) if args.action == "ingest" else reevaluate(base, m, args.file) if args.action == "reevaluate" else restore(base, m)
-        result["report"] = reports.make_report(base, m)
+        try:
+            result["report"] = reports.make_report(base, m, writeback=False)
+        except Exception as error:
+            # The receipt and any verified cleanup must still be persisted by the
+            # enclosing manifest transaction if only report generation fails.
+            event(m, "report_generation_failed", error_type=type(error).__name__)
+            result["report"] = {"ok": False, "error": type(error).__name__}
         return result
     if cmd == "spec":
         if args.action == "lint":
@@ -559,7 +565,7 @@ def dispatch(args, path, m):
     if cmd == "report":
         if not m.get("active_batch"):
             workflow.refresh(base, m)
-        return reports.make_report(base, m, writeback=not args.no_knowledge_writeback)
+        return reports.make_report(base, m, writeback=False)
     if cmd == "validate":
         errors, warnings = checks.run_errors(base, m)
         errors.extend(checks.skill_errors())

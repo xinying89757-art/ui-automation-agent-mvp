@@ -389,15 +389,15 @@ def reopen_unearned(m):
     return reopened
 
 
-def page_map_slice(base, c):
+def page_map_slice(base, c, *, catalog_override=None, overlay_override=None, include_provenance=False):
     """Only the page-map entries a case-spec references (transitively) version the case; new targets do not rerun it."""
     path = base / "runner/knowledge/page-map.yaml"
     if not path.is_file():
         path = ROOT / "assets/playwright-runner/knowledge/page-map.yaml"
-    catalog = read_yaml(path) if path.is_file() else {}
+    catalog = copy.deepcopy(catalog_override) if catalog_override is not None else (read_yaml(path) if path.is_file() else {})
     overlay = base / 'state/page-map-overlay.yaml'
-    if overlay.is_file():
-        extra = read_yaml(overlay)
+    if overlay_override is not None or overlay.is_file():
+        extra = overlay_override if overlay_override is not None else read_yaml(overlay)
         for section in ('pages', 'targets'):
             require(not (set(extra.get(section, {})) & set(catalog.get(section, {}))), 'Run-local page map cannot override shared entries')
             catalog.setdefault(section, {}).update(extra.get(section, {}))
@@ -421,6 +421,10 @@ def page_map_slice(base, c):
         if name in seen:
             continue
         row = next((sec[name] for sec in sections.values() if name in sec), None)
+        # Verification history is evidence, not executable navigation or locator
+        # behavior. Recording another successful use must not invalidate a case.
+        if isinstance(row, dict) and not include_provenance:
+            row = {key: value for key, value in row.items() if key != 'provenance'}
         seen[name] = row
         refs = set()
         walk_refs = [row]
@@ -436,7 +440,7 @@ def page_map_slice(base, c):
     return digest({"slice": seen, "schema": catalog.get("schema_version")})
 
 
-def case_version(base, m, c):
+def _case_version(base, m, c, *, catalog_override=None, overlay_override=None, include_provenance=False):
     registration = c["registration"]
     cfg = m["config"]
     data = cfg.get("data_rules", {})
@@ -449,13 +453,50 @@ def case_version(base, m, c):
     relevant_config["proxy_fingerprint"] = network_fingerprint(cfg)
     files = code_files(base, registration)
     if "knowledge/page-map.yaml" in files and c.get("case_spec"):
-        files["knowledge/page-map.yaml"] = page_map_slice(base, c)
+        files["knowledge/page-map.yaml"] = page_map_slice(base, c, catalog_override=catalog_override,
+                                                          overlay_override=overlay_override,
+                                                          include_provenance=include_provenance)
     return digest({"files": files, "source": c["source_hash"],
                    "intent": file_hash(inside(base, c["intent"])),
                    "plan": file_hash(inside(base, c["reuse_plan"])),
                    "case_spec": file_hash(inside(base, c.get("case_spec", "__missing__"))),
                    "config": digest(relevant_config), "fixture": registration["fixture"],
                    "flow_ids": c["flow_ids"], "fixture_ids": c["fixture_ids"]})
+
+
+def case_version(base, m, c):
+    current = _case_version(base, m, c)
+    previous = c.get('version')
+    if not previous or previous == current or not c.get('case_spec'):
+        return current
+    # Earlier versions included provenance in the page-map hash. Preserve a
+    # previous version only when its batch snapshot proves both the legacy
+    # hash and the current executable slice match; all other dependencies and
+    # the configuration are still hashed from the current run.
+    for attempt in reversed(c.get('attempts') or []):
+        if attempt.get('version') != previous:
+            continue
+        batch = next((item for item in m.get('batches', []) if item.get('id') == attempt.get('batch_id')), None)
+        if not batch:
+            continue
+        directory = inside(base, batch['directory'])
+        map_path = directory / 'snapshot/files/knowledge/page-map.yaml'
+        versions_path = directory / 'snapshot/versions.json'
+        overlay_path = directory / 'page-map-overlay.yaml'
+        if not map_path.is_file() or not versions_path.is_file():
+            continue
+        if read_json(versions_path).get('versions', {}).get(c['case_id']) != previous:
+            continue
+        snapshot_map = read_yaml(map_path)
+        snapshot_overlay = read_yaml(overlay_path) if overlay_path.is_file() else {}
+        snapshot_slice = page_map_slice(base, c, catalog_override=snapshot_map, overlay_override=snapshot_overlay)
+        if snapshot_slice != page_map_slice(base, c):
+            continue
+        legacy = _case_version(base, m, c, catalog_override=snapshot_map,
+                               overlay_override=snapshot_overlay, include_provenance=True)
+        if legacy == previous:
+            return previous
+    return current
 
 
 def register(base, m, cid, registration):

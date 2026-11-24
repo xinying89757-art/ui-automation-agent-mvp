@@ -111,7 +111,15 @@ def timestamp(value):
 
 
 def export(base, m):
-    checks = [row['request'] for row in m.get('remote_checks', {}).values() if row.get('active', True)]
+    # Completed receipts from an invalidated case version are historical evidence,
+    # not requests for a new run. Pending leases remain active for explicit cleanup.
+    for row in m.get('remote_checks', {}).values():
+        case = m.get('cases', {}).get(row.get('request', {}).get('case_id'))
+        if (case is not None and row.get('active', True) and row.get('version') != case.get('version')
+                and row.get('status') in {'pass', 'fail', 'unreachable'}):
+            row['active'] = False
+    checks = [row['request'] for row in m.get('remote_checks', {}).values() if row.get('active', True)
+              and (m.get('cases', {}).get(row['request']['case_id'], {}).get('version') == row.get('version'))]
     if not checks:
         return None
     directory = base / 'remote-checks'

@@ -149,9 +149,10 @@ of the same script, dependencies and configuration. Show that count. Never claim
 stability from retries, a reused page, or a previous version. Passing batches write
 locator memory automatically; do not skip that step and do not store raw panel text
 as an element name.
-Long-term knowledge write-back runs automatically at report/close-out, but only for
-execution-verified reusable knowledge; it never changes assertions or business
-semantics. Read the report's added/updated entries and stale/review status.
+Reporting and remote-result ingestion do not write to long-term knowledge. Keep
+verified observations and human answers as scoped, traceable review candidates;
+apply `kb writeback` only after the user reviews and approves the concrete changes.
+Never change assertions or business semantics during knowledge review.
 Every source case retains a result or an explained pending/blocked state; do not remove
 difficult cases from the denominator. Separately report execution coverage, pass rate,
 stability rate, elapsed time, human waits and reuse.

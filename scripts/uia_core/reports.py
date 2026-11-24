@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import html
 import json
+import re
 import zipfile
 from pathlib import Path
 from urllib.parse import quote
 
 from openpyxl import Workbook
+from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 from openpyxl.styles import Alignment, Font, PatternFill
 
 from .common import atomic_write, elapsed, file_hash, inside, now, read_json, summary
@@ -76,9 +78,9 @@ def opening(m, metrics, review):
         metrics_text += f"知识注入 token p50/p95：{kb['p50']}/{kb['p95']}（{kb['count']} 条用例）。"
     writeback = m.get('knowledge_writeback', {})
     if writeback.get('count'):
-        metrics_text += ' 本轮知识新增或更新：' + '、'.join(x['name'] for x in writeback.get('added_or_updated', [])) + '。'
+        metrics_text += ' 历史知识写回记录：' + '、'.join(x['name'] for x in writeback.get('added_or_updated', [])) + '；当前入库状态以长期库及审核记录为准。'
     if writeback.get('partial_count'):
-        metrics_text += f" 执行成功步骤的部分知识回写 {writeback['partial_count']} 项。"
+        metrics_text += f" 历史记录中有 {writeback['partial_count']} 项成功步骤的部分知识写回。"
     checklist = m.get('questions', {}).get('run-preconditions', {})
     if (checklist.get('entry_count', 0) and checklist.get('memory_answer_count') == checklist.get('entry_count')
             and checklist.get('status') == 'answered' and metrics['checklist_questions'] == 0):
@@ -104,7 +106,18 @@ def brief_error(attempt, cfg=None):
     return scrub_text(" ".join(attempt.get("errors") or []), cfg)[:180]
 
 
-def make_report(base, m, writeback=True):
+def excel_safe(value):
+    """Remove terminal escapes and Excel-forbidden controls from presentation only."""
+    if not isinstance(value, str):
+        return value
+    return ILLEGAL_CHARACTERS_RE.sub('', re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', value))
+
+
+def append_excel(sheet, values):
+    sheet.append([excel_safe(value) for value in values])
+
+
+def make_report(base, m, writeback=False):
     if writeback:
         from .knowledge import writeback as knowledge_writeback
         knowledge_writeback(base, m)
@@ -185,22 +198,22 @@ def make_report(base, m, writeback=True):
     overview = wb.active
     overview.title = "报告开头"
     for block in blocks:
-        overview.append([block['title'], block['text']])
+        append_excel(overview, [block['title'], block['text']])
     sheet = wb.create_sheet("逐条结果")
     sheet.title = "逐条结果"
-    sheet.append(["用例ID", "原始ID", "工作表", "源行号", "标题", "优先级", "进度", "结果", "稳定性", "连续成功", "脚本", "执行次数", "最近证据", "原因"])
+    append_excel(sheet, ["用例ID", "原始ID", "工作表", "源行号", "标题", "优先级", "进度", "结果", "稳定性", "连续成功", "脚本", "执行次数", "最近证据", "原因"])
     for r in records:
-        sheet.append([r["case_id"], r["original_id"], r["sheet"], ",".join(map(str, r["rows"])),
+        append_excel(sheet, [r["case_id"], r["original_id"], r["sheet"], ",".join(map(str, r["rows"])),
                       r["title"], r["priority"], zh(r["work_status"]), zh(r["result"]), zh(r["stability"]), r["pass_streak"],
                       r["script"], len(r["attempts"]), r["attempts"][-1]["evidence"] if r["attempts"] else "", r.get("reason", "")])
     stats = wb.create_sheet("汇总")
-    stats.append(["指标", "值"])
+    append_excel(stats, ["指标", "值"])
     for key, value in {**s, **metrics}.items():
-        stats.append([key, json.dumps(value, ensure_ascii=False) if isinstance(value, (dict, list)) else value])
+        append_excel(stats, [key, json.dumps(value, ensure_ascii=False) if isinstance(value, (dict, list)) else value])
     qs = wb.create_sheet("人工问题")
-    qs.append(["问题ID", "类型", "问题", "影响用例", "状态", "已尝试"])
+    append_excel(qs, ["问题ID", "类型", "问题", "影响用例", "状态", "已尝试"])
     for q in questions:
-        qs.append([q["id"], q["kind"], q["prompt"], ", ".join(q["case_ids"]), zh(q["status"]), "\n".join(q["attempted"])])
+        append_excel(qs, [q["id"], q["kind"], q["prompt"], ", ".join(q["case_ids"]), zh(q["status"]), "\n".join(q["attempted"])])
     for ws in wb:
         ws.freeze_panes = "A2"
         ws.auto_filter.ref = ws.dimensions

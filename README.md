@@ -149,7 +149,7 @@ python3 scripts/uia.py kb validate
 python3 scripts/uia.py kb prune   # >90 天标 stale；>180 天且无命中只列删除候选
 ```
 
-报告收尾会自动把执行验证且至少被两个用例或两次执行复用的入口/定位器/修复模式写回，并展示新增或更新项；不会修改断言或业务语义。相同版本两次独立失败会隔离为 `needs_review`，默认检索排除。详见 [知识库与远程检查](docs/knowledge-base.md) 和 [远程检查协议](docs/remote-checks.md)。
+报告保留经执行验证的入口、定位器和修复模式作为审核材料，不自动写入长期知识库；用户审核并批准具体变更后再手动执行知识回写。知识回写不会修改断言或业务语义。相同版本两次独立失败会隔离为 `needs_review`，默认检索排除。详见 [知识库与远程检查](docs/knowledge-base.md) 和 [远程检查协议](docs/remote-checks.md)。
 
 运行状态位于 `runs/<run-id>/run.json`；源用例归一记录、Intent、复用计划、脚本和运行证据
 位于该运行目录。运行数据、认证状态、本地账号配置和依赖目录默认不进入 Git；三环境默认配置和灰度 PAC 随项目交付。

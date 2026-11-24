@@ -509,7 +509,10 @@ def abandon_batch(base, m, evidence):
 
 def repair(base, m, cid, evidence):
     c = m["cases"][cid]
-    require(c.get("attempts") and c["attempts"][-1]["result"] == "automation_failure", "Only automation failures enter repair")
+    latest = c.get("attempts", [])[-1] if c.get("attempts") else None
+    reclassified = c.get("result") == "automation_failure" and c.get("classification", {}).get("evidence")
+    require(latest and (latest["result"] == "automation_failure" or reclassified and
+            inside(base, c["classification"]["evidence"]).is_file()), "Only automation failures enter repair")
     require(c["attempts"][-1].get("cleanup_verified") or c["attempts"][-1].get("setup_started", True) is False or c.get("cleanup_recovery", {}).get("batch_id") == c["attempts"][-1]["batch_id"],
             "Restore the fixture before a repair rerun")
     require(c["repair_rounds"] < m["config"]["execution"]["repair_rounds"], "Repair budget exhausted")

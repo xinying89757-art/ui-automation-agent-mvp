@@ -213,6 +213,61 @@ class ChecklistResumeTests(unittest.TestCase):
 
 
 class PageMapSliceTests(unittest.TestCase):
+    def test_legacy_pending_version_is_compatible_only_if_snapshot_behavior_matches(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp).resolve()
+            spec = {'start_page': 'content-admin', 'steps': [{'target': 'faq.add'}]}
+            common.atomic_write(base / 'C1/case-spec.yaml', spec, as_yaml=True)
+            path = base / 'runner/knowledge/page-map.yaml'
+            catalog = {'schema_version': 'page-map.v1', 'pages': {'content-admin': {'entry': '内容管理'}},
+                       'targets': {'faq.add': {'selector': '.add', 'provenance': [{'source_run': 'R1', 'verified_by': ['C1']}]}}}
+            common.atomic_write(path, catalog, as_yaml=True)
+            case = {'case_id': 'C1', 'case_spec': 'C1/case-spec.yaml', 'source_hash': 'source',
+                    'intent': '__none__', 'reuse_plan': '__none__', 'flow_ids': [], 'fixture_ids': [],
+                    'registration': {'script': 'runner/test.ts', 'fixture': {'hooks': 'fixture.mjs'}}, 'attempts': []}
+            manifest = {'config': {'execution': {'workers': 1, 'timeout_ms': 1000}}, 'batches': []}
+            files = {'knowledge/page-map.yaml': 'catalog', 'test.ts': 'code-v1'}
+            with patch.object(workflow, 'code_files', side_effect=lambda *_: dict(files)), \
+                 patch('uia_core.profiles.network_fingerprint', return_value='network'):
+                legacy = workflow._case_version(base, manifest, case, include_provenance=True)
+                case['version'] = legacy
+                case['attempts'] = [{'version': legacy, 'batch_id': 'B'}]
+                manifest['batches'] = [{'id': 'B', 'directory': 'batches/B'}]
+                snap = base / 'batches/B/snapshot'
+                common.atomic_write(snap / 'files/knowledge/page-map.yaml', catalog, as_yaml=True)
+                common.atomic_write(snap / 'versions.json', {'versions': {'C1': legacy}, 'files': {}})
+                common.atomic_write(base / 'batches/B/page-map-overlay.yaml', {}, as_yaml=True)
+                catalog['targets']['faq.add']['provenance'].append({'source_run': 'R2', 'verified_by': ['C2']})
+                common.atomic_write(path, catalog, as_yaml=True)
+                self.assertEqual(workflow.case_version(base, manifest, case), legacy)
+                files['test.ts'] = 'code-v2'
+                self.assertNotEqual(workflow.case_version(base, manifest, case), legacy)
+                files['test.ts'] = 'code-v1'
+                manifest['config']['execution']['timeout_ms'] = 2000
+                self.assertNotEqual(workflow.case_version(base, manifest, case), legacy)
+                manifest['config']['execution']['timeout_ms'] = 1000
+                catalog['targets']['faq.add']['selector'] = '.different'
+                common.atomic_write(path, catalog, as_yaml=True)
+                self.assertNotEqual(workflow.case_version(base, manifest, case), legacy)
+
+    def test_provenance_updates_do_not_invalidate_but_locator_changes_do(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp).resolve()
+            common.atomic_write(base / 'C1/case-spec.yaml', {'start_page': 'content-admin', 'steps': [{'target': 'faq.add'}]}, as_yaml=True)
+            path = base / 'runner/knowledge/page-map.yaml'
+            catalog = {'schema_version': 'page-map.v1', 'pages': {'content-admin': {'entry': '内容管理'}},
+                       'targets': {'faq.add': {'selector': '.add', 'provenance': [{'source_run': 'R1', 'verified_by': ['C1']}]}}}
+            common.atomic_write(path, catalog, as_yaml=True)
+            case = {'case_spec': 'C1/case-spec.yaml'}
+            original = workflow.page_map_slice(base, case)
+            catalog['targets']['faq.add']['provenance'].append({'source_run': 'R2', 'verified_by': ['C2']})
+            catalog['pages']['content-admin']['provenance'] = [{'source_run': 'R2', 'verified_by': ['C2']}]
+            common.atomic_write(path, catalog, as_yaml=True)
+            self.assertEqual(workflow.page_map_slice(base, case), original)
+            catalog['targets']['faq.add']['selector'] = '.different'
+            common.atomic_write(path, catalog, as_yaml=True)
+            self.assertNotEqual(workflow.page_map_slice(base, case), original)
+
     def test_unrelated_new_targets_do_not_change_case_version_slice(self):
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)

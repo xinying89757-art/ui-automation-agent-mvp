@@ -18,7 +18,7 @@ coverage、hooks、dependencies 的代码路径相对该运行下的 runner。
 Agent 仍须对照确认断言语义，工具不凭自然语言自动推断预期。新页面可用 `--review-source current`。
 
 `login --run R --headed` 和 `run-batch --run R --cases C --headed` 使用有界面浏览器；已通过用例的同版本复跑
-可加 `--rerun`，保留历史执行及门禁。使用 `report --run R --no-knowledge-writeback` 生成报告而不写长期知识库。
+可加 `--rerun`，保留历史执行及门禁。`report --run R` 默认不写长期知识库；旧参数 `--no-knowledge-writeback` 仍可使用。经用户审核批准后，才手动执行 `kb writeback --run R`。
 运行内新控件可写在 `state/page-map-overlay.yaml`（`pages` / `targets`），不能覆盖共享名称；批次快照包含该文件，
 导出脚本包附带 overlay 和配置说明，不自动提升为共享知识。
 

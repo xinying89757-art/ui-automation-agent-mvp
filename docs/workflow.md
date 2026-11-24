@@ -18,7 +18,7 @@ Excel 导入接受常见中英文表头别名并跳过无用例内容的行；�
 | spec-pathfinder | `go` 按需求编译人审版 v1 与存疑清单 v1；`--code` 时索引项目代码并写执行版。产物只在 run 目录 | 稳定用例/步骤/主张编号；存疑并入一次清单 | 确认稿投影为 case-spec |
 | case-spec | 已有 pathfinder 确认稿时不再从 Excel 重推入口、步骤和预期；lint 仍校验原文、词表和去重 | 独立目标；未知聚合 | gen |
 | 预检/生成 | 环境、会话、数据预检；spec gen 按模板生成单用例文件 | 统一 fixture；标记自动推出覆盖 | execution |
-| 探索 | `next` 对缺失知识目标返回 `explore`；按入口做限定快照/生成器探索 | 成功知识回写；失败须有有界尝试证据 | spec gen / execution |
+| 探索 | `next` 对缺失知识目标返回 `explore`；按入口做限定快照/生成器探索 | 保存已验证知识候选；失败须有有界尝试证据 | spec gen / execution |
 | 运行 | run-batch/wait 保留尝试；环境→会话→数据→定位/时序→业务分诊 | 每日 1 次，夜间 2 批同版本成功 | feedback |
 | 反馈交付 | 生成审核候选与结果 | 长期写回经用户审核 | completed |
 
@@ -107,6 +107,6 @@ Xinying 已授权测试站及账号自由修改、保存、发布；实际可行
 
 `go` 在问题清单、探索和 spec generation 之前运行索引检索：每例按页面/frame/版本/状态硬过滤，并把 case 与 spec 的目标、feature 和关键词送入 BM25 排序，再按每例 token 预算加载相关小文件。generator 与 spec-gen 只收到该用例命中项及其模式。`runs/<id>/knowledge-match.json` 保存所选条目、被预算截断条目和注入 token 数。报告记录 token p50/p95；对已知页面再次探索会增加 `re_explored_known_pages` 并作为 `process_issue` 显示。
 
-report/close-out 自动执行知识回写。已执行成功的操作步骤可在最终断言失败时回写已到达入口、已定位/交互控件和已走路线；断言与业务语义不作为知识证据。完整的入口与定位器成功记录仍按重复验证更新稳定性计数。两次独立失败会将同版本知识设为 `needs_review`，默认不注入。`kb prune` 超过 90 天未验证标为 stale；180 天无命中仅列删除候选，不删文件。历史扁平 `entries.yaml`/`page-map.yaml` 由 `knowledge merge` 迁移到按页面/组件/流程/模式拆分的 YAML 文件。
+report/close-out 和远程回执导入不自动写入长期知识。已执行成功的操作步骤可作为待审核候选，记录入口、控件、路线、来源和适用范围；断言与业务语义不作为知识证据。只有用户审核并批准具体变更后才运行 `kb writeback`。完整的入口与定位器成功记录仍按重复验证更新稳定性计数。两次独立失败会将同版本知识设为 `needs_review`，默认不注入。`kb prune` 超过 90 天未验证标为 stale；180 天无命中仅列删除候选，不删文件。历史扁平 `entries.yaml`/`page-map.yaml` 由 `knowledge merge` 迁移到按页面/组件/流程/模式拆分的 YAML 文件。
 
 缺失 page-map 控件是探索任务，不是业务失败。Agent 根据证据和进展决定继续或提问；写入 catalog 但未绑定 `?placeholder` 不算该规格目标已发现。每次成功后运行 lint/gen，并继续调用 `next`；只有所有用例均结论并已生成最终报告后才结束。

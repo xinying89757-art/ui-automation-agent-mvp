@@ -53,6 +53,21 @@ class RemoteChecksTests(unittest.TestCase):
         common.atomic_write(self.request, {'schema_version':'uia-remote-request.v1','run_id':'R','checks':[self.check]})
     def evidence(self, text):
         return [{'section_sha256':hashlib.sha256(text.encode()).hexdigest(),'excerpt':text}]
+    def test_export_excludes_obsolete_case_versions_without_discarding_pending_leases(self):
+        stale = copy.deepcopy(self.m['remote_checks']['check1'])
+        stale.update(version='old', status='pass', active=True)
+        stale['request']['id'] = 'stale'
+        pending = copy.deepcopy(stale)
+        pending.update(status='pending', active=True)
+        pending['request']['id'] = 'pending-old'
+        self.m['remote_checks']['stale'] = stale
+        self.m['remote_checks']['pending-old'] = pending
+        remote.export(self.base, self.m)
+        exported = json.loads(self.request.read_text())
+        self.assertEqual([x['id'] for x in exported['checks']], ['check1'])
+        self.assertFalse(stale['active'])
+        self.assertTrue(pending['active'])
+
     def test_ordered_pairs_parser_matches_exact_markdown_and_legacy(self):
         condition={'op':'ordered_pairs','section':'FAQ','value':FAQ_PAIRS}
         self.assertTrue(remote.evaluate_condition(FAQ_BODY,condition))

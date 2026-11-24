@@ -14,8 +14,8 @@ Excel 导入接受常见中英文表头别名并跳过无用例内容的行；�
 
 | 阶段 | 输入与动作 | 完成门 | 下一步 |
 |---|---|---|---|
-| Excel 导入 | CLI 保留原文，bind-specs 索引并优先执行现有脚本 | 来源与绑定可追溯 | spec-pathfinder |
-| spec-pathfinder | `go` 按需求编译人审版 v1 与存疑清单 v1；`--code` 时索引项目代码并写执行版。产物只在 run 目录 | 稳定用例/步骤/主张编号；存疑并入一次清单 | 确认稿投影为 case-spec |
+| Excel 导入 | CLI 保留原文，bind-specs 索引已有脚本并检索知识 | 来源与绑定可追溯 | HTML 审核 |
+| HTML 审核 | `go` 编译审核材料；Agent 对照需求和设计补充存疑预期及关键断言 | 导入答复，待答仅阻断关联用例 | case-spec |
 | case-spec | 已有 pathfinder 确认稿时不再从 Excel 重推入口、步骤和预期；lint 仍校验原文、词表和去重 | 独立目标；未知聚合 | gen |
 | 预检/生成 | 环境、会话、数据预检；spec gen 按模板生成单用例文件 | 统一 fixture；标记自动推出覆盖 | execution |
 | 探索 | `next` 对缺失知识目标返回 `explore`；按入口做限定快照/生成器探索 | 保存已验证知识候选；失败须有有界尝试证据 | spec gen / execution |
@@ -40,14 +40,13 @@ Excel 导入接受常见中英文表头别名并跳过无用例内容的行；�
 立即执行。之后按公共业务流程选择能解锁最多用例的工作，P0/P1 在同等条件下优先。
 已有兼容脚本优先重跑，公共流程只在需要时探索一次。
 
-旧 intent/reuse-plan/asset-matcher/profile-builder/asset-miner 链退出默认流程；文件和历史运行继续兼容。
+旧 Intent 和资产匹配执行链已退役，历史运行保留为只读。资产盘点及产品源码知识构建作为专项工具使用。
 同一运行内通过验证的参数化能力可直接供其他用例使用。长期资产回写只生成可审阅
 候选，默认不直接写入两个规范知识库。
 
 ## 人工问题
 
-提测可选 `go --hints FILE_OR_TEXT` 或 `hints add --run R "页面=路径"`；未知入口合并一次清单 D（可用 `preconditions classify --page` 注册），后发现的问题按影响范围排队，关键路径可及时提问，其余先继续独立用例。
-D 答复（页面=路径或 D1/D2）写入环境记忆及 `assets/playwright-runner/knowledge/entries.yaml`，跨需求复用；草稿答复在清单定稿时自动应用。
+提测可选 `go --hints FILE_OR_TEXT` 或 `hints add --run R "页面=路径"`。不明确的入口先查询知识并探索；无新线索时按影响范围提问，关键路径可及时提问，其余先继续独立用例。人工答复先作为本次线索，实际验证后才可成为知识候选。
 探索从 `snapshot --entry PAGE` / `generator --entry PAGE` 开始；`next` 优先选择缺失占位目标最少的 case，每次最多 8 个目标，同入口/frame 的其他 case 只有在共享这些目标时才加入。按返回的 `targets_by_case` 执行 action 的精确 `generator_command`；命令带 `--cases`/`--targets`，报告包含 case spec 的 step ID 与 placeholder 对应的唯一已验证 locator。快照命令示例：`uia.py snapshot --run R --node editor --entry PAGE --purpose TARGET --evidence evidence/TARGET.json`。Generator 成功后执行返回的 `hints promote --report` 命令；它自动保存唯一 locator 并绑定 placeholder，不需要手工 `--for`。Snapshot 结果用 `uia.py exploration-log` 按 case/目标记录，并传 `--duration-ms`。两次尝试、无进展或参考预算到达后，`next` 提醒评估；Agent 可以依据新线索继续，也可以创建人工问题，等待期间其他用例继续。菜单交互先滚动并尝试普通 click，失败后才使用 typeahead/Enter 或 ArrowDown/Enter；保持焦点在当前编辑器或触发控件。禁止猜测控件或在探索报告未成功时绑定。粗略路径转为 --goto/--step 后用 `hints confirm` 保存；仅已知入口到达且 generator 在指定 --interaction 失败后才可请求演示。
 
 问题保存类型、影响用例、尝试记录和恢复位置。登录和凭证只接收状态/环境变量引用，
@@ -95,8 +94,7 @@ fixtures 可继续。清理恢复需要实际证据，通过 `resolve-fixture` �
 目标地址变化重新预检、发现并注册；数据规则变化只影响相关 fixture 的用例。
 修改公共依赖使实际引用它的用例重新验证。认证状态恢复重新预检，不删除历史结果。
 
-原有 Intent/reuse-plan 版本、UI Knowledge 与 Asset Registry 文件继续使用。旧技能
-目录保留迁移说明。`cases/TC_PD_001` 是本地历史样本，包含产品环境信息，不纳入公开仓库。
+原有 Intent/reuse-plan 的 schema、历史运行和证据只读保留。需要复跑时检出历史 Git 版本。`cases/TC_PD_001` 是本地历史样本，包含产品环境信息，不纳入公开仓库。
 项目技能与全局技能之间没有运行时路径依赖。
 
 Xinying 已授权测试站及账号自由修改、保存、发布；实际可行时恢复数据以便复跑。

@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
-from uia_core import common, experience, workflow, profiles, specs, cli, metrics, reports, entries
+from uia_core import common, experience, workflow, profiles, specs, cli, metrics, reports, entries, preconditions
 from openpyxl import Workbook
 
 SOURCE = Path(__file__).resolve().parents[1]
@@ -59,6 +59,16 @@ class PhaseThreeTests(unittest.TestCase):
         second['config']['site'] = 'https://other.example.test'
         second['questions'] = {}
         self.assertEqual(experience.sync_checklist(self.base, second)['question_count'], 2)
+
+    def test_new_run_uses_html_review_instead_of_checklist_gate(self):
+        self.m['initial_review_required'] = True
+        experience.sync_checklist(self.base, self.m)
+        self.assertEqual(self.m['questions'][preconditions.QUESTION_KEY]['status'], 'answered')
+        self.assertEqual(self.m['cases']['TC-0002']['work_status'], 'runnable')
+        self.m['human_review'] = {'pending': [{'id': 'Q', 'cases': ['TC-0002']}]}
+        workflow.park_cases_with_pending_review(self.m)
+        self.assertEqual(self.m['cases']['TC-0002']['work_status'], 'waiting_human')
+        self.assertEqual(self.m['cases']['T2']['work_status'], 'runnable')
 
     def test_ambiguous_answers_do_not_persist_or_guess_business(self):
         self.add_case('T3', [], ['空值应如何处理？选项：阻止/允许'])
@@ -125,12 +135,13 @@ class PhaseThreeTests(unittest.TestCase):
         self.assertEqual(self.m['config']['mutation']['scope'], [])
         self.assertEqual(self.m['cases']['T2']['work_status'], 'waiting_human')
 
-    def test_cn_report_opening_and_cli_backward_compatibility(self):
+    def test_cn_report_opening_and_focused_answer_cli(self):
         flow = metrics.calculate(self.base, self.m)
         blocks = reports.opening(self.m, flow, {'items': []})
         self.assertEqual([x['title'] for x in blocks], ['结论', '需要你处理', '流程指标'])
         self.assertNotIn('runnable', json.dumps(blocks))
-        self.assertEqual(cli.parser().parse_args(['answer', '--run', 'R', 'A 都有，B 同意']).sentence, 'A 都有，B 同意')
+        with self.assertRaises(common.UiaError):
+            cli.parser().parse_args(['answer', '--run', 'R', 'A 都有，B 同意'])
         self.assertEqual(cli.parser().parse_args(['answer', '--run', 'R', '--question', 'Q', '--file', 'a.json']).file, 'a.json')
         self.assertEqual(cli.parser().parse_args(['go', 'a.xlsx', '--cases', 'T1,T2']).cases, 'T1,T2')
 
@@ -155,9 +166,16 @@ class PhaseThreeTests(unittest.TestCase):
         with patch.object(profiles, 'invoke_login', return_value={}), patch('uia_core.runtime.preflight', side_effect=preflight), patch.object(experience, '_run_ready', side_effect=run_existing) as run, patch.object(reports, 'make_report', return_value={}):
             first = experience.go(workbook, 'offline', 'TC-0004,NEW-2')
             self.assertGreaterEqual(first['question_count'], 1)
-            self.assertEqual(first['pathfinder']['stage'], 'v1')
-            self.assertEqual(run.call_args.args[1], ['TC-0004'])
+            self.assertTrue(first['review_only'])
+            self.assertEqual(run.call_count, 0)
+            again = experience.go(workbook, 'offline', 'TC-0004,NEW-2')
+            self.assertTrue(again['review_only'])
+            manifest = self.root / 'runs' / first['run_id'] / 'run.json'
+            data = common.read_json(manifest)
+            data['human_review'] = {'decisions': [], 'pending': []}
+            common.save(manifest, data)
             second = experience.go(workbook, 'offline', 'TC-0004,NEW-2')
+            self.assertEqual(run.call_args.args[1], ['TC-0004'])
             self.assertEqual(first['run_id'], second['run_id'])
             self.assertEqual(run.call_count, 1)
             self.assertEqual(second['spec_tasks'], [])
@@ -190,6 +208,12 @@ class PhaseThreeTests(unittest.TestCase):
              patch('uia_core.runtime.preflight', side_effect=preflight), \
              patch.object(experience, '_run_ready') as run, \
              patch.object(reports, 'make_report', return_value={}):
+            initial = experience.go(workbook, 'offline', 'TC-0004')
+            self.assertTrue(initial['review_only'])
+            manifest = self.root / 'runs' / initial['run_id'] / 'run.json'
+            data = common.read_json(manifest)
+            data['human_review'] = {'decisions': [], 'pending': []}
+            common.save(manifest, data)
             result = experience.go(workbook, 'offline', 'TC-0004')
         case = common.read_json(self.root / 'runs' / result['run_id'] / 'run.json')['cases']['TC-0004']
         self.assertEqual(generate.call_count, 1)

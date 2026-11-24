@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from openpyxl import Workbook
-from uia_core import cli, common, entries, experience, failures, metrics, profiles, reports, specs, workflow
+from uia_core import cli, common, entries, experience, failures, metrics, profiles, reports, runtime, specs, workflow
 
 SOURCE = Path(__file__).resolve().parents[1]
 
@@ -43,6 +43,30 @@ class FailureClassTests(unittest.TestCase):
 
 
 class MetricsReportTests(unittest.TestCase):
+    def test_verified_knowledge_use_requires_matching_successful_step_and_snapshots(self):
+        with tempfile.TemporaryDirectory() as temp:
+            base = Path(temp).resolve()
+            directory = base / 'batches/B'
+            cases = directory / 'snapshot/cases.json'
+            knowledge = directory / 'snapshot/knowledge-match.json'
+            report = directory / 'case-results.json'
+            common.atomic_write(cases, {'C1': {'spec': {'steps': [
+                {'id': 'S1', 'target': 'product.open'}, {'id': 'S2', 'target': 'product.save'}]}}})
+            common.atomic_write(knowledge, {'matched': {'C1': {
+                'target.product.open': {}, 'target.product.save': {}}}})
+            common.atomic_write(report, {'batch_id': 'B'})
+            batch = {'id': 'B', 'directory': 'batches/B', 'report': 'batches/B/case-results.json',
+                     'cases_snapshot_sha256': common.file_hash(cases),
+                     'knowledge_snapshot_sha256': common.file_hash(knowledge)}
+            uses = runtime.verified_knowledge_uses(base, batch, 'C1', ['S1'])
+            self.assertEqual([(item['id'], item['step']) for item in uses], [('target.product.open', 'S1')])
+            manifest = {'cases': {'C1': {'case_id': 'C1', 'attempts': [
+                {'result': 'passed', 'executed': True, 'batch_id': 'B', 'evidence': batch['report'],
+                 'evidence_sha256': common.file_hash(report), 'verified_knowledge_uses': uses}]}}}
+            self.assertEqual(metrics.verified_knowledge_use(base, manifest)['count'], 1)
+            common.atomic_write(knowledge, {'matched': {}})
+            self.assertEqual(metrics.verified_knowledge_use(base, manifest)['count'], 0)
+
     def test_report_metrics_include_the_required_fields(self):
         with tempfile.TemporaryDirectory() as temp:
             base = Path(temp)
@@ -87,7 +111,8 @@ class MetricsReportTests(unittest.TestCase):
             self.assertEqual(measured["knowledge_injected_tokens"]["p95"], 90)
             text = reports.opening(manifest, measured, {"items": []})[2]["text"]
             self.assertIn("失败分类占比", text)
-            self.assertIn("知识命中率", text)
+            self.assertIn("知识检索 2 条，规格或脚本引用 1 条", text)
+            self.assertIn("有执行证据的知识使用 0 条", text)
             self.assertIn("Midscene 挽救 2", text)
 
 
@@ -155,6 +180,12 @@ class PreflightGateTests(unittest.TestCase):
         with patch.object(profiles, "invoke_login", side_effect=explode), \
                 patch.object(experience, "_run_ready") as run, \
                 patch.object(reports, "make_report", return_value={"summary": {}}):
+            initial = experience.go(workbook, "offline")
+            self.assertTrue(initial['review_only'])
+            manifest = self.root / 'runs' / initial['run_id'] / 'run.json'
+            saved = common.read_json(manifest)
+            saved['human_review'] = {'decisions': [], 'pending': []}
+            common.save(manifest, saved)
             result = experience.go(workbook, "offline")
         self.assertEqual(run.call_count, 0)
         self.assertTrue(result["environment_blocked"])

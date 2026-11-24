@@ -11,6 +11,20 @@ from uia_core.common import UiaError, atomic_write, read_json
 
 
 class ReviewHandoffTest(unittest.TestCase):
+    def test_new_review_leaves_unknown_entry_for_exploration_and_skips_authorized_scope(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            entries = [
+                {'key': 'entry:产品', 'block': 'D', 'page': '产品', 'label': '产品', 'cases': ['C1']},
+                {'key': 'scope:products', 'block': 'B', 'label': 'products', 'cases': ['C1']},
+                {'key': 'guided', 'block': 'E', 'kind': 'guided_exploration', 'label': '操作位置', 'cases': ['C1']},
+                {'key': 'expected', 'block': 'E', 'kind': 'expected', 'label': '预期是否正确', 'cases': ['C1']}]
+            run = {'run_id': 'R', 'initial_review_required': True, 'cases': {'C1': {'title': 'first'}},
+                   'config': {'mutation': {'allowed': True, 'scope': ['products']}},
+                   'questions': {review_page.QUESTION_KEY: {'entries': entries, 'answer': {'entries': {}}}}}
+            payload = review_page._payload(base, run)
+            self.assertEqual([row['id'] for row in payload['questions']], ['expected'])
+
     def test_apply_entry_preserves_scope_and_prototype_provenance(self):
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)
@@ -111,6 +125,21 @@ class ReviewHandoffTest(unittest.TestCase):
             with self.assertRaises(UiaError):
                 review_page.ingest(base, run, base / 'export.json')
             self.assertEqual(read_json(result['review_handoff']), handoff)
+
+    def test_deferred_decision_stays_pending_for_affected_case(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            run = {'run_id': 'R', 'cases': {'C1': {'title': 'first'}, 'C2': {'title': 'second'}},
+                   'questions': {}, 'history': []}
+            atomic_write(base / review_page.INPUT, {'questions': [
+                {'id': 'Q1', 'title': '预期', 'cases': ['C1']}]})
+            payload = review_page._payload(base, run)
+            atomic_write(base / 'export.json', {'run_id': 'R', 'review_version': 1,
+                'revision': payload['revision'], 'decisions': [{'review_id': 'Q1',
+                'case_ids': ['C1'], 'status': 'deferred', 'value': '暂缓确认'}]})
+            review_page.ingest(base, run, base / 'export.json')
+            self.assertEqual([row['id'] for row in run['human_review']['pending']], ['Q1'])
+            self.assertEqual(run['human_review']['pending'][0]['cases'], ['C1'])
 
 
 if __name__ == '__main__':

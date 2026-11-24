@@ -112,6 +112,34 @@ class ExplorationQuestionsTest(unittest.TestCase):
         workflow.park_cases_with_pending_review(self.run)
         self.assertEqual(self.run['cases']['C1']['work_status'], 'pending')
 
+    def test_unbound_review_does_not_block_independent_ready_case(self):
+        self.run.update(initial_review_required=True, human_review={'decisions': [
+            {'id': 'A1', 'status': 'confirmed', 'cases': ['C1'], 'value': '显示成功'}], 'pending': []})
+        self.run['cases']['C1']['work_status'] = 'runnable'
+        self.run['cases']['C3']['work_status'] = 'runnable'
+        self.run['cases']['C2']['work_status'] = 'waiting_human'
+        with patch.object(workflow, 'unresolved_targets', return_value=[]), \
+             patch.object(workflow, 'missing_catalog_targets', return_value=[]), \
+             patch.object(workflow, 'script_todos', return_value=[]):
+            result = self.next()
+            self.assertEqual(result['action'], 'run-batch')
+            self.assertEqual(result['case_ids'], ['C3'])
+            self.run['cases']['C3']['work_status'] = 'finished'
+            result = self.next()
+            self.assertEqual(result['action'], 'spec')
+            self.assertEqual(result['case_ids'], ['C1'])
+            self.assertEqual(result['review_ids'], ['A1'])
+
+    def test_feedback_is_required_only_for_verified_candidates_in_new_runs(self):
+        case = self.run['cases']['C1']
+        case.update(result='passed', stability='stable', work_status='finished')
+        self.run['initial_review_required'] = True
+        self.assertEqual(workflow.pending_feedback_cases(self.run), [])
+        self.run['knowledge_candidates'] = {'Q': {'case_ids': ['C1'], 'verification': 'unverified'}}
+        self.assertEqual(workflow.pending_feedback_cases(self.run), [])
+        self.run['knowledge_candidates']['Q']['verification'] = 'verified'
+        self.assertEqual([c['case_id'] for c in workflow.pending_feedback_cases(self.run)], ['C1'])
+
 
 if __name__ == '__main__':
     unittest.main()

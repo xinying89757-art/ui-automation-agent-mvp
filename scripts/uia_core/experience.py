@@ -134,7 +134,18 @@ def sync_checklist(base, m):
                 continue
             if row['block'] != 'D':
                 add_review(m, 'new_ambiguity' if row['block'] == 'C' else 'new_permission', row['cases'], row['label'])
-    apply_checklist(m, q, late_entries)
+    if m.get('initial_review_required'):
+        # The HTML review owns per-case waiting for new runs. The generated
+        # checklist remains an input to that page, not a second human gate.
+        q['status'] = 'answered'
+        for case in m['cases'].values():
+            if case.pop('checklist_wait', False) and case.get('result') is None:
+                case['work_status'] = ('runnable' if case.get('registration') and case.get('stage') == 'execution'
+                                       else 'pending')
+                if (case.get('classification') or {}).get('reason', '').startswith('前置未满足：'):
+                    case.pop('classification', None)
+    else:
+        apply_checklist(m, q, late_entries)
     q['unclassified'] = unclassified
     q['draft'] = m['checklist_draft']
     text = checklist_text(q)
@@ -433,6 +444,7 @@ def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_m
     path = profiles.profile_path(profile)
     key = digest([str(source), str(path)])[:12]
     matches = []
+    new_run = False
     for manifest in (ROOT / 'runs').glob('*/run.json'):
         candidate = read_json(manifest)
         source_rows = candidate.get('sources') or []
@@ -447,8 +459,15 @@ def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_m
         manifest = ROOT / 'runs' / run_id / 'run.json'
         if not manifest.is_file():
             workflow.init(run_id, path)
+            new_run = True
     with locked_run(manifest) as (manifest, m):
         base = manifest.parent
+        require(not workflow.historical_intent_run(base, m),
+                '历史 Intent 运行仅供查看；需要复跑时检出原始项目版本。')
+        if new_run:
+            m['initial_review_required'] = True
+        if m.get('initial_review_required') and not m.get('human_review'):
+            review_only = True
         if hints:
             from .entries import handoff
             handoff(m, hints)
@@ -490,7 +509,7 @@ def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_m
                     shutil.copyfile(ROOT / item['spec'], dest)
                     c['case_spec'] = str(dest.relative_to(base))
                     matched.append(cid)
-                elif c.get('spec_generation_blocked'):
+                elif c.get('spec_generation_blocked') or not (c.get('registration') or {}).get('case_spec'):
                     matched.append(cid)
         # Retrieval is a fixed pre-generation step, including source-only matches.
         from .knowledge import match_run
@@ -578,7 +597,9 @@ def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_m
                     'failure_class': 'environment', 'reason': gate.get('reason'), 'preflight': m.get('preflight'),
                     'report': output, 'spec_tasks': [], **review_page,
                     'next': {'action': 'environment_blocked', 'instruction': '环境预检未通过，未执行用例。'}}
-        ready = [cid for cid, c in m['cases'].items() if c['work_status'] == 'runnable' and not c.get('case_spec')]
+        workflow.refresh(base, m)
+        ready = [cid for cid, c in m['cases'].items() if c['work_status'] == 'runnable'
+                 and not c.get('case_spec') and not workflow.unbound_review_ids(m, c, base)]
         armed = _arm_requested_watches(base, m, arm_watch, lead_minutes, watch_minutes)
         save(manifest, m)
     # Existing runnable scripts get the first batch, before new generation.
@@ -588,9 +609,9 @@ def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_m
                        started_at=started_at)
     with locked_run(manifest) as (manifest, m):
         base = manifest.parent
-        if not checklist['question_count']:
+        if m.get('initial_review_required') or not checklist['question_count']:
             for cid, c in m['cases'].items():
-                if c.get('work_status') == 'waiting_human' or not specs.spec_path(base, c).is_file() or (c.get('registration') or {}).get('case_spec') or c.get('result'):
+                if c.get('work_status') == 'waiting_human' or workflow.unbound_review_ids(m, c, base) or not specs.spec_path(base, c).is_file() or (c.get('registration') or {}).get('case_spec') or c.get('result'):
                     continue
                 # Keep compatible daily scripts; only missing scripts need template compilation.
                 if c.get('registration') and not c.get('case_spec'):
@@ -611,7 +632,9 @@ def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_m
         tasks = [{'case_id': cid, 'source': c['source'], 'action': '编写 case-spec'} for cid, c in m['cases'].items() if not specs.spec_path(base, c).is_file() and not c.get('registration')]
         m['spec_tasks'] = tasks
         save(manifest, m)
-        ready = [cid for cid, c in m['cases'].items() if c['work_status'] == 'runnable'] if not checklist['question_count'] else []
+        workflow.refresh(base, m)
+        ready = [cid for cid, c in m['cases'].items() if c['work_status'] == 'runnable'
+                 and not workflow.unbound_review_ids(m, c, base)]
     if ready:
         _execute_ready(manifest, ready, full_batch=selected is None, smoke_size=smoke_size,
                        smoke_pass_rate=float(smoke_pass_rate), budget_minutes=float(first_result_budget_minutes),
@@ -626,6 +649,11 @@ def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_m
         actionable = any(c.get('work_status') not in {'waiting_human', 'finished'} and not c.get('result')
                          for c in m['cases'].values())
         ask_now = bool(open_questions and not actionable)
+        if m.get('initial_review_required'):
+            next_action = workflow.next_task(manifest.parent, m)
+            save(manifest, m)
+            return {'run_id': m['run_id'], 'run_reused': bool(matches), 'spec_tasks': tasks,
+                    'report': output, 'armed_watches': armed, **review_page, 'next': next_action}
         return {'run_id': m['run_id'], 'run_reused': bool(matches),
                 'run_selection': '复用同一工作簿与环境的 run；用例子集已更新' if matches else '新建 run；当前环境和工作簿没有匹配的既有 run',
                 'checklist_message': memory_note, **checklist, **review_page, 'spec_tasks': tasks, 'report': output, 'armed_watches': armed,
@@ -785,7 +813,7 @@ def _run_ready(manifest, ready):
             for row in armed:
                 remaining = (timestamp(row['save_not_before']) - dt.datetime.now(dt.timezone.utc)).total_seconds()
                 require(remaining <= 3600, 'Armed watch is more than 60 minutes away; refusing to wait')
-            batch = runtime.begin_batch(path.parent, m, selected)
+            batch = runtime.begin_batch(path.parent, m, selected, headed=bool(m.get('initial_review_required')))
             cfg = m['config']; save(path, m)
         for row in armed:
             def beat(watch, seconds):

@@ -4,7 +4,7 @@ import re
 import difflib
 from pathlib import Path
 
-from .common import elapsed, now
+from .common import elapsed, now, file_hash, inside, UiaError
 
 TOKEN = re.compile(r"(?i)(?:bearer\s+[a-z0-9._-]{12,}|eyJ[a-z0-9_-]{8,}\.[a-z0-9_-]{8,}\.[a-z0-9_-]{8,})")
 QUERY_SECRET = re.compile(r"(?i)(?:access_token|refresh_token|password|cookie|authorization)=([^&\s\"']+)")
@@ -127,6 +127,30 @@ def knowledge_hit_rate(base, m):
     return {"retrieved": retrieved, "used": used, "rate": (used / retrieved) if retrieved else None}
 
 
+def verified_knowledge_use(base, m):
+    """Count only uses backed by a completed batch and unchanged captured inputs."""
+    records = []
+    for case in m.get('cases', {}).values():
+        for attempt in case.get('attempts', []):
+            if attempt.get('result') != 'passed' or not attempt.get('executed'):
+                continue
+            try:
+                evidence = inside(base, attempt.get('evidence', '__missing__'))
+                if not evidence.is_file() or file_hash(evidence) != attempt.get('evidence_sha256'):
+                    continue
+                for use in attempt.get('verified_knowledge_uses', []):
+                    snapshots = [('cases_snapshot', 'cases_snapshot_sha256'),
+                                 ('knowledge_snapshot', 'knowledge_snapshot_sha256')]
+                    if use.get('batch_id') != attempt.get('batch_id') or use.get('evidence') != attempt.get('evidence'):
+                        continue
+                    if all((path := inside(base, use.get(name, '__missing__'))).is_file() and
+                           file_hash(path) == use.get(checksum) for name, checksum in snapshots):
+                        records.append({'case_id': case['case_id'], **use})
+            except (UiaError, OSError, TypeError):
+                continue
+    return {'count': len(records), 'records': records}
+
+
 def exploration_counts(m):
     known_count = 0
     missing_count = 0
@@ -240,6 +264,7 @@ def calculate(base, m, final_report_at=None):
         "human_interventions": interventions,
         "human_interventions_per_case": (interventions / len(cases)) if cases else None,
         "kb_hit_rate": hit,
+        "verified_knowledge_use": verified_knowledge_use(base, m),
         "knowledge_injected_tokens": {"count": len(injected), "p50": percentile(injected, .50), "p95": percentile(injected, .95)},
         "rescued_by_midscene": rescued_count,
         "scope_violations": int(m.get("scope_violations", 0)),

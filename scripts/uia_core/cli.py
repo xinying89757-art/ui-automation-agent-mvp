@@ -211,7 +211,7 @@ def parser():
     preflight_cmd.add_argument("--profile")
     preflight_cmd.add_argument("--config")
     preflight_cmd.add_argument("--evidence", help="Existing browser evidence. Omit to run login, site selection, and the editor")
-    for name in ("import", "status", "next", "bind", "advance", "match", "scaffold", "register",
+    for name in ("import", "status", "next", "bind", "scaffold", "register",
                  "question", "answer", "explore", "run-batch", "record-run", "recover", "repair", "classify",
                  "feedback", "resolve-fixture", "replay-demo", "report", "validate",
                  "bind-specs", "absorb-locators", "heal-review", "preconditions", "wait", "agent-env", "exploration-log", "gap-assess", "candidate-verify", "generator"):
@@ -259,10 +259,8 @@ def parser():
         if name == "import":
             cmd.add_argument("--excel", required=True)
             cmd.add_argument("--mapping")
-        if name in {"advance", "match", "register", "repair", "classify", "feedback"}:
+        if name in {"register", "repair", "classify", "feedback"}:
             cmd.add_argument("--case", required=True)
-        if name == "advance":
-            cmd.add_argument("--stage", choices=["matching", "discovery"], required=True)
         if name == "bind":
             cmd.add_argument("--cases", nargs="+", required=True)
             cmd.add_argument("--flows", nargs="+", required=True)
@@ -285,8 +283,7 @@ def parser():
         if name in {"answer", "replay-demo"}:
             cmd.add_argument("--question", required=name == "replay-demo")
         if name == "answer":
-            cmd.add_argument("--file", help="Legacy non-secret JSON answer")
-            cmd.add_argument("sentence", nargs="?")
+            cmd.add_argument("--file", required=True, help="Non-secret JSON answer")
         if name == "explore":
             cmd.add_argument("--evidence", default="")
             cmd.add_argument("--flow", default="")
@@ -317,6 +314,10 @@ def parser():
 def dispatch(args, path, m):
     base = path.parent
     cmd = args.command
+    if workflow.historical_intent_run(base, m):
+        require(cmd in {'next', 'validate'}, '历史 Intent 运行仅供查看，请使用原始项目版本复跑')
+        if cmd == 'next':
+            return workflow.next_task(base, m)
     if cmd == "review-page":
         from . import review_page
         if args.action == 'apply-entry':
@@ -409,10 +410,6 @@ def dispatch(args, path, m):
                 'exploration_for_missing_controls': counts['exploration_for_missing_controls']}
     if cmd == "bind":
         return workflow.bind(m, args.cases, args.flows, args.fixtures, args.isolated)
-    if cmd == "advance":
-        return workflow.advance(base, m, args.case, args.stage)
-    if cmd == "match":
-        return workflow.match(base, m, args.case)
     if cmd == "scaffold":
         return workflow.scaffold(base)
     if cmd == "register":
@@ -431,10 +428,7 @@ def dispatch(args, path, m):
         from .experience import session_turn
         return session_turn(m, args.id, args.kind)
     if cmd == "answer":
-        if args.sentence:
-            from .experience import answer_sentence
-            return answer_sentence(base, m, args.sentence)
-        require(args.question and args.file, "请提供中文一句话，或 --question 和 --file")
+        require(args.question and args.file, "请提供 --question 和 --file")
         return workflow.answer(m, args.question, read_json(args.file), base)
     if cmd == "explore":
         from .knowledge import match_run
@@ -820,7 +814,8 @@ def execute(args):
         progress_file = inside(path.parent, active["report"]) if active else None
         progress = read_json(progress_file) if progress_file and progress_file.is_file() else None
         from .knowledge import match_run
-        match_run(path.parent, m)
+        if not workflow.historical_intent_run(path.parent, m):
+            match_run(path.parent, m)
         from .metrics import exploration_counts
         exploration_metric = exploration_counts(m)
         re_explored = exploration_metric['re_explored_known_pages']
@@ -865,7 +860,7 @@ def execute(args):
         after = digest({k: m[k] for k in ("cases", "questions", "sources", "config", "preflight", "contaminated_fixtures")})
         if before != after and args.command != "report":
             m["delivery"] = {}
-        if args.command != "validate":
+        if args.command != "validate" and not workflow.historical_intent_run(path.parent, m):
             save(path, m)
         return result
 

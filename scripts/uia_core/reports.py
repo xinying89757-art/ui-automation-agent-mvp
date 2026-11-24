@@ -64,7 +64,9 @@ def opening(m, metrics, review):
         metrics_text += f"每条用例人工介入 {metrics['human_interventions_per_case']:.2f}。"
     hit = metrics.get('kb_hit_rate') or {}
     if hit.get('rate') is not None:
-        metrics_text += f"知识命中率 {hit['rate']:.1%}（{hit.get('used', 0)}/{hit.get('retrieved', 0)}）。"
+        metrics_text += f"知识检索 {hit.get('retrieved', 0)} 条，规格或脚本引用 {hit.get('used', 0)} 条。"
+    verified = metrics.get('verified_knowledge_use') or {}
+    metrics_text += f"有执行证据的知识使用 {verified.get('count', 0)} 条。"
     if metrics.get('rescued_by_midscene') is not None:
         metrics_text += f"Midscene 挽救 {metrics['rescued_by_midscene']}。"
     smoke = m.get('smoke') or {}
@@ -351,11 +353,13 @@ th{background:#23415a;color:white}a{color:#0069a3}pre{white-space:pre-wrap}secti
                      "xlsx": str((out / "results.xlsx").relative_to(base)),
                      "asset_diff": str((out / "asset-review.json").relative_to(base)),
                      "scripts": script_package, "generated_at": now()}
+    from .workflow import pending_feedback_cases
     payload["delivery_complete"] = (bool(records) and all(c["work_status"] == "finished" for c in m["cases"].values())
                                     and not payload["unresolved_sheets"] and bool(script_package)
                                     and not payload["source_update_required"]
                                     and not any(q["status"] == "open" for q in m["questions"].values())
-                                    and all(c.get("feedback") for c in m["cases"].values() if c.get("result") == "passed"))
+                                    and not (m.get('human_review') or {}).get('pending')
+                                    and not pending_feedback_cases(m))
     payload = json.loads(scrub_text(json.dumps(payload, ensure_ascii=False), m["config"]))
     atomic_write(out / "results.json", payload)
     return {"artifacts": m["delivery"], "summary": s, "delivery_complete": payload["delivery_complete"]}

@@ -188,6 +188,35 @@ def preflight(base, m, evidence):
     return m["preflight"]
 
 
+def verified_knowledge_uses(base, batch, cid, successful_steps):
+    """Identify retrieved targets reached by successful, instrumented spec steps."""
+    directory = inside(base, batch['directory'])
+    case_file = directory / 'snapshot/cases.json'
+    knowledge_file = directory / 'snapshot/knowledge-match.json'
+    if not (case_file.is_file() and knowledge_file.is_file() and
+            file_hash(case_file) == batch.get('cases_snapshot_sha256') and
+            file_hash(knowledge_file) == batch.get('knowledge_snapshot_sha256')):
+        return []
+    spec = (read_json(case_file).get(cid) or {}).get('spec') or {}
+    selected = (read_json(knowledge_file).get('matched') or {}).get(cid) or {}
+    hits = []
+    for step in spec.get('steps', []):
+        target = step.get('target')
+        if step.get('id') not in successful_steps or not isinstance(target, str):
+            continue
+        for item_id in (target, 'target.' + target, 'page.' + target, 'entry.' + target):
+            if item_id in selected:
+                hit = {'id': item_id, 'step': step['id'], 'batch_id': batch['id'],
+                       'evidence': batch['report'],
+                       'cases_snapshot': str(case_file.relative_to(base)),
+                       'cases_snapshot_sha256': batch['cases_snapshot_sha256'],
+                       'knowledge_snapshot': str(knowledge_file.relative_to(base)),
+                       'knowledge_snapshot_sha256': batch['knowledge_snapshot_sha256']}
+                if hit not in hits:
+                    hits.append(hit)
+    return hits
+
+
 def require_rerunnable(m, case):
     from .workflow import question_requires_human_answer
     cid = case['case_id']
@@ -201,7 +230,10 @@ def require_rerunnable(m, case):
 
 
 def begin_batch(base, m, case_ids, headed=False, rerun=False):
+    from .workflow import historical_intent_run
+    require(not historical_intent_run(base, m), '历史 Intent 运行仅供查看，请使用原始项目版本复跑')
     require(not m.get("active_batch"), "Recover the active batch before starting another")
+    require(not m.get('initial_review_required') or m.get('human_review'), '请先提交 HTML 审核答复')
     refresh(base, m)
     require(case_ids and len(case_ids) == len(set(case_ids)), "Select distinct case IDs")
     require(len(case_ids) <= m["config"]["execution"]["batch_size"], "Selected batch exceeds configured batch size")
@@ -226,6 +258,17 @@ def begin_batch(base, m, case_ids, headed=False, rerun=False):
     caps = (m.get("preflight") or {}).get("capabilities") or {}
     for c in selected:
         require(Path(c["registration"]["script"]).name != "seed.spec.ts", "Exploration seed cannot run as a case")
+        from .workflow import unbound_review_ids
+        review = m.get('human_review') or {}
+        required = {row['id'] for row in review.get('decisions', [])
+                    if c['case_id'] in row.get('cases', []) and row.get('status') in {'confirmed', 'edited'}}
+        if required:
+            require(not unbound_review_ids(m, c, base), '审核答复尚未完整落实到用例规格', c['case_id'])
+            from .specs import spec_path
+            from .checks import review_binding_errors
+            spec_file = spec_path(base, c)
+            require(spec_file.is_file() and not review_binding_errors(base, c, spec_file),
+                    '审核绑定的规格或用例来源已变化', c['case_id'])
         if rerun:
             require_rerunnable(m, c)
         else:
@@ -274,6 +317,12 @@ def begin_batch(base, m, case_ids, headed=False, rerun=False):
         require(file_hash(dest) == snapshot[name], "Dependency changed while capturing batch snapshot", name)
     atomic_write(directory / "snapshot/versions.json", {"versions": versions, "files": snapshot})
     atomic_write(directory / "snapshot/cases.json", {cid: bindings[cid] for cid in case_ids})
+    knowledge_file = base / (m.get('knowledge_match') or {}).get('file', 'knowledge-match.json')
+    knowledge_snapshot = directory / 'snapshot/knowledge-match.json'
+    if knowledge_file.is_file():
+        selected_knowledge = read_json(knowledge_file)
+        atomic_write(knowledge_snapshot, {'matched': {cid: selected_knowledge.get('matched', {}).get(cid, {})
+                                                     for cid in case_ids}})
     overlay = base / 'state/page-map-overlay.yaml'
     if overlay.is_file():
         shutil.copyfile(overlay, directory / 'page-map-overlay.yaml')
@@ -299,6 +348,9 @@ def begin_batch(base, m, case_ids, headed=False, rerun=False):
              "started_at": now(), "directory": str(directory.relative_to(base)),
              "report": str((directory / "case-results.json").relative_to(base)), "command": command,
              "headed": bool(headed), "rerun": bool(rerun)}
+    batch['cases_snapshot_sha256'] = file_hash(directory / 'snapshot/cases.json')
+    if knowledge_snapshot.is_file():
+        batch['knowledge_snapshot_sha256'] = file_hash(knowledge_snapshot)
     m["active_batch"] = batch
     event(m, "batch_started", batch_id=batch_id, case_ids=case_ids)
     return batch
@@ -307,7 +359,7 @@ def begin_batch(base, m, case_ids, headed=False, rerun=False):
 def execute_process(base, batch, cfg):
     import threading
     directory = inside(base, batch["directory"])
-    cases_file = Path(base) / "state/cases.json"
+    cases_file = directory / "snapshot/cases.json"
     knowledge_overlay = Path(base) / "state/knowledge/llms-txt.json"
     env = dict(os.environ, UIA_BATCH_ID=batch["id"], UIA_CONFIG=str(directory / "config.json"),
                UIA_CASES_FILE=str(cases_file), UIA_STATE_DIR=str(base / "state/fixture-snapshots"),
@@ -407,6 +459,8 @@ def consume_batch(base, m, exit_code=None):
                    "assertions": row.get("assertions", []), "failure_stage": row.get("failure_stage")}
         attempt["successful_steps"] = [str(step) for step in row.get("successful_steps", [])
                                        if isinstance(step, str) and re.fullmatch(r"[A-Za-z0-9_.-]+", step)]
+        if result == 'passed' and attempt['executed']:
+            attempt['verified_knowledge_uses'] = verified_knowledge_uses(base, batch, cid, attempt['successful_steps'])
         if row.get("read_back"):
             attempt["read_back"] = row["read_back"]
         if row.get("saves"):

@@ -6,8 +6,7 @@ import os
 import shutil
 from pathlib import Path
 
-from .assets import make_plan
-from .checks import case_errors, intent_errors
+from .checks import case_errors
 from .common import (ROOT, UiaError, atomic_write, config, digest, elapsed, event,
                      execution_config_fingerprint, env_fingerprints, file_hash, inside, now, read_json,
                      read_yaml, require, reset_case, safe_id, summary)
@@ -264,49 +263,6 @@ def bind(m, case_ids, flow_ids, fixture_ids, isolated):
     event(m, "flow_bound", case_ids=case_ids, flow_ids=flow_ids)
     return {"bound": case_ids}
 
-
-def advance(base, m, cid, stage):
-    c = m["cases"][cid]
-    require(c["work_status"] != "running", "Cannot advance a running case")
-    if stage == "matching":
-        errors, warnings = intent_errors(inside(base, c["intent"]))
-        require(not errors, "Intent gate failed", errors)
-        intent = read_yaml(inside(base, c["intent"]))["intent"]
-        require(intent["case"]["id"] == cid and intent.get("validation", {}).get("ready_for_asset_matching") is True,
-                "Intent identity/readiness is not confirmed")
-        intent_hash = file_hash(inside(base, c["intent"]))
-        if c.get("spec_hash") and file_hash(inside(base, c.get("case_spec", "__missing__"))) != c["spec_hash"]:
-            reset_case(c, "case_spec_changed", "spec")
-            c.update(spec_hash=None, registration=None)
-        elif c.get("intent_hash") and c["intent_hash"] != intent_hash:
-            reset_case(c, "intent_changed", "matching")
-            c.update(registration=None, plan_hash=None)
-        c["intent_hash"] = intent_hash
-    elif stage == "discovery":
-        errors, warnings = case_errors(base, c, m["config"])
-        require(not errors, "Reuse-plan gate failed", errors)
-        p = read_yaml(inside(base, c["reuse_plan"]))["reuse_plan"]
-        require(all(x.get("selection_confirmed") for x in p["capabilities"]), "Confirm every matcher decision first")
-        plan_hash = file_hash(inside(base, c["reuse_plan"]))
-        if c.get("plan_hash") and c["plan_hash"] != plan_hash:
-            reset_case(c, "plan_changed", "discovery")
-            c["registration"] = None
-        c["plan_hash"] = plan_hash
-    else:
-        require(False, "advance supports matching or discovery; registration opens execution")
-    c.update(stage=stage, work_status="pending")
-    event(m, "stage_advanced", case_id=cid, stage=stage)
-    return {"case_id": cid, "stage": stage, "warnings": warnings}
-
-
-def match(base, m, cid):
-    c = m["cases"][cid]
-    require(c["intent_hash"] == file_hash(inside(base, c["intent"])), "Advance the validated Intent first")
-    target = inside(base, c["reuse_plan"])
-    require(not target.exists() or c["plan_hash"] != file_hash(target),
-            "Confirmed plan exists; edit it deliberately instead of replacing it")
-    atomic_write(target, make_plan(inside(base, c["intent"]), m["config"]), as_yaml=True)
-    return {"case_id": cid, "plan": str(target), "status": "semantic_selection_required"}
 
 
 def scaffold(base):
@@ -799,6 +755,48 @@ def script_todos(base, c):
     return list(dict.fromkeys(line.split("TODO explore:", 1)[1].strip() for line in body.splitlines() if "TODO explore:" in line))
 
 
+def historical_intent_run(base, m):
+    if m.get('pipeline') == 'case-spec.v1':
+        return False
+    for case in m.get('cases', {}).values():
+        if case.get('stage') in {'intent', 'matching'}:
+            return True
+        if case.get('intent') and inside(base, case['intent']).is_file():
+            return True
+    return False
+
+
+def unbound_review_ids(m, case, base=None):
+    review = m.get('human_review') or {}
+    required = {row['id'] for row in review.get('decisions', [])
+                if case['case_id'] in row.get('cases', []) and row.get('status') in {'confirmed', 'edited'}}
+    binding = case.get('review_binding') or {}
+    decisions = [row for row in review.get('decisions', []) if row.get('id') in required]
+    changed = False
+    if required and base is not None and binding:
+        from .specs import spec_path
+        spec = spec_path(base, case)
+        source = inside(base, case['source'])
+        changed = (not spec.is_file() or not source.is_file() or
+                   binding.get('spec_sha256') != file_hash(spec) or
+                   binding.get('source_file_sha256') != file_hash(source))
+    if required and (binding.get('source') != 'current' or set(binding.get('review_ids', [])) != required or changed or
+                     m.get('initial_review_required') and binding.get('decisions_digest') != digest(decisions)):
+        return sorted(required)
+    return []
+
+
+def pending_feedback_cases(m):
+    cases = [c for c in m.get('cases', {}).values()
+             if c.get('result') == 'passed' and c.get('stability') == 'stable' and not c.get('feedback')]
+    if m.get('initial_review_required'):
+        candidates = m.get('knowledge_candidates', {}).values()
+        candidate_cases = {cid for item in candidates if item.get('verification') == 'verified'
+                           for cid in item.get('case_ids', [])}
+        cases = [case for case in cases if case['case_id'] in candidate_cases]
+    return cases
+
+
 def next_task(base, m):
     if m.get("active_batch"):
         from .runtime import batch_running
@@ -807,6 +805,12 @@ def next_task(base, m):
         return {"action": "monitor" if running else "recover",
                 "skill": "uia-runtime", "batch_id": active["id"], "report": active["report"],
                 "wait": "python3 scripts/uia.py wait --run " + m["run_id"]}
+    if historical_intent_run(base, m):
+        return {'action': 'historical_read_only', 'file': str(base / 'reports/index.html'),
+                'instruction': '历史 Intent 运行仅供查看；需要复跑时检出原始项目版本。'}
+    if m.get('initial_review_required') and not m.get('human_review'):
+        return {'action': 'review', 'file': str(base / 'review.html'),
+                'instruction': '导入 HTML 审核答复后继续。'}
     urgent = [q for q in m['questions'].values() if q.get('status') == 'open' and q.get('kind') == 'exploration' and q.get('urgency') == 'critical']
     if urgent:
         return {'action': 'ask_human', 'questions': urgent, 'message': '关键路径需要人工答复。'}
@@ -823,6 +827,11 @@ def next_task(base, m):
     concluded = {"passed", "business_failure", "automation_failure", "product_confirmation", "environment_blocked", "not_suitable", "suspended"}
     available = sorted([c for c in cases if c["work_status"] not in {"waiting_human", "finished"}
                         and not (c.get("result") in concluded and c.get("stage") != "repair")], key=rank)
+    unbound_reviews = {}
+    for case in available:
+        required = unbound_review_ids(m, case, base)
+        if required:
+            unbound_reviews[case['case_id']] = required
     # Read every case spec and the shared catalog once. This keeps next() independent of
     # case count for filesystem metadata while preserving fresh data on each invocation.
     from . import specs
@@ -860,12 +869,17 @@ def next_task(base, m):
                 assessments.append({'case_id': c['case_id'], 'target': target, 'attempts': fresh,
                                     'attempt_evidence': evidence, 'duration_ms': sum(row.get('duration_ms', 0) for row in state['attempts'])})
     # Breadth first: runnable cases with complete specs go before any further exploration.
-    ready = [c for c in available if c["work_status"] == "runnable" and
+    ready = [c for c in available if c['case_id'] not in unbound_reviews and c["work_status"] == "runnable" and
              not missing_by_case.get(c['case_id']) and not script_todos(base, c)]
     if ready:
         if not m.get("preflight") or m["preflight"]["status"] != "passed":
             return {"action": "preflight", "skill": "uia-runtime", "case_ids": [c["case_id"] for c in ready]}
         return {"action": "run-batch", "skill": "uia-runtime", "case_ids": [c["case_id"] for c in ready[:budget]]}
+    if unbound_reviews:
+        cid = next(iter(unbound_reviews))
+        return {'action': 'spec', 'skill': 'uia-case-spec', 'case_ids': [cid],
+                'review_ids': unbound_reviews[cid],
+                'instruction': '将已确认的审核答复落实到规格，校验后用 review-page bind-case 绑定全部审核项。'}
     if assessments:
         return {'action': 'assess_exploration', 'items': assessments,
                 'instruction': '评估是否仍有新线索：有进展可继续，无线索则用 gap-assess 创建问题；不得仅因次数判用例失败。'}
@@ -874,7 +888,7 @@ def next_task(base, m):
     untried = [c for c in available if not c.get("attempts") and c["stage"] in {"spec", "intent", "matching", "discovery"}]
     if repairs and not untried:
         return {"action": "repair", "skill": "uia-runtime", "case_ids": [c["case_id"] for c in repairs[:budget]]}
-    if m.get("checklist_issued"):
+    if m.get("checklist_issued") or (m.get('initial_review_required') and m.get('human_review')):
         refine = [(c, missing_by_case.get(c['case_id'], []) +
                    ["TODO explore: " + t for t in script_todos(base, c)]) for c in available]
         refine = [(c, t) for c, t in refine if t]
@@ -948,10 +962,10 @@ def next_task(base, m):
     if selected:
         return {"action": "spec", "skill": "uia-case-spec", "case_ids": [c["case_id"] for c in selected],
                 "input_paths": [str(base / c["source"]) for c in selected]}
-    selected = [c for c in available if c["stage"] == "matching"][:budget]
-    if selected:
-        return {"action": "matching", "skill": "uia-asset-matcher", "case_ids": [c["case_id"] for c in selected],
-                "input_paths": [str(base / c["intent"]) for c in selected]}
+    legacy = [c for c in available if c['stage'] in {'intent', 'matching'}]
+    if legacy:
+        return {'action': 'historical_read_only', 'case_ids': [c['case_id'] for c in legacy[:budget]],
+                'instruction': '历史 Intent 运行仅供查看；需要复跑时检出原始项目版本。'}
     flows = {}
     for c in available:
         if c["stage"] == "discovery":
@@ -967,20 +981,19 @@ def next_task(base, m):
                                            "registration": c["registration"], "evidence": c["attempts"][-1]["evidence"]}
                                           for c in cases if c.get("result") == "passed" and c.get("registration") and
                                           set(c["flow_ids"]) & {flow for member in members for flow in member["flow_ids"]}]}
-    selected = [c for c in available if c["stage"] == "intent"][:budget]
-    if selected:
-        return {"action": "intent", "skill": "uia-excel-prep", "case_ids": [c["case_id"] for c in selected],
-                "input_paths": [str(base / c["source"]) for c in selected]}
     if repairs:
         return {"action": "repair", "skill": "uia-runtime", "case_ids": [c["case_id"] for c in repairs[:budget]]}
-    feedback = [c for c in cases if c.get("result") == "passed" and c.get("stability") == "stable" and not c.get("feedback")]
+    feedback = pending_feedback_cases(m)
     if feedback:
         return {"action": "feedback", "skill": "uia-runtime-feedback-reviewer", "case_ids": [c["case_id"] for c in feedback[:budget]]}
     pending_questions = [q for q in m["questions"].values() if q["status"] == "open"]
     if pending_questions:
         return {"action": "ask_human", "questions": pending_questions,
                 "message": "All currently independent work has been processed; consolidate these requests."}
-    if m.get("interaction_mode") == "once" and m.get("checklist_issued"):
+    pending_review = (m.get('human_review') or {}).get('pending', [])
+    if m.get('initial_review_required') and pending_review:
+        return {'action': 'review', 'file': str(base / 'review.html'), 'pending': pending_review}
+    if not m.get('initial_review_required') and m.get("interaction_mode") == "once" and m.get("checklist_issued"):
         return {"action": "review", "file": str(base / "review.md"),
                 "mid_run_questions": sum(e.get('kind') == 'mid_run_question' for e in m.get('interaction_events', []))}
     if not cases:

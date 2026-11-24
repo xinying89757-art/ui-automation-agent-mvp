@@ -3,7 +3,7 @@
 在 Codex 中提供 Excel 测试用例和环境信息，由项目技能组织case-spec 编写、确定性生成、
 页面探索、分批执行、有限修复和稳定性验证，交付可以独立运行的 Playwright 工程。
 
-**当前状态：正式版后台已用 llms.txt 用例真实跑通。** 后台和编辑器预检必须通过；
+后台和编辑器预检必须通过；
 公开前台不可达只阻断会读取公开页的用例。站点域名要带 `http://` 或 `https://`，
 裸域名会探测可达协议，探测失败时才沿用环境入口的协议。
 
@@ -15,19 +15,16 @@
 
 一行提测模板（也见 [独立模板](docs/test-request-template.md)）：
 
-> 提测：`/path/to/cases.xlsx`，profile `my-prod`，只跑 `TC-0004,TC-0016`；使用 uia-orchestrator 执行 go，答清单后自动继续，中途问题进审核单。
+> 提测：`/path/to/cases.xlsx`，profile `my-prod`，只跑 `TC-0004,TC-0016`；使用 uia-orchestrator 生成审核页，确认关键预期后继续执行。
 
 ```bash
 .venv/bin/python scripts/uia.py go /path/to/cases.xlsx --profile my-prod --cases TC-0004,TC-0016
-.venv/bin/python scripts/uia.py answer --run GO-xxx "A 都有，B 同意，C 无歧义"
-# 同一命令恢复；环境记忆覆盖全部问题时直接运行，不再提问。
+.venv/bin/python scripts/uia.py review-page ingest --run GO-xxx --file /path/to/review.json
+# Agent 将答复落实到规格并绑定，再使用同一命令恢复。
 .venv/bin/python scripts/uia.py go /path/to/cases.xlsx --profile my-prod --cases TC-0004,TC-0016
 ```
 
-`go` 不调用模型。陌生工作簿先返回 case-spec 任务，Codex 完成后再发唯一清单。
-清单分 A 环境、B 修改范围、C 业务歧义；缺少条件只挂起关联用例。
-显式答案按环境、站点、账号身份和网络的哈希保存在私有环境记忆中，不代替真实预检。
-运行中新增需求写 `review.md`，不打断；断言提案默认不应用。
+`go` 不调用模型。新运行首先生成 HTML 审核页，Codex 结合用例、设计资料和知识库整理需要确认的预期。导入答复后，Agent 将其落实到相关用例规格。缺少条件只挂起关联用例，运行中问题按编号记录。
 
 在本目录打开 Codex，用自然语言描述：
 
@@ -38,7 +35,7 @@
 
 > 使用 $uia-orchestrator，继续运行 REQ-001，先告诉我已完成数量和需要我处理的问题。
 
-`.agents/skills/` 内包含全部项目技能。`skills/` 中的旧入口是迁移说明。
+`.agents/skills/` 包含项目技能。`skills/spec-pathfinder/` 包含当前审核页模板和索引器。
 现有四个技能的 schema、模板和必要脚本也已纳入项目，无需本机全局技能。
 
 ## 环境准备
@@ -86,18 +83,16 @@ timeout 2h codex exec -m gpt-6-luna -c model_reasoning_effort=high -s workspace-
 
 ## 流程与人工交互
 
-Excel → 保留原文 → 先绑定/执行现有脚本 → case-spec → lint → 模板生成 →
-仅探索未知目标 → 分批运行 → 按 stability_passes 交付。见 [case-spec 契约](docs/case-spec.md)。
+Excel → 保留原文并检索知识 → HTML 集中审核 → case-spec → 探索未知目标 →
+有界面分批运行 → 报告 → 同版本复测。见 [case-spec 契约](docs/case-spec.md)。
 
-- 导入时根据用例原文生成一份前置条件清单，只问人一次。缺权限账号、4.0 编辑器、
-  全新站点、多语言/简体/小语种、根目录已有 llms.txt、未迁移站点未满足时继续等待，
-  不记成 not_suitable。FAQ 条数、分类、导航、首页 Meta、网站简称、快速联系、社媒
-  由夹具自己快照、设置并恢复。
+- 审核页集中展示有歧义的预期和关键断言，原始用例可展开纠正。缺少条件只暂停相关用例。
+- Agent 先查资料和知识库，再探索入口和数据准备方法。探索没有新线索时向人提问，其他用例继续。
 - 默认每批最多 10 条。同一批复用一个编辑器会话，用例之间只收起弹窗。
 - Excel 要求公开文件更新时须实际读取公开文件；前台不可达则等待环境，不能改成编辑器值断言。
 - 每日 `stability_passes: 1`，一次清理成功就是交付。夜间回归改为 `2`。
 - 通过的批次把定位记入 run-local 知识；长期写回需审核。元素名只保留短文本，不用面板整段 innerText。
-- 登录、环境/数据缺失和业务歧义进入问题队列。先把能跑的用例跑完，再集中提问。
+- 登录、环境/数据缺失和业务歧义进入问题队列。关键路径受阻时及时提问，其他问题尽量集中。
 
 等待一批执行时用心跳文件，不要靠 PID：
 
@@ -190,7 +185,7 @@ python3 scripts/uia.py validate --run REQ-001
 重点覆盖不同 Excel 布局、跨工作表重名 ID、负向空值、公共流程复用、问题答复与恢复、
 中断恢复、数据清理失败隔离，以及代码修改后成功计数重置。
 
-新用例默认走 case-spec；旧 intent/reuse-plan、asset-matcher/profile-builder/asset-miner 文件保留兼容。Xinying 已授权配置测试站自由修改、保存、发布；实际可行时恢复数据。
+新用例使用 case-spec。历史 Intent 运行保留原始数据与报告，需要复跑时检出原来的 Git 版本。资产盘点和产品源码知识构建作为专项工具使用。Xinying 已授权配置测试站自由修改、保存、发布；实际可行时恢复数据。
 
 用例规格技能位于 [uia-case-spec](.agents/skills/uia-case-spec/SKILL.md)。
 

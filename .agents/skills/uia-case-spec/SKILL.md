@@ -7,8 +7,9 @@ description: 从已导入 Excel 原文编写 case-spec.v1，校验后确定性�
 
 Read `docs/case-spec.md` from the project root.
 
-Import using scripts/uia.py, bind existing specs, preflight and execute existing
-runnable cases before generating. Resume run.json; never create a multi-agent layer.
+Use scripts/uia.py to import the source and bind existing specs. Review ambiguous
+expectations and key assertions in the HTML review before executing affected cases.
+Resume run.json; never create a multi-agent layer.
 Read only each selected imported source.json. Write case-spec.yaml with schema_version,
 case_id, intent, automatable {status: 'yes'|'needs-env'|'manual', reason}, required_env,
 data_prep, mutation_scope, start_page, steps, assertions and questions (normally ~40 lines).
@@ -36,7 +37,7 @@ For save-in-progress transitions, the initial click may precede a disabled asser
 Assertions have A-number, after S-number, exact imported expectation cell/line in excel,
 and nonempty checks. Preserve numbering, punctuation, all business clauses and blank
 negative inputs. Never replace public-file expectations with editor-value assertions.
-Absent/ambiguous expectations become questions in the upfront checklist. Locator
+Absent/ambiguous expectations become questions in the HTML review. Locator
 uncertainty goes to exploration, not business questions.
 For each mutating save, add an optional top-level read_back entry with an R-number, the
 save step, field target and intended value, a named reopen target sequence, and save_target
@@ -50,14 +51,18 @@ steps emit throwing TODO markers and cannot run. Specs must import test/expect/
 businessAssertion from support/fixtures, whose page fixture opens the editor.
 Coverage derives from // @step S1 and await businessAssertion('A1', ...); no hand-filled lines.
 
-Classify unmatched workbook preconditions before finalizing the upfront checklist; AI preparation/exploration are tasks, only human_env enters the one question block.
+Classify unmatched workbook preconditions; AI preparation and exploration are tasks,
+while human-only conditions become scoped review questions.
 Explore each node once: knowledge → snapshot --goto/--open-target/--step/--frame/--scope → generator_setup_page with tests/seed.spec.ts; Midscene only for visual expectations.
 Write named targets into page-map.yaml (+ routes into flows) before writing specs; never persist snapshot refs. Continue writing/running other nodes while one is unknown.
 Generator/healer output may change locators/waits only (approval mode approve); Midscene uses the DeepSeek key only from /home/box/.secrets/deepseek.env, exploration only, never in replay.
 Strip icon glyphs, scope dialog locators, disambiguate repeated role/name pairs with a container.
-Order: first write ALL case-specs from Excel (unknown targets as ?name, no exploration needed) so the checklist is final; then explore.
+Work on ready cases independently. Confirmed review decisions must be applied and
+bound to each affected case-spec before its execution. Unanswered cases may wait while
+other cases continue.
 Start with snapshot --entry PAGE / generator --entry PAGE; translate rough hints to navigation, then persist concrete steps with hints confirm.
-Generator rung = `uia.py generator --run R --purpose NODE --plan '...'` (isolated Test Agents sub-agent, logs time/tokens); self-reported attempts do not count.
+Generator rung = `uia.py generator --run R --purpose NODE --plan '...'`; retain its
+actual output and evidence rather than treating self-reported attempts as proof.
 Use exploration-log only for Midscene; demo/record_request only after the ladder, for cases referencing that unknown node. External calls: timeout 2h codex exec ... < /dev/null.
 
 Run with run-batch/wait; triage environment → session → data → locator/timing → business.

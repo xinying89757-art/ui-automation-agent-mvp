@@ -235,16 +235,16 @@ NEW_ASSET_CANDIDATE、DO_NOT_PERSIST。回写候选可附 proposed_change、targ
 HTML 支持筛选；脚本 ZIP 排除依赖、凭证与运行日志。只有源用例全部有最终结果、
 未知工作表已解决、PASS 反馈完成且交付物齐全时，run 才进入 completed。
 
-`validate` 检查技能引用、Intent/计划/代码覆盖，以及运行状态与证据一致性。
+`validate` 检查技能引用、规格与代码覆盖，以及运行状态与证据一致性。
 它不代替真实执行或证明页面定位稳定。校验不代替真实站点验证。
 
 
-## 一步提测与一次清单（Phase 3）
+## 新需求提测与 HTML 审核
 
 新需求的人审阶段可以使用固定的单文件 HTML。以下命令分别准备审核材料、重新生成界面和接收答复。
 
 ```bash
-python3 scripts/uia.py go /path/to/cases.xlsx --profile my-prod --review-only
+python3 scripts/uia.py go /path/to/cases.xlsx --profile my-prod
 python3 scripts/uia.py review-page render --run GO-xxx
 python3 scripts/uia.py review-page ingest --run GO-xxx --file /path/to/GO-xxx-review.json
 ```
@@ -260,7 +260,7 @@ Agent 按返回的决定更新相关规格并核验后继续执行。工具保�
 .venv/bin/python scripts/uia.py preflight --profile my-prod
 .venv/bin/python scripts/uia.py go /path/to/cases.xlsx --profile my-prod --cases TC-0004,TC-0016 \
   --smoke-size 3 --smoke-pass-rate 1 --first-result-budget-minutes 26
-.venv/bin/python scripts/uia.py answer --run GO-xxx "A 除 TC-0002 缺少外其余可用，B 同意，C 无歧义"
+.venv/bin/python scripts/uia.py answer --run GO-xxx --question QUESTION_ID --file /path/to/answer.json
 .venv/bin/python scripts/uia.py session-turn --run GO-xxx --id conversation-turn-1 --kind 发起
 ```
 
@@ -272,11 +272,10 @@ Agent 按返回的决定更新相关规格并核验后继续执行。工具保�
 私有配置时自动选择。相同工作簿路径、profile、用例范围恢复同一个 run；工作簿内容变化仍做来源对齐。
 导入、索引既有脚本、真实环境自检、可恢复样本契约复用、case-spec 任务、前置聚合和可执行批次由 go 衔接。
 只有全量业务指纹匹配才复用样本契约。未知工作簿由当前 Codex 会话编写契约，不会启动模型子进程。
-待编写契约时旧清单仍为草稿；不妨碍通过审核页确认已发现的业务歧义，或对关键缺口提出聚焦问题。已具备权限的独立既有脚本优先执行。
+已有脚本和新规格都须在相关审核答复落实后执行。等待答复的用例不会阻断独立用例。
 
-checklist.md 是 run.json 的中文投影，A 为站点/账号/编辑器/迁移等必要环境，B 为契约聚合的临时修改范围，
-C 为原始业务歧义及明确选项。中文一句话必须明确各块；不理解的答复原子拒绝，不保存半份答案。
-C 有多项时须逐项给选项；不会把“默认”当作业务答案。旧 --question/--file JSON 接口继续可用。
+HTML 审核页是新需求的人工审核入口。执行中新增问题使用 `answer --question --file` 保存答复；
+旧 Intent 运行的原文件和报告可只读查看，需要复跑时检出历史 Git 版本。
 环境记忆位于私有 .auth/environment-memory，绑定环境/站点/身份/网络指纹，权限 0600；不打印身份内容。跨运行只自动采用环境和授权条件，业务预期与入口答复在本运行内保留，未验证前不作为跨运行确认结果。
 否定答案也长期记忆。记忆不代替实时可达性、认证和变更范围检查；同意 B 也不能扩大已锁定权限。
 新发现的业务歧义和操作缺口可以在运行中提问；只等待受影响的用例，其他用例继续。明确预期后的实际不符先留证并按业务问题处理。
@@ -284,7 +283,7 @@ C 有多项时须逐项给选项；不会把“默认”当作业务答案。旧
 
 会话适配器/当前 Codex 对每个用户消息调用一次 session-turn，稳定 id 去重。
 四类计划内事件为发起、答清单、审核单、看报告；其余交互标记计划外。
-中文 answer 自动计入清单回答数；AI 调用 repair/classify/login 不再伪装成人工介入。
+HTML 审核提交和运行中答复分别计数；AI 调用 repair/classify/login 不计入人工介入。
 没有接入会话轮次记录的调用者，无法从终端自动推断真实聊天轮次；指标只统计已记录事件。
 
 报告的 Markdown/HTML/Excel 首先展示“结论、需要你处理、流程指标”，可见状态使用中文。

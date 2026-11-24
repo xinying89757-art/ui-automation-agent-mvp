@@ -56,8 +56,7 @@ Record each attempt with `exploration-log`, including duration, evidence and `--
 
 ## One-command daily entry
 
-For go runs, this section supersedes the legacy human-question routing below.
-For a new requirement with human review, start with `python3 scripts/uia.py go <xlsx> --profile <p> --review-only`.
+For a new requirement, start with `python3 scripts/uia.py go <xlsx> --profile <p>`.
 The output includes the run's shared HTML review page. Add key checks and genuinely unresolved questions to
 `review-input.json` in the run directory, citing the relevant workbook, design, prototype, or verified knowledge.
 Regenerate with `review-page render --run R`. Review questions once per shared gap, with the related case IDs.
@@ -75,13 +74,9 @@ The CLI resumes the run matching the workbook and environment, regardless of the
 case subset; it reports the selected run and whether the subset changed. Existing generated
 specs from lint-passing case-specs take precedence over duplicate handwritten specs, and
 the report names the selected script and warns when a duplicate exists. It checks the
-environment, binds existing scripts first, queues missing case-spec tasks and writes
-checklist.md with A/B/C/D blocks in Chinese. The legacy checklist may stay draft while specs
-are incomplete; do not let that prevent the HTML review of known business ambiguities or a focused
-question that unblocks a critical gap. Draft checklist sentence answers are queued until finalization.
-For the finalized legacy checklist, use `uia.py answer --run R "A ...，B 同意，C ..."`. Explicit answers persist in environment
-memory; zero unknown answers means zero questions. When every checklist item came from
-environment memory, report `清单全部来自环境记忆（N 项），本次 0 问`.
+environment, binds existing scripts first and queues missing case-spec tasks. The generated
+checklist supplies review-page questions. Present the HTML review for a new run and bind each
+case's confirmed answers to its case-spec before executing that case.
 During execution, ask promptly for a critical-path gap after bounded exploration; consolidate other gaps while continuing independent work. A waiting answer is not a final test result.
 Keep source expectations; assertion-change proposals default to not applied.
 Record every incoming user turn once using `session-turn --run R --id <stable-id>
@@ -103,13 +98,12 @@ Report begins with 结论 / 需要你处理 / 流程指标; all visible statuses
    Use `setup` to save a private profile; passwords come from a hidden terminal prompt or
    a user-specified private file, never a command argument or question answer artifact.
    Do not migrate historical accounts. Pass the selected profile to `init --profile`.
-2. Call `init`, `import`, then `next`; for resume call `status` then `next`. Load only
-   the selected case/flow artifacts, not the entire Excel and all Intents into context.
+2. Call `go` for a new run and again after importing the review JSON. For resume call
+   `status` then `next`. Load only selected case and flow artifacts.
 3. Follow the action returned by `next`:
    - `spec`: [uia-case-spec](../uia-case-spec/SKILL.md). Write compact case-specs,
      lint exact Excel expectations, generate templates and explore unknown targets only.
-   - Legacy runs may return `intent`/`matching`; preserve compatibility, but do not
-     use the old intent/reuse-plan/asset-matcher chain for new runs.
+   - Historical runs using Intent require their original project version for execution.
    - `preflight`, `discover`, `run-batch`, `repair`, `monitor`, `recover`:
      [uia-runtime](../uia-runtime/SKILL.md).
      Profile-based preflight uses `login --run`: it verifies the actual environment,

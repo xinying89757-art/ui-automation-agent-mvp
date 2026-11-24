@@ -76,6 +76,15 @@ def _payload(base, run):
     answers = checklist.get('answer', {}).get('entries', {})
     auto = []
     for row in checklist.get('entries', []):
+        if run.get('initial_review_required'):
+            if row.get('block') == 'D' or row.get('kind') == 'guided_exploration':
+                continue
+            if row.get('block') == 'B':
+                mutation = (run.get('config') or {}).get('mutation') or {}
+                scopes = mutation.get('scope') or []
+                if mutation.get('allowed') and (row.get('label') in scopes or
+                        scopes == ['*'] and (mutation.get('authorization_profile') or {}).get('approved_by') == 'Xinying'):
+                    continue
         owners = [cid for cid in row['cases'] if cid in case_ids and cid not in deferred]
         if not owners:
             continue
@@ -170,7 +179,8 @@ def ingest(base, run, path):
         require(scrub_text(value, run.get('config')) == value, '审核决定中包含敏感内容')
         received[key] = {'id': key, 'kind': kind, 'title': item['title'], 'cases': item['cases'],
                          'status': row['status'], 'value': value}
-    pending = [item for item in [*questions, *checks] if item['id'] not in received]
+    pending = [item for item in [*questions, *checks]
+               if item['id'] not in received or received[item['id']]['status'] == 'deferred']
     result = {'run_id': run['run_id'], 'revision': payload['revision'],
               'source_files': {cid: file_hash(inside(base, case['source'])) for cid, case in run['cases'].items() if case.get('source')},
               'decisions': list(received.values()), 'pending': pending}
@@ -324,6 +334,10 @@ def bind_case(base, run, cid, review_ids, source='current'):
     from .specs import lint, spec_path
     require(cid in run['cases'] and len(review_ids) == len(set(review_ids)), '无效用例或重复审核项')
     review = run.get('prototype_review' if source == 'prototype' else 'human_review') or {}
+    required = {row['id'] for row in review.get('decisions', [])
+                if cid in row.get('cases', []) and row.get('status') in {'confirmed', 'edited'}}
+    require(set(review_ids) == required, '必须绑定该用例全部已确认的审核项',
+            {'missing': sorted(required - set(review_ids)), 'extra': sorted(set(review_ids) - required)})
     applications = run.get('review_applications', {})
     anchors = [row for row in applications.values() if row.get('source') == source and cid in row.get('case_ids', [])]
     current_source = file_hash(inside(base, run['cases'][cid]['source']))
@@ -342,6 +356,7 @@ def bind_case(base, run, cid, review_ids, source='current'):
     require(not result['errors'] and not result['cases'][cid]['errors'], '用例规格校验失败', result)
     run['cases'][cid]['review_binding'] = {'source': source, 'review_ids': review_ids,
         'reviewed_revision': review.get('reviewed_revision', review.get('revision')),
+        'decisions_digest': digest([row for row in review.get('decisions', []) if row.get('id') in review_ids]),
         'source_sha256': review.get('source_sha256'), 'source_file_sha256': file_hash(inside(base, run['cases'][cid]['source'])),
         'spec_sha256': file_hash(spec_path(base, run['cases'][cid]))}
     event(run, 'review_case_bound', case_id=cid, review_ids=review_ids, source=source)

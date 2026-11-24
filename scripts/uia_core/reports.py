@@ -50,6 +50,8 @@ def opening(m, metrics, review):
                      + ''.join(f"{label} {value / 1000:.1f} 秒。" if value is not None else f"{label} 未记录。"
                                for label, value in [('前置准备', metrics.get('preparation_duration_ms')),
                                                     ('正式执行', metrics.get('execution_duration_ms'))]))
+    if metrics.get('timing_unrecorded_attempts'):
+        metrics_text += f" 另有 {metrics['timing_unrecorded_attempts']} 次历史执行缺少准备计时，未计入分阶段耗时。"
     if metrics.get('time_to_first_result_seconds') is not None:
         metrics_text += f"首个结果耗时 {metrics['time_to_first_result_seconds']:.1f} 秒。"
     if metrics.get('pass_rate') is not None:
@@ -139,7 +141,7 @@ def make_report(base, m, writeback=False):
     for c in m["cases"].values():
         records.append({k: c.get(k) for k in ("case_id", "original_id", "title", "module", "priority",
                        "sheet", "rows", "stage", "work_status", "result", "stability", "pass_streak",
-                       "flow_ids", "fixture_ids", "repair_rounds", "attempts", "feedback", "classification", "case_spec", "review_binding", "spec_first_lint", "spec_lint", "remote_status")})
+                       "flow_ids", "fixture_ids", "repair_rounds", "attempts", "feedback", "classification", "classification_history", "case_spec", "review_binding", "spec_first_lint", "spec_lint", "remote_status")})
         records[-1]['failure_class'] = failure_class_for_case(c)
         records[-1]['result_label'] = zh(c.get('result'))
         records[-1]['script_binding'] = c.get('script_binding')
@@ -210,6 +212,16 @@ def make_report(base, m, writeback=False):
         append_excel(sheet, [r["case_id"], r["original_id"], r["sheet"], ",".join(map(str, r["rows"])),
                       r["title"], r["priority"], zh(r["work_status"]), zh(r["result"]), zh(r["stability"]), r["pass_streak"],
                       r["script"], len(r["attempts"]), r["attempts"][-1]["evidence"] if r["attempts"] else "", r.get("reason", "")])
+    history_sheet = wb.create_sheet('历史尝试')
+    append_excel(history_sheet, ['用例ID', '批次', '原始结果', '证据', '重分类结果', '重分类依据'])
+    for row in records:
+        classifications = row.get('classification_history') or ([row['classification']] if row.get('classification') else [])
+        for attempt in row.get('attempts') or []:
+            matches = [item for item in classifications if item.get('batch_id') == attempt.get('batch_id') or
+                       item.get('evidence') == attempt.get('evidence')]
+            decision = matches[-1] if matches else {}
+            append_excel(history_sheet, [row['case_id'], attempt.get('batch_id'), zh(attempt.get('result')),
+                         attempt.get('evidence'), zh(decision['result']) if decision.get('result') else '', decision.get('reason', '')])
     stats = wb.create_sheet("汇总")
     append_excel(stats, ["指标", "值"])
     for key, value in {**s, **metrics}.items():
@@ -252,6 +264,17 @@ table{border-collapse:collapse;width:100%;background:white}th,td{padding:10px;te
 th{background:#23415a;color:white}a{color:#0069a3}pre{white-space:pre-wrap}section{overflow:auto}input{padding:10px;min-width:260px;margin:12px 0}</style>
 <h1>UI 自动化结果</h1>"""
     body += ''.join('<h2>' + escape(b['title']) + '</h2><p>' + escape(b['text']).replace('\n', '<br>') + '</p>' for b in blocks)
+    body += '<h2>历史尝试与重分类</h2><ul>'
+    for row in records:
+        classifications = row.get('classification_history') or ([row['classification']] if row.get('classification') else [])
+        for attempt in row.get('attempts') or []:
+            matches = [item for item in classifications if item.get('batch_id') == attempt.get('batch_id') or item.get('evidence') == attempt.get('evidence')]
+            decision = matches[-1] if matches else {}
+            body += '<li>' + escape(row['case_id']) + ' · ' + escape(attempt.get('batch_id')) + ' · ' + escape(zh(attempt.get('result'))) + ' ' + link(attempt.get('evidence'))
+            if decision:
+                body += ' · 重分类 ' + escape(zh(decision['result']) if decision.get('result') else '结果未记录') + ' ' + escape(decision.get('reason'))
+            body += '</li>'
+    body += '</ul>'
     passes = m["config"]["execution"].get("stability_passes", 2)
     standard = "每日交付：同版本一次成功即可。" if passes == 1 else "夜间回归：同一版本独立运行两次成功。"
     body += "<p>运行：" + escape(m["run_id"]) + "；源用例总数：" + str(s["total"]) + "。稳定标准：" + standard + "</p>"

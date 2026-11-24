@@ -262,11 +262,12 @@ export async function openSiteArea(page, cfg, area) {
   await areaReady(destination, area, cfg);
   return destination;
 }
-export async function authenticatedSession(browser, cfg, { force = false, allowLogin = true, manual = false } = {}) {
+export async function authenticatedSession(browser, cfg, { force = false, allowLogin = true, manual = false, onProgress } = {}) {
   const state = force || manual ? undefined : reusableState(cfg);
   const context = await browser.newContext({ ...contextOptions(cfg), ...(state ? { storageState: state } : {}) });
   const page = await context.newPage();
   try {
+    onProgress?.('auth_environment');
     const environment = await checkEnvironment(page, cfg);
     let refreshed = false;
     const authenticate = async () => {
@@ -277,16 +278,19 @@ export async function authenticatedSession(browser, cfg, { force = false, allowL
       }
       catch { fail('MANUAL_LOGIN_TIMEOUT', '等待人工登录超时，请完成登录后重试'); }
     };
+    onProgress?.('auth_login');
     if (await isLoginPage(page)) {
       if (!allowLogin) fail('AUTH_REQUIRED', '登录态已过期，请在执行前重新运行 login', ['重新登录', '暂停相关用例']);
       await authenticate(); refreshed = true;
     }
+    onProgress?.('auth_cloud');
     await ensureCloudTarget(page, cfg);
     if (new URL(page.url()).host !== new URL(cfg.environment.cloud_url).host) fail('ENVIRONMENT_MISMATCH', '云平台跳转到了其他主机');
     if (await isLoginPage(page)) {
       if (!allowLogin || refreshed) fail('AUTH_REQUIRED', '云平台要求重新登录');
       await authenticate(); refreshed = true;
     }
+    onProgress?.('auth_site');
     const shellReady = page.locator('.contentShow, .wrap-webSite').first().waitFor({ state: 'visible', timeout: 25000 }).catch(() => {});
     const editorReady = page.getByText('网页编辑', { exact: true }).first().waitFor({ state: 'visible', timeout: 25000 }).catch(() => {});
     await Promise.race([shellReady, editorReady]);
@@ -357,7 +361,7 @@ export async function scopedStructure(page, { frame, scope } = {}) {
 
 export async function snapshotSession(browser, cfg, { area, manual = false, frame, scope, onProgress, ...navigation } = {}) {
   onProgress?.('authentication');
-  const session = await authenticatedSession(browser, cfg, { allowLogin: true, manual });
+  const session = await authenticatedSession(browser, cfg, { allowLogin: true, manual, onProgress });
   try {
     let page = session.page;
     onProgress?.('open_area');
@@ -368,46 +372,52 @@ export async function snapshotSession(browser, cfg, { area, manual = false, fram
     page = reached.page;
     onProgress?.('editor_check');
     onProgress?.('capture');
-    let structure;
-    let captureTimer;
-    try { structure = await Promise.race([scopedStructure(page, { frame, scope }), new Promise((_, reject) => { captureTimer = setTimeout(() => reject(new Error('Snapshot capture timed out')), 10000); })]); }
-    catch { structure = { nodes: [], unavailable: true }; }
-    finally { clearTimeout(captureTimer); }
-    Object.assign(structure, { frame: frame || null, scope: scope || 'body', path: urlPath(page.url()),
-      ...(frame ? { frame_reached: !structure.unavailable } : {}),
-      failed_step: reached.failed_step, steps: reached.steps, popups: reached.popups });
-    structure.dialogs = [];
-    structure.iframes = [];
-    for (const candidate of page.frames()) {
-      try {
-        if (candidate !== page.mainFrame() && !await (await candidate.frameElement()).isVisible()) continue;
-        const details = await candidate.locator('body').evaluate(container => {
-          const visible = node => node.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }) &&
-            !node.closest('[hidden], [aria-hidden="true"]');
-          return {
-            dialogs: [...container.querySelectorAll('[role="dialog"], dialog, [aria-modal="true"]')].filter(visible).map(node =>
-              node.getAttribute('aria-label') || document.getElementById(node.getAttribute('aria-labelledby'))?.textContent ||
-              node.querySelector('h1,h2,h3,strong,.title')?.textContent || ''),
-            iframes: [...container.querySelectorAll('iframe')].filter(visible).map((node, index) => ({
-              selector: node.id ? '#' + CSS.escape(node.id) : node.name ? 'iframe[name=' + JSON.stringify(node.name) + ']' : 'iframe >> nth=' + index,
-              name: node.name || null, id: node.id || null,
-              path: (() => { try { return new URL(node.src, location.href).pathname; } catch { return null; } })() }))
-          };
-        });
-        structure.dialogs.push(...details.dialogs.map(title => ({ title: title.trim().slice(0, 120) })));
-        structure.iframes.push(...details.iframes.map(item => ({ ...item, parent_path: urlPath(candidate.url()) })));
-      } catch { /* Detached or inaccessible frames remain unavailable. */ }
-    }
-    if (!frame && !scope && await page.locator('#backstage-innerpage').count()) {
-      try { structure.iframe = await scopedStructure(page, { frame: '#backstage-innerpage' }); }
-      catch { structure.iframe = { unavailable: true }; }
-    }
-    const { scrubText } = await import('./redact.mjs');
-    let safe = scrubText(JSON.stringify(structure));
-    const privateValues = credentials(cfg);
-    for (const value of Object.values(privateValues)) {
-      if (typeof value === 'string' && value) safe = safe.split(value).join('[REDACTED]');
-    }
-    return JSON.parse(safe);
+    const capture = async () => {
+      let structure;
+      let captureTimer;
+      try { structure = await Promise.race([scopedStructure(page, { frame, scope }), new Promise((_, reject) => { captureTimer = setTimeout(() => reject(new Error('Snapshot capture timed out')), 10000); })]); }
+      catch { structure = { nodes: [], unavailable: true }; }
+      finally { clearTimeout(captureTimer); }
+      Object.assign(structure, { frame: frame || null, scope: scope || 'body', path: urlPath(page.url()),
+        ...(frame ? { frame_reached: !structure.unavailable } : {}),
+        failed_step: reached.failed_step, steps: reached.steps, popups: reached.popups });
+      structure.dialogs = [];
+      structure.iframes = [];
+      for (const candidate of page.frames()) {
+        try {
+          if (candidate !== page.mainFrame() && !await (await candidate.frameElement()).isVisible()) continue;
+          const details = await candidate.locator('body').evaluate(container => {
+            const visible = node => node.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }) &&
+              !node.closest('[hidden], [aria-hidden="true"]');
+            return {
+              dialogs: [...container.querySelectorAll('[role="dialog"], dialog, [aria-modal="true"]')].filter(visible).map(node =>
+                node.getAttribute('aria-label') || document.getElementById(node.getAttribute('aria-labelledby'))?.textContent ||
+                node.querySelector('h1,h2,h3,strong,.title')?.textContent || ''),
+              iframes: [...container.querySelectorAll('iframe')].filter(visible).map((node, index) => ({
+                selector: node.id ? '#' + CSS.escape(node.id) : node.name ? 'iframe[name=' + JSON.stringify(node.name) + ']' : 'iframe >> nth=' + index,
+                name: node.name || null, id: node.id || null,
+                path: (() => { try { return new URL(node.src, location.href).pathname; } catch { return null; } })() }))
+            };
+          });
+          structure.dialogs.push(...details.dialogs.map(title => ({ title: title.trim().slice(0, 120) })));
+          structure.iframes.push(...details.iframes.map(item => ({ ...item, parent_path: urlPath(candidate.url()) })));
+        } catch { /* Detached or inaccessible frames remain unavailable. */ }
+      }
+      if (!frame && !scope && await page.locator('#backstage-innerpage').count()) {
+        try { structure.iframe = await scopedStructure(page, { frame: '#backstage-innerpage' }); }
+        catch { structure.iframe = { unavailable: true }; }
+      }
+      const { scrubText } = await import('./redact.mjs');
+      let safe = scrubText(JSON.stringify(structure));
+      const privateValues = credentials(cfg);
+      for (const value of Object.values(privateValues)) {
+        if (typeof value === 'string' && value) safe = safe.split(value).join('[REDACTED]');
+      }
+      return JSON.parse(safe);
+    };
+    let timer;
+    try {
+      return await Promise.race([capture(), new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Snapshot capture timed out')), 10000); })]);
+    } finally { clearTimeout(timer); }
   } finally { await session.context.close(); }
 }

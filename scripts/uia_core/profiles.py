@@ -266,12 +266,13 @@ def invoke_snapshot(cfg, runner=None, area=None, manual=False, frame=None, scope
         import threading
         import sys
         progress = []
-        process = subprocess.Popen(command, cwd=runner, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        process = subprocess.Popen(command, cwd=runner, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                                   start_new_session=os.name != 'nt')
         def consume_progress():
             for line in process.stderr:
                 try:
                     row = json.loads(line)
-                    if isinstance(row, dict) and row.get('stage') in {'browser_start', 'authentication', 'open_area', 'route', 'editor_check', 'capture'}:
+                    if isinstance(row, dict) and row.get('stage') in {'browser_start', 'authentication', 'auth_environment', 'auth_login', 'auth_cloud', 'auth_site', 'open_area', 'route', 'editor_check', 'capture'}:
                         progress[:] = [row]
                         print(json.dumps(row, ensure_ascii=False), file=sys.stderr, flush=True)
                 except (ValueError, TypeError):
@@ -284,9 +285,22 @@ def invoke_snapshot(cfg, runner=None, area=None, manual=False, frame=None, scope
         try:
             process.wait(timeout=660 if manual else 120)
         except subprocess.TimeoutExpired:
-            process.kill()
+            if os.name == 'nt':
+                process.kill()
+            else:
+                import signal
+                os.killpg(process.pid, signal.SIGKILL)
             process.wait()
             require(False, 'Snapshot timed out', {'progress': progress[-1] if progress else None})
+        except BaseException:
+            if process.poll() is None:
+                if os.name == 'nt':
+                    process.kill()
+                else:
+                    import signal
+                    os.killpg(process.pid, signal.SIGKILL)
+                process.wait()
+            raise
         finally:
             reader.join(timeout=2)
             output_reader.join(timeout=2)

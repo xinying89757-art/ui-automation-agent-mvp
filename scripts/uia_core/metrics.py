@@ -141,12 +141,12 @@ def exploration_counts(m):
             missing_count += bool(state['exploration_for_missing_controls'])
         else:
             known_count += bool(item.get('re_explored'))
-    durations = [attempt['duration_ms'] for case in m.get('cases', {}).values()
-                 for attempt in case.get('explore_attempts', [])
-                 if type(attempt.get('duration_ms')) is int and attempt['duration_ms'] >= 0]
+    durations = [item['duration_ms'] for item in m.get('exploration', [])
+                 if type(item.get('duration_ms')) is int and item['duration_ms'] >= 0]
     if not durations:
-        durations = [item['duration_ms'] for item in m.get('exploration', [])
-                     if type(item.get('duration_ms')) is int and item['duration_ms'] >= 0]
+        durations = [attempt['duration_ms'] for case in m.get('cases', {}).values()
+                     for attempt in case.get('explore_attempts', [])
+                     if type(attempt.get('duration_ms')) is int and attempt['duration_ms'] >= 0]
     ordered = sorted(durations)
     percentile = lambda p: ordered[max(0, min(len(ordered) - 1, int((len(ordered) - 1) * p + .5)))] if ordered else None
     return {'re_explored_known_pages': known_count,
@@ -200,7 +200,8 @@ def calculate(base, m, final_report_at=None):
     interventions += reviews
     attempts = [a for case in cases for a in case.get('attempts', []) if a.get('executed')]
     preparation = [a['preparation_ms'] + (a.get('preparation_steps_ms') or 0) for a in attempts if type(a.get('preparation_ms')) is int]
-    execution = [a['duration_ms'] for a in attempts if type(a.get('duration_ms')) is int]
+    execution = [max(0, a['duration_ms'] - a['preparation_ms'] - (a.get('preparation_steps_ms') or 0))
+                 for a in attempts if type(a.get('duration_ms')) is int and type(a.get('preparation_ms')) is int]
     answered = [q for q in m.get('questions', {}).values() if q.get('kind') == 'exploration' and q.get('status') == 'answered']
     waits = [q['wait_seconds'] for q in answered if isinstance(q.get('wait_seconds'), (int, float))]
     hit = knowledge_hit_rate(base, m)
@@ -222,6 +223,7 @@ def calculate(base, m, final_report_at=None):
         "human_review_submissions": reviews,
         "preparation_duration_ms": sum(preparation) if preparation else None,
         "execution_duration_ms": sum(execution) if execution else None,
+        "timing_unrecorded_attempts": len(attempts) - len(preparation),
         "human_wait_seconds": sum(waits) if waits else None,
         "time_to_first_result_seconds": elapsed(first_start, first_at) if first_start and first_at else None,
         "import_to_first_result_seconds": elapsed(imported_at, first_at) if imported_at and first_at else None,

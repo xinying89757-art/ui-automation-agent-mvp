@@ -181,9 +181,13 @@ class GenericProcessTests(unittest.TestCase):
         process = unittest.mock.Mock()
         process.stdout = io.StringIO('')
         process.stderr = io.StringIO('{"stage":"route","step":2,"elapsed_ms":5000}\n')
+        process.pid = 12345
         process.wait.side_effect = [profiles.subprocess.TimeoutExpired('node', 120), 0]
-        with patch.object(profiles, 'ROOT', self.base), patch.object(profiles.subprocess, 'Popen', return_value=process):
+        with patch.object(profiles, 'ROOT', self.base), patch.object(profiles.subprocess, 'Popen', return_value=process), patch.object(profiles.os, 'killpg') as killpg:
             with self.assertRaises(common.UiaError) as error:
                 profiles.invoke_snapshot(self.m['config'], runner)
         self.assertEqual(error.exception.details['progress']['step'], 2)
-        process.kill.assert_called_once()
+        if profiles.os.name == 'nt':
+            process.kill.assert_called_once()
+        else:
+            killpg.assert_called_once()

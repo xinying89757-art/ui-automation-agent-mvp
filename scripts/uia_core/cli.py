@@ -462,6 +462,7 @@ def dispatch(args, path, m):
                  classification={"reason": redact(args.reason, m["config"]), "evidence": args.evidence, "at": now()})
         if c['attempts']:
             c['classification']['batch_id'] = c['attempts'][-1].get('batch_id')
+        c.setdefault('classification_history', []).append(dict(c['classification'], result=args.result))
         from .failures import judge_result
         _, failure_class = judge_result(args.result, [])
         if failure_class:

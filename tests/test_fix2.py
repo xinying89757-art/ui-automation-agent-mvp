@@ -16,6 +16,8 @@ class GenericProcessTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.base = Path(self.temp.name)
+        token = common.CURRENT_RUN_BASE.set(self.base)
+        self.addCleanup(common.CURRENT_RUN_BASE.reset, token)
         self.m = {'run_id': 'R', 'cases': {}, 'questions': {}, 'history': [], 'sources': [], 'exploration': [],
                   'config': {'auth': {}, 'targets': {}, 'network': {'mode': 'direct'}}, 'interaction_mode': 'once'}
         for cid, text in [('C1', '  未知页面 已打开  '), ('C2', '未知页面已打开'), ('C3', '另一个账号')]:

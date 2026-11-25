@@ -56,7 +56,7 @@ class KnowledgeTests(unittest.TestCase):
         common.atomic_write(base/'km.json', {'matched': {'C1': {'target.faq.answer': {}}, 'C2': {'target.faq.answer': {}}}})
         m = {'run_id': 'R1', 'cases': {}, 'knowledge_match': {'file': 'km.json'}}
         for _ in range(2):
-            knowledge.writeback(base, m)
+            knowledge._legacy_writeback(base, m)
         row = next(r for r in common.read_yaml(knowledge.ROOT/'index.yaml')['entries'] if r['id']=='target.faq.answer')
         self.assertEqual(row['hit_count'], 2)
         self.assertTrue(row['last_hit'])
@@ -156,7 +156,7 @@ class KnowledgeTests(unittest.TestCase):
             'assertions':[{'id':'A1','after':'S1','checks':[{'target':'faq.cancel'}]}]},as_yaml=True)
         manifest={'run_id':'R','cases':{'C1':{'case_id':'C1','case_spec':'C1.yaml','attempts':[
             {'executed':True,'result':'business_failure','successful_steps':['S1'],'assertions':[{'id':'A1','passed':False}]}]}}}
-        result=knowledge.writeback(base,manifest)
+        result=knowledge._legacy_writeback(base,manifest)
         self.assertEqual(result['partial_count'],1)
         page_map=common.read_yaml(knowledge.ROOT/'page-map.yaml')
         proof=page_map['targets']['faq.cancel']['provenance'][-1]
@@ -195,7 +195,7 @@ class KnowledgeTests(unittest.TestCase):
             rel=f'cases/{cid}/case-spec.yaml'; specs[cid]=rel
             common.atomic_write(base/rel, {'start_page':'faq','steps':[{'target':'faq.answer'}]}, as_yaml=True)
         m={'run_id':'R','cases':{cid:{'case_spec':rel,'attempts':[{'executed':True,'result':'passed'}]} for cid,rel in specs.items()}}
-        result=knowledge.writeback(base,m)
+        result=knowledge._legacy_writeback(base,m)
         self.assertTrue(any(x['name']=='faq.answer' for x in result['added_or_updated']))
         row=common.read_yaml(knowledge.ROOT/'page-map.yaml')['targets']['faq.answer']
         self.assertEqual(row['provenance'][0]['verified_by'],['C1','C2'])
@@ -208,7 +208,7 @@ class KnowledgeTests(unittest.TestCase):
         common.atomic_write(knowledge.ROOT/'page-map.yaml',pages,as_yaml=True); knowledge.sync_layout(pages=pages)
         base=self.root/'runs/ONE'; (base/'cases/C1').mkdir(parents=True)
         rel='cases/C1/case-spec.yaml'; common.atomic_write(base/rel,{'start_page':'faq','steps':[{'target':'faq.answer'}]},as_yaml=True)
-        knowledge.writeback(base,{'run_id':'ONE','cases':{'C1':{'case_spec':rel,'attempts':[{'executed':True,'result':'passed'}]}}})
+        knowledge._legacy_writeback(base,{'run_id':'ONE','cases':{'C1':{'case_spec':rel,'attempts':[{'executed':True,'result':'passed'}]}}})
         row=next(x for x in common.read_yaml(knowledge.ROOT/'index.yaml')['entries'] if x['id']=='target.faq.answer')
         target=common.read_yaml(knowledge.ROOT/'page-map.yaml')['targets']['faq.answer']
         self.assertIsNone(row['last_verified'])
@@ -227,7 +227,7 @@ class KnowledgeTests(unittest.TestCase):
             cases[cid]={'attempts':[
                 {'executed':True,'result':'automation_failure','failure_stage':'locator'},
                 {'executed':True,'result':'passed','repair_baseline_script':before,'repair_script':after}]}
-        result=knowledge.writeback(base,{'run_id':'REPAIR','cases':cases})
+        result=knowledge._legacy_writeback(base,{'run_id':'REPAIR','cases':cases})
         self.assertEqual(result['count'],1)
         experience=common.read_yaml(knowledge.ROOT/'experience.yaml')['entries']
         row=next(value for key,value in experience.items() if key.startswith('repair-locator-'))
@@ -241,7 +241,7 @@ class KnowledgeTests(unittest.TestCase):
         rel='cases/C1/case-spec.yaml'; common.atomic_write(base/rel,{'start_page':'faq','steps':[{'target':'faq.answer'}]},as_yaml=True)
         for run_id in ('R1','R2'):
             manifest={'run_id':run_id,'cases':{'C1':{'case_spec':rel,'attempts':[{'executed':True,'result':'automation_failure','batch_id':run_id}]}}}
-            knowledge.writeback(base,manifest)
+            knowledge._legacy_writeback(base,manifest)
         index=common.read_yaml(knowledge.ROOT/'index.yaml')['entries']
         self.assertEqual(next(x for x in index if x['id']=='target.faq.answer')['status'],'needs_review')
         self.assertNotIn('target.faq.answer',[x['id'] for x in retrieval.select({'page':'faq'})['selected']])

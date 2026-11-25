@@ -53,9 +53,45 @@ def validate_match_counts(name, data):
                             f'UIA_LOCATOR_AMBIGUOUS: {ident} route step {step} evidence matched {count} elements; use a scoped or exact locator')
 
 
-def load():
+def run_base(m):
+    return common.CURRENT_RUN_BASE.get() or common.run_path(m['run_id']).parent
+
+
+def load(base=None):
+    base = base if base is not None else common.CURRENT_RUN_BASE.get()
     path = knowledge_path('entries.yaml')
-    return read_yaml(path) if path.is_file() else {'schema_version': 'entry-hints.v1', 'entries': {}}
+    data = read_yaml(path) if path.is_file() else {'schema_version': 'entry-hints.v1', 'entries': {}}
+    if base is not None:
+        overlay = Path(base) / 'state/entries-overlay.yaml'
+        if overlay.is_file():
+            data.setdefault('entries', {}).update((read_yaml(overlay) or {}).get('entries', {}))
+    return data
+
+
+def save_local(base, name, data):
+    validate_match_counts(name, data)
+    shared = knowledge_path(name)
+    original = read_yaml(shared) if shared.is_file() else {}
+    sections = ('entries',) if name == 'entries.yaml' else ('pages', 'targets')
+    overlay = {'schema_version': data.get('schema_version')}
+    for section in sections:
+        overlay[section] = {k: v for k, v in data.get(section, {}).items()
+                            if original.get(section, {}).get(k) != v}
+    path = Path(base) / ('state/entries-overlay.yaml' if name == 'entries.yaml' else 'state/page-map-overlay.yaml')
+    atomic_write(path, overlay, as_yaml=True)
+    return path
+
+
+def local_map(base):
+    path = knowledge_path('page-map.yaml')
+    data = read_yaml(path) if path.is_file() else {'schema_version': 'page-map.v1', 'pages': {}, 'targets': {}}
+    overlay = Path(base) / 'state/page-map-overlay.yaml'
+    if overlay.is_file():
+        extra = read_yaml(overlay) or {}
+        for section in ('pages', 'targets'):
+            data.setdefault(section, {}).update(extra.get(section, {}))
+    return data
+
 
 
 def safe(value, cfg):
@@ -83,8 +119,9 @@ def parse(text):
     return result
 
 
-def resolve(page):
-    hints = load()['entries']
+def resolve(page, base=None):
+    base = base if base is not None else common.CURRENT_RUN_BASE.get()
+    hints = load(base)['entries']
     # Exact matches win over fuzzy containment, then the most specific name wins.
     choices = []
     for name, hint in hints.items():
@@ -95,7 +132,7 @@ def resolve(page):
         _, _, name, hint = max(choices, key=lambda x: x[:3])
         return literal_route(dict(hint, key=name))
     path = knowledge_path('page-map.yaml')
-    catalog = read_yaml(path) if path.is_file() else {}
+    catalog = local_map(base) if base is not None else (read_yaml(path) if path.is_file() else {})
     for section in ('pages', 'targets'):
         for name, row in catalog.get(section, {}).items():
             names = [name, row.get('label', ''), row.get('name', ''), *row.get('aliases', [])]
@@ -116,12 +153,13 @@ def literal_route(hint):
     return hint
 
 
-def store(m, hints, source='handoff', confirmed=False):
+def store(m, hints, source='handoff', confirmed=False, base=None):
     safe(hints, m['config'])
-    data = load()
+    base = Path(base) if base is not None else run_base(m)
+    data = load(base)
     for hint in hints:
         hint = dict(hint, not_a_page=bool(re.search(r'不是(?:后台)?页面|非页面', hint['path_text'])))
-        existing = resolve(hint['label'])
+        existing = resolve(hint['label'], base)
         if hint.get('steps') and not hint.get('not_a_page'):
             equivalent = [(name, row) for name, row in data['entries'].items()
                           if row.get('confirmed') and not row.get('not_a_page') and
@@ -144,8 +182,8 @@ def store(m, hints, source='handoff', confirmed=False):
         changes = m.setdefault('entry_hint_changes', {})
         changes.setdefault(name, {'before': old or None})['after'] = data['entries'][name]
     safe(data, m['config'])
-    save_catalog('entries.yaml', data)
-    return {'saved_entries': len(hints), 'knowledge': str(knowledge_path('entries.yaml'))}
+    path = save_local(base, 'entries.yaml', data)
+    return {'saved_entries': len(hints), 'knowledge': str(path)}
 
 
 def add(m, text, source='handoff'):
@@ -162,7 +200,7 @@ def handoff(m, file_or_text):
 
 
 def confirm(m, page, steps, frame=None):
-    hint = resolve(page)
+    hint = resolve(page, run_base(m))
     require(hint, '页面入口未知：请先 hints add')
     require(steps and all(re.match(r'^(goto|click|hover|fill|type|press|wait):.+', x) for x in steps), '请提供具体 --step 动作')
     require(all(not x.startswith('goto:') for x in steps[1:]), 'goto 仅允许作为首个入口步骤')
@@ -280,7 +318,7 @@ def confirmation(run, page, hint):
 
 
 def snapshot_route(args, cfg):
-    hint = resolve(args.entry)
+    hint = resolve(args.entry, common.run_path(args.run).parent if getattr(args, "run", None) else None)
     require(hint, '页面入口未知：请走入口提示问题（清单 D 块），不要请求演示')
     safe({'hint': hint, 'entry': args.entry, 'purpose': args.purpose}, cfg)
     hint = navigation_hint(hint)
@@ -399,7 +437,7 @@ def bind_placeholders(base, m, placeholders, target_name, case_ids=None, allow_r
     normalized = [str(value).strip() for value in placeholders if str(value).strip()]
     require(normalized and all(value.startswith(('?', '？')) for value in normalized),
             '--for values must be ?case-spec placeholders')
-    require(target_name in (read_yaml(knowledge_path('page-map.yaml')) or {}).get('targets', {}),
+    require(target_name in local_map(base).get('targets', {}),
             'binding target is not in the page-map catalog: ' + str(target_name))
     mapping = {}
     for cid, case in m.get('cases', {}).items():
@@ -471,7 +509,7 @@ def promote(base, m, report, prefix=None, page=None, overwrite=False, for_placeh
     prefix = (prefix or data.get('purpose') or 'explored').strip('.')
     slug = lambda name: re.sub(r'[^A-Za-z0-9.-]+', '.', name).strip('.').lower()
     map_path = knowledge_path('page-map.yaml')
-    catalog = read_yaml(map_path) if map_path.is_file() else {'schema_version': 'page-map.v1', 'pages': {}, 'targets': {}}
+    catalog = local_map(base)
     targets = catalog.setdefault('targets', {})
     added, skipped = [], []
     source = 'generator:' + path.stem.replace('generator-', '')
@@ -590,7 +628,7 @@ def promote(base, m, report, prefix=None, page=None, overwrite=False, for_placeh
         put(name, locator_target(target))
         steps.append(verb + ':' + name + value)
     safe(catalog, m['config'])
-    save_catalog('page-map.yaml', catalog)
+    save_local(base, 'page-map.yaml', catalog)
     placeholder_mapping = {}
     for binding in auto_bindings:
         if binding['placeholder'].startswith(('?', '？')):
@@ -608,7 +646,7 @@ def promote(base, m, report, prefix=None, page=None, overwrite=False, for_placeh
     result = {'page_map': str(map_path), 'targets_added': added, 'targets_skipped': skipped, 'route_steps': steps}
     page = page or data.get('entry')
     if page and route.get('reached_entry') and steps:
-        hint = resolve(page)
+        hint = resolve(page, base)
         require(hint, '页面入口未知：请先 hints add')
         node = navigation_hint(hint).get('node')
         lead = ['click:' + node] if node and not steps[0].startswith(('goto:', 'click:' + node)) else []
@@ -650,13 +688,13 @@ def add_target(base, m, name, locator, evidence, overwrite=False, resource=None,
         require(count is None or count == 1,
                 f'UIA_LOCATOR_AMBIGUOUS: {name} evidence matched {count} elements; use a scoped or exact locator')
     map_path = knowledge_path('page-map.yaml')
-    catalog = read_yaml(map_path) if map_path.is_file() else {'schema_version': 'page-map.v1', 'pages': {}, 'targets': {}}
+    catalog = local_map(base)
     targets = catalog.setdefault('targets', {})
     require(name not in targets or overwrite, 'target exists; pass --overwrite to replace it')
     twin = same_locator(targets, row, name)
     targets[name] = dict(row, source='observed:' + str(evidence), confirmed=False, **({'alias_of': twin} if twin else {}))
     safe(catalog, m['config'])
-    save_catalog('page-map.yaml', catalog)
+    save_local(base, 'page-map.yaml', catalog)
     m.setdefault('knowledge_promotions', []).append({'at': now(), 'target': name, 'evidence': str(evidence)})
     placeholder_mapping = bind_placeholders(base, m, _for_values(for_placeholders), name) if for_placeholders else {}
     return {'target': name, 'row': targets[name], 'page_map': str(map_path), **({'placeholder_bindings': placeholder_mapping} if placeholder_mapping else {})}

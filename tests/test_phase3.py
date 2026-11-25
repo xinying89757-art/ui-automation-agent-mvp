@@ -25,6 +25,8 @@ class PhaseThreeTests(unittest.TestCase):
         shutil.copytree(SOURCE / 'examples/phase2', self.root / 'examples/phase2')
         self.base = self.root / 'runs/R'
         self.base.mkdir(parents=True)
+        token = common.CURRENT_RUN_BASE.set(self.base)
+        self.addCleanup(common.CURRENT_RUN_BASE.reset, token)
         self.m = {'cases': {}, 'config': {'environment': {'id': 'production'}, 'site': 'https://example.test',
                   'auth': {}, 'network': {'mode': 'direct'}, 'mutation': {'allowed': True, 'scope': ['llms.txt']}},
                   'questions': {}, 'history': [], 'interaction_mode': 'once', 'exploration': [], 'sources': []}

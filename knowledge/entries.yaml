@@ -32,3 +32,25 @@ entries:
     source: explored
     confirmed: true
     at: '2026-10-23T03:36:29.913376+00:00'
+  product-description-editor-entry:
+    label: 产品描述试点入口
+    aliases:
+    - 产品描述新版编辑器入口
+    path_text: 内容管理 → 产品 → 添加产品 → 产品描述
+    steps:
+    - click:text=产品
+    - click:text=添加产品
+    confirmed: true
+    source: explored
+    last_verified: '2026-11-25'
+    scope: 正式版内容管理的产品描述新版内容编辑器
+    provenance:
+      source_run: GO-1a509e6bad3f
+      verified_by:
+      - C-0001
+      - C-0009
+      verified_at: '2026-11-25'
+      evidence:
+      - batches/530e7e53cc8243c8b1c2a89ad59c155d/case-results.json
+      - batches/da28d8c3f240422ba9f4fb225cebb685/case-results.json
+    arrival_signal: 产品描述中的新版内容编辑器可见且编辑区可编辑

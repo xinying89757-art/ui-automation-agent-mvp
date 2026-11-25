@@ -137,11 +137,15 @@ def parser():
     knowledge.add_argument("--from", dest="source_dir")
     knowledge.add_argument("--run-id")
     knowledge.add_argument("--run")
+    knowledge.add_argument("--review", help="knowledge review JSON")
     knowledge.add_argument("--older-than-days", type=int)
     kb = commands.add_parser("kb")
-    kb.add_argument("action", choices=["query", "merge", "writeback", "validate", "prune"])
+    kb.add_argument("action", choices=["query", "merge", "writeback", "validate", "prune", "propose"])
     kb.add_argument("--case")
     kb.add_argument("--run")
+    kb.add_argument("--review", help="knowledge review JSON")
+    kb.add_argument("--file", help="verified knowledge candidate JSON")
+    kb.add_argument("--replace", action="store_true", help="replace a same-ID run-local candidate")
     kb.add_argument("--from", dest="source_dir")
     kb.add_argument("--run-id")
     kb.add_argument("--max-tokens", type=int)
@@ -347,7 +351,9 @@ def dispatch(args, path, m):
         if args.action == 'prune':
             stale_days = args.older_than_days or 90
             return knowledge.prune(stale_days, max(180, stale_days))
-        return {'writeback': knowledge.writeback(base, m), 'report': reports.make_report(base, m, writeback=False)}
+        from .knowledge_review import writeback
+        result = writeback(base, m, args.review)
+        return {'writeback': result}
     if cmd == "hints":
         from .entries import add, confirm
         from .experience import sync_checklist
@@ -612,10 +618,18 @@ def execute(args):
             return knowledge.merge(args.source_dir, args.run_id)
         if args.action == 'validate': return knowledge.validate()
         if args.action == 'prune': return knowledge.prune(args.stale_after_days, args.candidate_after_days)
+        if args.action == 'propose':
+            require(args.run and args.file, 'kb propose requires --run and --file')
+            from .knowledge_review import propose
+            with locked_run(args.run) as (path, manifest):
+                result = propose(path.parent, manifest, read_json(args.file), replace=args.replace)
+                save(path, manifest)
+                return result
         if args.action == 'writeback':
             require(args.run, 'kb writeback requires --run RUN_ID')
             with locked_run(args.run) as (path, manifest):
-                result = knowledge.writeback(path.parent, manifest); save(path, manifest); return result
+                from .knowledge_review import writeback
+                result = writeback(path.parent, manifest, args.review); save(path, manifest); return result
         require(args.case, 'kb query requires --case CASE_ID')
         from .common import ROOT, read_yaml
         if args.run:
@@ -636,10 +650,17 @@ def execute(args):
         from .retrieval import select, resolve_page
         text = ' '.join(str(x or '') for x in (case.get('title'), case.get('module'), spec.get('intent'), source.get('title'), source.get('expected')))
         page = spec.get('start_page') or resolve_page(text)
-        if not page: return {'selected': [], 'discarded': [], 'max_tokens': args.max_tokens, 'used_tokens': 0, 'truncated': False}
+        if not page:
+            from .knowledge import local_matches
+            return {'selected': [], 'run_local': local_matches(run_path.parent, spec, text), 'discarded': [],
+                    'max_tokens': args.max_tokens, 'used_tokens': 0, 'truncated': False}
         query = {'page': page, 'frame': spec.get('frame'), 'version': spec.get('version'), 'title': case.get('title'),
                  'module': case.get('module'), 'intent': spec.get('intent'), 'text': text}
-        return select(query, budget=args.max_tokens)
+        result = select(query, budget=args.max_tokens)
+        from .knowledge import local_matches
+        local = local_matches(run_path.parent, spec, text)
+        result['run_local'] = local
+        return result
     if args.command == 'knowledge' and args.action == 'merge':
         from .knowledge import merge
         require(args.source_dir and args.run_id, 'knowledge merge requires --from DIR --run-id RUN_ID')

@@ -228,7 +228,7 @@ def run_generator(base, m, purpose, plan, minutes=5, model=None, max_actions=40,
     from .profiles import agent_env
     require(purpose and purpose.strip() and plan and plan.strip(), 'generator requires --purpose and --plan')
     from .entries import resolve, safe, navigation_hint
-    hint = resolve(entry) if entry else None
+    hint = resolve(entry, base) if entry else None
     require(not entry or hint, '页面入口未知：请走入口提示问题（清单 D 块），不要请求演示')
     require(not hint or not hint.get('not_a_page'), '该入口不是页面，跳过导航')
     hint = navigation_hint(hint) if hint else None

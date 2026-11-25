@@ -7,15 +7,27 @@ import { openLlms, openSettings } from '../flows/llms-txt.mjs';
 // Reuse the YAML parser shipped with the locked Playwright runtime.
 const require = createRequire(import.meta.url);
 const { yaml } = require(path.join(path.dirname(require.resolve('playwright-core/package.json')), 'lib/utilsBundle.js'));
+const batchKnowledgeRoot = () => {
+  const id = process.env.UIA_BATCH_KNOWLEDGE_ID;
+  if (!id) return null;
+  if (!/^[a-zA-Z0-9_-]+$/.test(id)) throw new Error('Invalid batch knowledge ID');
+  return path.join(runtimeRoot, 'batch-knowledge', id);
+};
+const knowledgeRoot = () => process.env.UIA_KNOWLEDGE_DIR || (batchKnowledgeRoot() ? path.join(batchKnowledgeRoot(), 'shared') : path.join(runtimeRoot, 'knowledge'));
+const overlayPath = (envKey, filename) => {
+  if (process.env[envKey]) return process.env[envKey];
+  const root = batchKnowledgeRoot();
+  const candidate = root ? path.join(root, filename) : path.join(runtimeRoot, 'state', filename);
+  return fs.existsSync(candidate) ? candidate : null;
+};
 export const pageMap = () => {
-  const map = yaml.parse(fs.readFileSync(path.join(runtimeRoot, 'knowledge/page-map.yaml'), 'utf8'));
-  const file = process.env.UIA_PAGE_MAP_OVERLAY;
+  const map = yaml.parse(fs.readFileSync(path.join(knowledgeRoot(), 'page-map.yaml'), 'utf8'));
+  const file = overlayPath('UIA_PAGE_MAP_OVERLAY', 'page-map-overlay.yaml');
   if (file) {
     const overlay = yaml.parse(fs.readFileSync(file, 'utf8')) ?? {};
     for (const section of ['pages', 'targets']) {
       map[section] ??= {};
       for (const [name, value] of Object.entries(overlay[section] ?? {})) {
-        if (name in map[section]) throw new Error('Run-local page map cannot override shared entries');
         map[section][name] = value;
       }
     }
@@ -23,8 +35,10 @@ export const pageMap = () => {
   return map;
 };
 const entryCatalog = () => {
-  const file = path.join(runtimeRoot, 'knowledge/entries.yaml');
-  return fs.existsSync(file) ? (yaml.parse(fs.readFileSync(file, 'utf8'))?.entries ?? {}) : {};
+  const file = path.join(knowledgeRoot(), 'entries.yaml');
+  const entries = fs.existsSync(file) ? (yaml.parse(fs.readFileSync(file, 'utf8'))?.entries ?? {}) : {};
+  const overlay = overlayPath('UIA_ENTRIES_OVERLAY', 'entries-overlay.yaml');
+  return overlay ? { ...entries, ...(yaml.parse(fs.readFileSync(overlay, 'utf8'))?.entries ?? {}) } : entries;
 };
 export const urlPath = value => { try { return new URL(value, 'https://snapshot.invalid').pathname; } catch { return null; } };
 export function allowedURL(value, cfg) {

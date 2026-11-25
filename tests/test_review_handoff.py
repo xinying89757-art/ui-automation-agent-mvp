@@ -29,7 +29,7 @@ class ReviewHandoffTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)
             qkey = review_page.QUESTION_KEY
-            run = {'run_id': 'R', 'cases': {'C1': {'title': 'first'}, 'C2': {'title': 'second'}},
+            run = {'run_id': 'R', 'config': {}, 'cases': {'C1': {'title': 'first'}, 'C2': {'title': 'second'}},
                    'questions': {qkey: {'entries': [{'key': 'entry:产品', 'block': 'D', 'page': '产品',
                                                      'label': '产品', 'cases': ['C1'], 'options': []}],
                                         'answer': {'entries': {}}}}, 'history': []}
@@ -46,6 +46,10 @@ class ReviewHandoffTest(unittest.TestCase):
             self.assertIsNone(result['reviewed_revision'])
             self.assertEqual(run['questions'][qkey]['answer']['entries']['entry:产品'], '内容管理 → 产品')
             self.assertEqual(run['review_applications']['entry:产品']['case_ids'], ['C1'])
+            from uia_core.entries import load
+            hint = load(base)['entries']['产品']
+            self.assertEqual(hint['source'], 'review:entry:产品')
+            self.assertFalse(hint['confirmed'])
 
     def test_plan_requires_every_decision_case_and_matching_source_hash(self):
         from uia_core.common import file_hash

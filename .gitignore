@@ -12,3 +12,6 @@ test-results/
 
 # Original source workbooks stay local.
 cases.xlsx
+
+# Local advisory lock for knowledge writeback.
+.uia-knowledge-writeback.lock

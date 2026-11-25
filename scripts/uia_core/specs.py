@@ -33,8 +33,7 @@ def catalogs(base=None):
             overlay = read_yaml(overlay_path)
             for section in ('pages', 'targets'):
                 extra = overlay.get(section, {})
-                require(isinstance(extra, dict) and not (set(extra) & set(pages.get(section, {}))),
-                        'Run-local page map must not override shared targets')
+                require(isinstance(extra, dict), 'Invalid run-local page map')
                 pages.setdefault(section, {}).update(extra)
     networks = read_yaml(ROOT / 'assets/playwright-runner/knowledge/network.yaml')['rules']
     for entry in pages['targets'].values():
@@ -105,7 +104,7 @@ def expectation_quotes(source):
     return {quote for cell in cells for quote in [cell, *cell.splitlines()] if quote.strip()}
 
 
-def schema_errors(spec, source, env, data, pages):
+def schema_errors(spec, source, env, data, pages, base=None):
     errors, unknown = [], set()
     if not isinstance(spec, dict):
         return ['case-spec must be a mapping'], []
@@ -150,7 +149,8 @@ def schema_errors(spec, source, env, data, pages):
         unknown.add(spec['start_page'])
     else:
         fail(spec.get('start_page') in pages['pages'], 'unknown start_page')
-    entry_doc = read_yaml(ROOT / 'knowledge/entries.yaml') or {}
+    from .entries import load as load_entries
+    entry_doc = load_entries(base)
     entry_routes = entry_doc.get('entries', {})
     if spec.get('entry_route'):
         route_id = canonical_entry_route(spec['entry_route'], entry_routes)
@@ -372,9 +372,10 @@ def locator_errors(body, pages):
     return sorted(set(errors))
 
 
-def entry_route_locator_errors(body, spec, pages):
+def entry_route_locator_errors(body, spec, pages, base=None):
     """Reject per-step locator clicks where the confirmed entry replay owns navigation."""
-    entry_routes = (read_yaml(ROOT / 'knowledge/entries.yaml') or {}).get('entries', {})
+    from .entries import load as load_entries
+    entry_routes = load_entries(base).get('entries', {})
     route_id = canonical_entry_route(spec.get('entry_route'), entry_routes)
     if not route_id:
         return []
@@ -412,7 +413,7 @@ def lint(base, m, case_ids=None, record=True, check_scripts=True):
         case = m['cases'][cid]; path = spec_path(base, case)
         try:
             spec = read_yaml(path)
-            errors, unknown = schema_errors(spec, read_json(inside(base, case['source'])), env, data, pages)
+            errors, unknown = schema_errors(spec, read_json(inside(base, case['source'])), env, data, pages, base)
         except (OSError, ValueError, TypeError, yaml.YAMLError):
             spec, errors, unknown = {}, ['missing or malformed case-spec'], []
         auto = spec.get('automatable') if isinstance(spec, dict) else None
@@ -442,7 +443,7 @@ def lint(base, m, case_ids=None, record=True, check_scripts=True):
         if script.is_file() and check_scripts:
             body = script.read_text()
             errors.extend(locator_errors(body, pages))
-            errors.extend(entry_route_locator_errors(body, spec, pages))
+            errors.extend(entry_route_locator_errors(body, spec, pages, base))
             try:
                 refs = coverage(body, str(script.resolve().relative_to((base / 'runner').resolve())))
                 for field in ('steps', 'assertions'):
@@ -554,7 +555,8 @@ def generate(base, m, cid):
              "import { performWithPatterns } from '../../support/interaction-patterns.mjs';",
              "import { deferPublic, trackSave, verifyPersisted, readFieldValue, assertSaveBusinessOk } from '../../support/remote-checks.mjs';", '',
              'test(' + json.dumps('[' + cid + '] ' + spec['intent'], ensure_ascii=False) + ', async ({ page, caseContext }) => {', '  const networks: Record<string, any> = {};', '  const observations: Record<string, any> = {};', '  try {']
-    entry_routes = (read_yaml(ROOT / 'knowledge/entries.yaml') or {}).get('entries', {})
+    from .entries import load as load_entries
+    entry_routes = load_entries(base).get('entries', {})
     route_id = canonical_entry_route(spec.get('entry_route'), entry_routes)
     start = pages.get('pages', {}).get(spec['start_page'], {})
     initial_target = route_id or (spec['start_page'] if any(key in start for key in ('entry', 'steps', 'route', 'url', 'path', 'open')) else None)
@@ -696,7 +698,7 @@ def generate(base, m, cid):
             lines.append('  await verifyPersisted(page, caseContext, ' + json.dumps(rb, ensure_ascii=False) + ', ' + json.dumps(pages['targets'][rb['save_target']]['network']) + ', async () => await readFieldValue(' + field_loc + '));')
     lines += ['  await assertSaveBusinessOk(caseContext);', '  } finally {', '    for (const network of Object.values(networks)) await network.dispose();', '    for (const observation of Object.values(observations)) await observation.dispose();', '  }', '});', '']
     body = '\n'.join(lines)
-    errors = locator_errors(body, pages) + entry_route_locator_errors(body, spec, pages)
+    errors = locator_errors(body, pages) + entry_route_locator_errors(body, spec, pages, base)
     require(not errors, 'Generated locator lint failed', errors)
     relative = 'tests/generated/' + cid + '.spec.ts'
     script = base / 'runner' / relative
@@ -732,7 +734,7 @@ def register_script(base, m, cid, script_path):
     require(script.suffix == '.ts' and script.is_file(), 'Final spec must be a TypeScript file under runner/tests')
     relative = str(script.relative_to((base / 'runner').resolve()))
     body = script.read_text()
-    locator_problems = locator_errors(body, pages) + entry_route_locator_errors(body, spec, pages)
+    locator_problems = locator_errors(body, pages) + entry_route_locator_errors(body, spec, pages, base)
     require(not locator_problems, 'Final spec locator lint failed', locator_problems)
     require('TODO explore:' not in body and 'UIA_EXPLORATION_REQUIRED' not in body, 'Resolve exploration TODO before registration')
     refs = coverage(body, relative)

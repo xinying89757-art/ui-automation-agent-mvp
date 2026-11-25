@@ -314,6 +314,9 @@ def apply_entry(base, run, cid, review_id, source='current'):
     answers = q.setdefault('answer', {}).setdefault('entries', {})
     require(review_id not in answers or answers[review_id] == answer, '清单已有不同答复，不能覆盖')
     answers[review_id] = answer
+    # Human guidance is provisional for this run. Confirmation requires actual UI evidence.
+    from .entries import store
+    store(run, [{'label': rows[0]['page'], 'path_text': answer}], source='review:' + review_id, base=base)
     q.setdefault('locally_answered_keys', [])
     if review_id not in q['locally_answered_keys']:
         q['locally_answered_keys'].append(review_id)

@@ -32,7 +32,9 @@ class PromoteTests(unittest.TestCase):
         (self.base / 'exploration/generator-faq-editor.entry.json').write_text(json.dumps(REPORT, ensure_ascii=False), encoding='utf-8')
         self.patch = patch.object(common, 'ROOT', self.tmp)
         self.patch.start()
-        self.m = {'config': {}}
+        token = common.CURRENT_RUN_BASE.set(self.base)
+        self.addCleanup(common.CURRENT_RUN_BASE.reset, token)
+        self.m = {'run_id': 'R', 'config': {}}
         entries.add(self.m, '新版内容编辑器=内容管理 → 产品（或文章）→ 编辑，在内嵌编辑器框架 #tiptap-iframe 里')
 
     def tearDown(self):
@@ -48,7 +50,7 @@ class PromoteTests(unittest.TestCase):
 
     def test_promote_writes_targets_and_confirms_entry_without_overwrite(self):
         result = entries.promote(self.base, self.m, 'exploration/generator-faq-editor.entry.json')
-        catalog = common.read_yaml(self.tmp / 'assets/playwright-runner/knowledge/page-map.yaml')
+        catalog = entries.local_map(self.base)
         t = catalog['targets']
         self.assertEqual(t['faq-editor.entry.faq.cancel'], {'selector': 'keep'})
         self.assertIn('faq-editor.entry.faq.cancel', result['targets_skipped'])
@@ -74,7 +76,7 @@ class PromoteTests(unittest.TestCase):
         entries.confirm(self.m,'新版内容编辑器',steps,'iframe[name="article"]')
         entries.add(self.m,'Markdown 弹窗=内容管理 → 文章 → 编辑')
         entries.confirm(self.m,'Markdown 弹窗',steps,'iframe[name="article"]')
-        catalog=common.read_yaml(self.tmp/'assets/playwright-runner/knowledge/entries.yaml')['entries']
+        catalog=entries.load(self.base)['entries']
         confirmed=[(name,row) for name,row in catalog.items() if row.get('confirmed')]
         self.assertEqual(len(confirmed),1)
         name,row=confirmed[0]
@@ -123,7 +125,7 @@ class PromoteTests(unittest.TestCase):
         self.assertEqual(result['placeholder_bindings'],{'?markdown.dialog.confirm':'markdown.dialog.confirm'})
         rewritten=(case_dir/'case-spec.yaml').read_text(encoding='utf-8')
         self.assertIn('target: markdown.dialog.confirm',rewritten)
-        catalog=common.read_yaml(self.tmp/'assets/playwright-runner/knowledge/page-map.yaml')
+        catalog=entries.local_map(self.base)
         self.assertEqual(catalog['targets']['markdown.dialog.confirm']['match_count'],1)
         with patch.object(workflow,'refresh'),patch('uia_core.preconditions.triage',return_value=[]):
             task=workflow.next_task(self.base,self.m)
@@ -204,10 +206,10 @@ class SingleCatalogTests(PromoteTests):
         old = knowledge.ROOT; knowledge.ROOT = None
         self.addCleanup(lambda: setattr(knowledge, 'ROOT', old))
         entries.add_target(self.base, self.m, 'md.dialog', '{"css": ".md"}', 'exploration/generator-faq-editor.entry.json')
-        # specs.catalogs() reads ROOT/knowledge/page-map.yaml first: the shared copy must carry the new target.
-        self.assertIn('md.dialog', common.read_yaml(self.tmp / 'knowledge/page-map.yaml')['targets'])
-        ids = [r['id'] for r in common.read_yaml(self.tmp / 'knowledge/index.yaml')['entries']]
-        self.assertIn('target.md.dialog', ids)
+        # The target is available in this run without modifying the shared catalog or index.
+        self.assertIn('md.dialog', entries.local_map(self.base)['targets'])
+        self.assertFalse((self.tmp / 'knowledge/page-map.yaml').exists())
+        self.assertFalse((self.tmp / 'knowledge/index.yaml').exists())
 
 
 class LiteralRouteTests(unittest.TestCase):

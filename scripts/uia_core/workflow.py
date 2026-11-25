@@ -355,7 +355,6 @@ def page_map_slice(base, c, *, catalog_override=None, overlay_override=None, inc
     if overlay_override is not None or overlay.is_file():
         extra = overlay_override if overlay_override is not None else read_yaml(overlay)
         for section in ('pages', 'targets'):
-            require(not (set(extra.get(section, {})) & set(catalog.get(section, {}))), 'Run-local page map cannot override shared entries')
             catalog.setdefault(section, {}).update(extra.get(section, {}))
     spec_path = inside(base, c["case_spec"])
     spec = read_yaml(spec_path) if spec_path.is_file() else {}
@@ -412,6 +411,12 @@ def _case_version(base, m, c, *, catalog_override=None, overlay_override=None, i
         files["knowledge/page-map.yaml"] = page_map_slice(base, c, catalog_override=catalog_override,
                                                           overlay_override=overlay_override,
                                                           include_provenance=include_provenance)
+    entry_overlay = base / "state/entries-overlay.yaml"
+    if entry_overlay.is_file():
+        files["run/entries-overlay.yaml"] = file_hash(entry_overlay)
+        shared_entries = base / 'runner/knowledge/entries.yaml'
+        if shared_entries.is_file():
+            files['knowledge/entries.yaml'] = file_hash(shared_entries)
     return digest({"files": files, "source": c["source_hash"],
                    "intent": file_hash(inside(base, c["intent"])),
                    "plan": file_hash(inside(base, c["reuse_plan"])),
@@ -846,7 +851,6 @@ def next_task(base, m):
     if overlay.is_file():
         extra = read_yaml(overlay)
         for section in ('pages', 'targets'):
-            require(not (set(extra.get(section, {})) & set(page_data.get(section, {}))), 'Run-local page map cannot override shared entries')
             page_data.setdefault(section, {}).update(extra.get(section, {}))
     known_targets = set((page_data.get('pages') or {})) | set((page_data.get('targets') or {}))
     missing_by_case = {}

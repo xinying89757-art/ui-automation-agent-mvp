@@ -49,6 +49,8 @@ class PathfinderStageTests(unittest.TestCase):
             self.addCleanup(item.stop)
         self.base = self.root / 'runs/PF'
         self.base.mkdir(parents=True)
+        token = common.CURRENT_RUN_BASE.set(self.base)
+        self.addCleanup(common.CURRENT_RUN_BASE.reset, token)
         knowledge = self.root / 'assets/playwright-runner/knowledge'
         knowledge.mkdir(parents=True)
         common.atomic_write(knowledge / 'page-map.yaml', {

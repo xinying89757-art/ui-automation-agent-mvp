@@ -2988,3 +2988,22 @@ entries:
   fail_count: 0
   observed_runs: []
   failure_runs: []
+- id: entry.product-description-editor-entry
+  page: product-description-editor-entry
+  route: 内容管理 → 产品 → 添加产品 → 产品描述
+  frame: ''
+  tags:
+  - product-description-editor-entry
+  - 产品描述试点入口
+  - 产品描述新版编辑器入口
+  version: unknown
+  status: stable
+  last_verified: '2026-11-25'
+  last_hit: null
+  summary: 产品描述试点入口
+  path: flows/entry-product-description-editor-entry.yaml
+  hit_count: 0
+  pass_count: 0
+  fail_count: 0
+  observed_runs: []
+  failure_runs: []

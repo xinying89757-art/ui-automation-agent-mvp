@@ -1,4 +1,5 @@
 from __future__ import annotations
+import contextvars
 
 import contextlib
 import copy
@@ -91,6 +92,9 @@ def inside(base, value):
     return target
 
 
+CURRENT_RUN_BASE = contextvars.ContextVar("uia_run_base", default=None)
+
+
 def run_path(value):
     p = Path(value)
     if p.is_file():
@@ -140,7 +144,11 @@ def locked_run(value):
                 time.sleep(0.05)
         try:
             p, m = load_run(path)
-            yield p, m
+            token = CURRENT_RUN_BASE.set(p.parent)
+            try:
+                yield p, m
+            finally:
+                CURRENT_RUN_BASE.reset(token)
         finally:
             if os.name == "nt":
                 handle.seek(0)

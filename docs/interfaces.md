@@ -18,9 +18,9 @@ coverage、hooks、dependencies 的代码路径相对该运行下的 runner。
 Agent 仍须对照确认断言语义，工具不凭自然语言自动推断预期。新页面可用 `--review-source current`。
 
 `login --run R --headed` 和 `run-batch --run R --cases C --headed` 使用有界面浏览器；已通过用例的同版本复跑
-可加 `--rerun`，保留历史执行及门禁。`report --run R` 默认不写长期知识库；旧参数 `--no-knowledge-writeback` 仍可使用。经用户审核批准后，才手动执行 `kb writeback --run R`。
+可加 `--rerun`，保留历史执行及门禁。`report --run R` 默认不写长期知识库；旧参数 `--no-knowledge-writeback` 仍可使用。经用户逐项审核并导出 JSON 后，才手动执行 `kb writeback --run R --review review.json`。
 运行内新控件可写在 `state/page-map-overlay.yaml`（`pages` / `targets`），不能覆盖共享名称；批次快照包含该文件，
-导出脚本包附带 overlay 和配置说明，不自动提升为共享知识。
+导出脚本包自动加载本轮 overlay；设置 `UIA_BATCH_KNOWLEDGE_ID` 可使用指定批次冻结的共享和运行内知识。它们不会自动提升为共享知识。
 
 原型迁移可用 `review-page ingest-prototype --run R --file OLD.json --mapping MAP.json`：MAP 是旧 ID
 到当前 ID 的一对一对象；命令核对运行、用例归属及已确认内容，另存来源摘要和 `reviewed_revision: null`，
@@ -43,7 +43,8 @@ python3 scripts/uia.py kb query --case TC-0004 [--run GO-id] [--max-tokens N]
 python3 scripts/uia.py knowledge merge --from /path/to/assets/playwright-runner/knowledge --run-id GO-id
 python3 scripts/uia.py kb validate
 python3 scripts/uia.py kb prune [--stale-after-days 90] [--candidate-after-days 180]
-python3 scripts/uia.py kb writeback --run GO-id
+python3 scripts/uia.py kb propose --run GO-id --file candidate.json
+python3 scripts/uia.py kb writeback --run GO-id --review review.json
 ```
 
 自动匹配按 case 的页面、frame 执行硬过滤，再仅保留 case 查询 BM25 分数大于 0 的条目，以及 case-spec 直接引用的入口、路线和目标；不会设置默认 token 上限。手动 `kb query` 只有显式传 `--max-tokens` 才应用上限。`knowledge-match.json` 继续记录每例实际用量，报告保留 p50/p95。索引过滤与排序见 [知识库设计](knowledge-base.md)。
@@ -56,7 +57,7 @@ python3 scripts/uia.py kb writeback --run GO-id
 python3 scripts/uia.py exploration-log --run R --case CASE --target TARGET --method snapshot --purpose TARGET --result failed --evidence evidence/CASE-TARGET-1.json --duration-ms 1234 --note '到达入口后控件仍不可见'
 ```
 
-成功的 snapshot 同样用 `--result ok` 记录。Generator session 自动记录各 case/target 的结果与耗时；运行 `hints promote --run R --report exploration/generator-SLUG.json` 后，promote 仅接受 `verified: true` 且 `match_count: 1` 的 step locator，通过唯一 catalog 写入路径保存控件、绑定 run 内占位符并重写 case-spec；通常不需要手动 `--for`。手动 `hints target`/`hints promote --for '?placeholder'` 仍可用于精确绑定。没有绑定目标不视为目标已解决。两次尝试、无进展或累计 5 分钟后，`next` 返回 `assess_exploration` 提醒 Agent 判断，不自动给出用例结论；Agent 也可以提前评估。`gap-assess --decision continue` 记录新线索并继续，`gap-assess --decision ask` 创建仅阻断相关用例的答疑；关键问题加 `--urgency critical`，其他问题在独立工作完成后集中提问。答复用 `answer --question ID --file answer.json`（JSON 字符串），并保存为未验证的 run 内知识候选；`candidate-verify --question ID --evidence PATH` 记录人工核对过的实测证据，不自动写入长期知识库。报告中的 exploration_duration_ms 记录次数、总时长和 p50/p95。
+成功的 snapshot 同样用 `--result ok` 记录。Generator session 自动记录各 case/target 的结果与耗时；运行 `hints promote --run R --report exploration/generator-SLUG.json` 后，promote 仅接受 `verified: true` 且 `match_count: 1` 的 step locator，写入运行内补充层、绑定 run 内占位符并重写 case-spec；通常不需要手动 `--for`。手动 `hints target`/`hints promote --for '?placeholder'` 仍可用于精确绑定。没有绑定目标不视为目标已解决。两次尝试、无进展或累计 5 分钟后，`next` 返回 `assess_exploration` 提醒 Agent 判断，不自动给出用例结论；Agent 也可以提前评估。`gap-assess --decision continue` 记录新线索并继续，`gap-assess --decision ask` 创建仅阻断相关用例的答疑；关键问题加 `--urgency critical`，其他问题在独立工作完成后集中提问。答复用 `answer --question ID --file answer.json`（JSON 字符串），并保存为未验证的 run 内知识候选；`candidate-verify --question ID --evidence PATH` 记录人工核对过的实测证据，不自动写入长期知识库。报告中的 exploration_duration_ms 记录次数、总时长和 p50/p95。
 
 ```bash
 python3 scripts/uia.py exploration-log --run R --case C1 --target '?faq' --method snapshot --purpose faq --result failed --evidence evidence/faq.json --duration-ms 30000 --progress stalled --note '已查看产品描述，没有发现组件入口'

@@ -16,6 +16,8 @@ class ReleaseAndRefineTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.base = self.root / 'runs/R'
         self.base.mkdir(parents=True)
+        token = common.CURRENT_RUN_BASE.set(self.base)
+        self.addCleanup(common.CURRENT_RUN_BASE.reset, token)
         p = patch.object(common, 'ROOT', self.root)
         p.start(); self.addCleanup(p.stop)
         common.atomic_write(entries.knowledge_path('page-map.yaml'), {

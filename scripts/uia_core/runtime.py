@@ -323,9 +323,27 @@ def begin_batch(base, m, case_ids, headed=False, rerun=False):
         selected_knowledge = read_json(knowledge_file)
         atomic_write(knowledge_snapshot, {'matched': {cid: selected_knowledge.get('matched', {}).get(cid, {})
                                                      for cid in case_ids}})
+    # Freeze catalogs actually read by the navigation helper, even when a test did
+    # not list them as static imports. Future shared writebacks cannot change a batch.
+    knowledge_snapshot_dir = directory / 'snapshot/knowledge'
+    knowledge_snapshot_dir.mkdir(parents=True, exist_ok=True)
+    for filename in ('page-map.yaml', 'entries.yaml'):
+        source = base / 'runner/knowledge' / filename
+        if source.is_file():
+            source_hash = file_hash(source)
+            shutil.copyfile(source, knowledge_snapshot_dir / filename)
+            require(file_hash(knowledge_snapshot_dir / filename) == source_hash,
+                    'Knowledge changed while capturing batch snapshot', filename)
     overlay = base / 'state/page-map-overlay.yaml'
     if overlay.is_file():
         shutil.copyfile(overlay, directory / 'page-map-overlay.yaml')
+    entries_overlay = base / 'state/entries-overlay.yaml'
+    if entries_overlay.is_file():
+        shutil.copyfile(entries_overlay, directory / 'entries-overlay.yaml')
+    knowledge_files = [directory / 'snapshot/knowledge/page-map.yaml', directory / 'snapshot/knowledge/entries.yaml',
+                       directory / 'page-map-overlay.yaml', directory / 'entries-overlay.yaml']
+    atomic_write(directory / 'snapshot/knowledge-hashes.json',
+                 {str(path.relative_to(directory)): file_hash(path) for path in knowledge_files if path.is_file()})
     import copy
     snapshot_config = copy.deepcopy(m["config"])
     if snapshot_config.get("network", {}).get("mode") == "pac":
@@ -366,10 +384,18 @@ def execute_process(base, batch, cfg):
                UIA_BATCH_FILES_DIR=str(directory / "snapshot/files"),
                UIA_KNOWLEDGE_FILE=str(knowledge_overlay),
                UIA_RESULTS_DIR=str(directory), UIA_CONTAMINATION_DIR=str(base / "state/contaminated"))
+    if (directory / 'snapshot/knowledge/page-map.yaml').is_file():
+        env['UIA_KNOWLEDGE_DIR'] = str(directory / 'snapshot/knowledge')
+    else:
+        env.pop('UIA_KNOWLEDGE_DIR', None)
     if (directory / 'page-map-overlay.yaml').is_file():
         env['UIA_PAGE_MAP_OVERLAY'] = str(directory / 'page-map-overlay.yaml')
     else:
         env.pop('UIA_PAGE_MAP_OVERLAY', None)
+    if (directory / 'entries-overlay.yaml').is_file():
+        env['UIA_ENTRIES_OVERLAY'] = str(directory / 'entries-overlay.yaml')
+    else:
+        env.pop('UIA_ENTRIES_OVERLAY', None)
     stop = threading.Event()
 
     def pump():

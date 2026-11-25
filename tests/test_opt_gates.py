@@ -279,8 +279,12 @@ class PromoteUnderscoreTests(unittest.TestCase):
             (base / "exploration/generator-faq.json").write_text(json.dumps(report), encoding="utf-8")
             manifest = {"config": {}, "cases": {"C1": {"case_id": "C1", "case_spec": "cases/C1/case-spec.yaml"}}}
             with patch.object(common, "ROOT", root):
-                entries.add(manifest, "新版内容编辑器=内容管理 → 产品")
-                result = entries.promote(base, manifest, "exploration/generator-faq.json")
+                token = common.CURRENT_RUN_BASE.set(base)
+                try:
+                    entries.add(manifest, "新版内容编辑器=内容管理 → 产品")
+                    result = entries.promote(base, manifest, "exploration/generator-faq.json")
+                finally:
+                    common.CURRENT_RUN_BASE.reset(token)
             self.assertEqual(result["route_steps"][:2], ["press:Enter", "press:Enter"])
             self.assertEqual(result["placeholder_bindings"]["?faq_editor.save"], "faq_editor.save_button")
 

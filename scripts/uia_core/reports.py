@@ -129,8 +129,7 @@ def append_excel(sheet, values):
 
 def make_report(base, m, writeback=False):
     if writeback:
-        from .knowledge import writeback as knowledge_writeback
-        knowledge_writeback(base, m)
+        raise ValueError("Knowledge writeback requires an explicit reviewed selection")
     from .experience import review as build_review
     review = build_review(base, m)
     removed = drop_unsafe_artifacts(base / "batches")
@@ -195,6 +194,8 @@ def make_report(base, m, writeback=False):
                "questions": questions, "unresolved_sheets": [x for src in m["sources"] for x in src.get("unresolved_sheets", [])],
                "source_update_required": m.get("source_update_required", False), "delivery_complete": False}
     diff = {"schema_version": "uia-asset-review.v1", "writeback": "not_applied", "cases": []}
+    from .knowledge_review import candidates as knowledge_candidates
+    diff['candidates'] = knowledge_candidates(base, m)
     diff['entry_hints'] = {'file': 'assets/playwright-runner/knowledge/entries.yaml',
                            'changes': m.get('entry_hint_changes', {})}
     for c in m["cases"].values():
@@ -285,6 +286,16 @@ th{background:#23415a;color:white}a{color:#0069a3}pre{white-space:pre-wrap}secti
     body += "<p>仅保留白名单控件文字的脱敏弹窗截图可进入报告；原始截图、trace 和页面快照不进入报告或脚本包。本轮已清除快照文件 " + str(removed) + " 个。</p>"
     body += "<p>执行覆盖率：{:.1%}；已执行用例通过率：{:.1%}；全部用例稳定率：{:.1%}。</p>".format(s["execution_coverage"], s["pass_rate"], s["stability_rate"])
     body += '<p><a href="results.json">JSON</a> · <a href="results.xlsx">Excel</a> · <a href="scripts.zip">脚本工程</a> · <a href="asset-review.json">资产回写候选</a></p>'
+    if diff['candidates']:
+        body += '<section><h2>知识候选</h2><p>逐项选择后导出审核文件。只有批准的内容会在运行写回命令时更新共享库。</p>'
+        for item in diff['candidates']:
+            body += '<article class="knowledge-candidate" data-id="' + html.escape(str(item['id']), quote=True) + '" data-version="' + html.escape(str(item['version']), quote=True) + '">'
+            body += '<h3>' + escape(item['id']) + ' · ' + escape(item['kind']) + '</h3>'
+            body += '<p>适用范围：' + escape(str(item['scope'])) + '；证据：' + escape(', '.join(item['evidence'])) + '</p>'
+            body += '<details><summary>查看修改前后</summary><pre>' + escape(json.dumps({'before': item.get('before'), 'after': item['after']}, ensure_ascii=False, indent=2)) + '</pre></details>'
+            body += '<label>决定 <select><option value="defer">暂缓</option><option value="approve">批准</option><option value="reject">拒绝</option></select></label></article>'
+        body += '<button id="export-knowledge">导出知识审核 JSON</button></section>'
+        body += '<script>document.getElementById("export-knowledge").onclick=()=>{const items=[...document.querySelectorAll(".knowledge-candidate")].map(e=>({id:e.dataset.id,version:e.dataset.version,decision:e.querySelector("select").value}));const data={schema_version:"uia-knowledge-review.v1",run_id:' + json.dumps(m['run_id']) + ',items};const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:"application/json"}));a.download=data.run_id+"-knowledge-review.json";a.click();URL.revokeObjectURL(a.href)};</script>'
     body += '<label>筛选 <input id="filter" placeholder="用例 ID、标题或状态"></label><section><table><thead><tr>'
     body += "".join("<th>" + h + "</th>" for h in ("用例ID", "来源", "标题", "进度", "结果", "稳定性", "连续成功", "脚本", "证据", "原因"))
     body += "</tr></thead><tbody>" + "".join(rows) + "</tbody></table></section><h2>耗时与人工问题</h2><pre>"
@@ -313,7 +324,26 @@ th{background:#23415a;color:white}a{color:#0069a3}pre{white-space:pre-wrap}secti
             if overlay.is_file():
                 archive.writestr('runner/state/page-map-overlay.yaml', scrub_text(overlay.read_text(encoding='utf-8'), m['config']))
                 archive.writestr('runner/state/OVERLAY-README.txt',
-                                 'For this run, set UIA_PAGE_MAP_OVERLAY to the absolute path of state/page-map-overlay.yaml.\n')
+                                 'The runner automatically reads state/page-map-overlay.yaml.\n')
+            entries_overlay = base / 'state/entries-overlay.yaml'
+            if entries_overlay.is_file():
+                archive.writestr('runner/state/entries-overlay.yaml', scrub_text(entries_overlay.read_text(encoding='utf-8'), m['config']))
+                archive.writestr('runner/state/ENTRIES-README.txt',
+                                 'The runner automatically reads state/entries-overlay.yaml.\n')
+            archive.writestr('runner/batch-knowledge/README.txt',
+                             'Set UIA_BATCH_KNOWLEDGE_ID to a batch ID to load its frozen shared and run-local knowledge.\n')
+            for batch in m.get('batches', []):
+                directory = inside(base, batch['directory'])
+                for filename in ('page-map-overlay.yaml', 'entries-overlay.yaml'):
+                    snapshot = directory / filename
+                    if snapshot.is_file():
+                        archive.writestr('runner/batch-knowledge/' + batch['id'] + '/' + filename,
+                                         scrub_text(snapshot.read_text(encoding='utf-8'), m['config']))
+                for filename in ('page-map.yaml', 'entries.yaml'):
+                    snapshot = directory / 'snapshot/knowledge' / filename
+                    if snapshot.is_file():
+                        archive.writestr('runner/batch-knowledge/' + batch['id'] + '/shared/' + filename,
+                                         scrub_text(snapshot.read_text(encoding='utf-8'), m['config']))
             protected = {Path(m["config_path"]).resolve()}
             if m["config"].get("auth", {}).get("storage_state"):
                 protected.add(Path(m["config"]["auth"]["storage_state"]).resolve())

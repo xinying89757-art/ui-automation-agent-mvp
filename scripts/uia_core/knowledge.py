@@ -101,7 +101,7 @@ def sync_layout(pages=None, entries=None, patterns=None, experience=None):
 def load_index():
     path = _root() / 'index.yaml'
     if not path.is_file():
-        sync_layout()
+        return []
     return catalog('index.yaml').get('entries', [])
 
 
@@ -350,6 +350,27 @@ def prune(stale_after_days=90, candidate_after_days=180):
             'candidate_after_days': candidate_after_days, 'deleted': []}
 
 
+
+def local_matches(base, spec, text):
+    """Expose run-local hints only to their run; selection remains explicitly provisional."""
+    from .entries import matches
+    rows = []
+    references = json.dumps(spec, ensure_ascii=False) + ' ' + str(text or '')
+    for filename, sections in [('entries-overlay.yaml', ('entries',)), ('page-map-overlay.yaml', ('pages', 'targets'))]:
+        path = Path(base) / 'state' / filename
+        if not path.is_file():
+            continue
+        document = read_yaml(path) or {}
+        for section in sections:
+            for name, value in (document.get(section) or {}).items():
+                labels = [name, value.get('label', ''), value.get('name', ''), *value.get('aliases', [])]
+                if not any(label and (str(label) in references or matches(str(label), spec.get('start_page', ''))) for label in labels):
+                    continue
+                rows.append({'id': 'run.' + section + '.' + name, 'page': value.get('page') or spec.get('start_page'),
+                             'status': 'run_local', 'version': common.digest(value), 'summary': value.get('path_text') or value.get('label') or name,
+                             'path': str(path.relative_to(base)), 'knowledge': value})
+    return rows
+
 def match_run(base, m):
     """Select per-case resources through the replaceable index retrieval interface."""
     from .retrieval import select, resolve_page
@@ -388,6 +409,9 @@ def match_run(base, m):
                             'intent': spec.get('intent'), 'feature': spec.get('feature'),
                             'targets': targets, 'direct_ids': sorted(direct_ids), 'text': text}) if page else {'selected': [], 'discarded': [], 'max_tokens': None, 'used_tokens': 0, 'truncated': False}
         selected = {item['id']: item for item in retrieval['selected']}
+        for item in local_matches(base, spec, text):
+            selected[item['id']] = item
+
         if selected:
             output['matched'][cid] = selected
         else:
@@ -445,8 +469,8 @@ def exploration_knowledge(purpose=None, entry=None):
             'exploration_for_missing_controls': bool(missing)}
 
 
-def writeback(base, m):
-    """Persist only entries backed by successful execution and repeated use."""
+def _legacy_writeback(base, m):
+    """Historical implementation; retained for reading old behavior, never called by the main workflow."""
     pages = catalog('page-map.yaml') or {'schema_version': 'page-map.v1', 'pages': {}, 'targets': {}}
     experience = catalog('experience.yaml') or {'schema_version': 'uia-experience.v1', 'entries': {}}
     cases = [dict(value, case_id=value.get('case_id') or key) for key, value in m.get('cases', {}).items()]
@@ -619,3 +643,9 @@ def _spec_targets(base, case):
     if not path.is_file(): return set()
     spec = read_yaml(path) or {}
     return {step.get('target') for step in spec.get('steps', []) if isinstance(step, dict) and step.get('target')}
+
+
+def writeback(base, m, review_file=None):
+    """Publish only a version-bound, explicitly approved review."""
+    from .knowledge_review import writeback as reviewed_writeback
+    return reviewed_writeback(base, m, review_file)

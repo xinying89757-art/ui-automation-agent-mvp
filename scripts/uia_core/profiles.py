@@ -295,7 +295,15 @@ def invoke_snapshot(cfg, runner=None, area=None, manual=False, frame=None, scope
         import threading
         import sys
         progress = []
-        process = subprocess.Popen(command, cwd=runner, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        env = dict(os.environ)
+        from .common import CURRENT_RUN_BASE
+        base = CURRENT_RUN_BASE.get()
+        if base:
+            for key, filename in [('UIA_PAGE_MAP_OVERLAY', 'page-map-overlay.yaml'), ('UIA_ENTRIES_OVERLAY', 'entries-overlay.yaml')]:
+                overlay = base / 'state' / filename
+                if overlay.is_file(): env[key] = str(overlay)
+                else: env.pop(key, None)
+        process = subprocess.Popen(command, cwd=runner, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env,
                                    start_new_session=os.name != 'nt')
         def consume_progress():
             for line in process.stderr:
@@ -358,6 +366,9 @@ def agent_env(base, m):
            'UIA_STATE_DIR': str(directory / 'fixture-snapshots'),
            'UIA_KNOWLEDGE_FILE': str((base / 'state/knowledge/llms-txt.json').resolve()),
            'UIA_RESULTS_DIR': str(directory / 'results'), 'UIA_CONTAMINATION_DIR': str(directory / 'contaminated')}
+    for key, filename in [('UIA_PAGE_MAP_OVERLAY', 'page-map-overlay.yaml'), ('UIA_ENTRIES_OVERLAY', 'entries-overlay.yaml')]:
+        overlay = base / 'state' / filename
+        if overlay.is_file(): env[key] = str(overlay.resolve())
     for file in ('config.json', 'cases.json'):
         (directory / file).chmod(0o600)
     return {'cwd': str(runtime_root()), 'env': env}

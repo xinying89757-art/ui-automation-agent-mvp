@@ -146,7 +146,11 @@ locator memory automatically; do not skip that step and do not store raw panel t
 as an element name.
 Reporting and remote-result ingestion do not write to long-term knowledge. Keep
 verified observations and human answers as scoped, traceable review candidates;
-apply `kb writeback` only after the user reviews and approves the concrete changes.
+record an evidence-backed candidate with `kb propose --run R --file candidate.json`.
+Report cards let the user approve, defer or reject individual candidates; import the
+exported selection with `kb writeback --run R --review review.json`. If the candidate,
+evidence or shared entry changes, regenerate the report and request a fresh review.
+Hints, confirmed routes and observed targets are run-local until specifically approved.
 Never change assertions or business semantics during knowledge review.
 Every source case retains a result or an explained pending/blocked state; do not remove
 difficult cases from the denominator. Separately report execution coverage, pass rate,

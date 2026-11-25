@@ -9,7 +9,7 @@ from uia_core import checks, cli, common, review_page, runtime, specs, workflow
 
 
 class FormalReviewFlowTest(unittest.TestCase):
-    def test_overlay_is_run_local_and_cannot_replace_shared_target(self):
+    def test_overlay_is_run_local_and_can_override_shared_target_in_this_run(self):
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)
             _, _, shared = specs.catalogs()
@@ -22,8 +22,9 @@ class FormalReviewFlowTest(unittest.TestCase):
             existing = next(iter(shared['targets']))
             common.atomic_write(base / 'state/page-map-overlay.yaml',
                                 {'targets': {existing: {'selector': 'fake'}}}, as_yaml=True)
-            with self.assertRaises(common.UiaError):
-                specs.catalogs(base)
+            _, _, merged = specs.catalogs(base)
+            self.assertEqual(merged['targets'][existing]['selector'], 'fake')
+            self.assertNotEqual(shared['targets'][existing].get('selector'), 'fake')
 
     def test_rerun_requires_real_pass_and_no_unanswered_blocker(self):
         case = {'case_id': 'C1', 'result': 'passed', 'work_status': 'finished',

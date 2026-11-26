@@ -113,8 +113,12 @@ def load_run(value):
     return p, m
 
 
+class RunBusy(UiaError):
+    pass
+
+
 @contextlib.contextmanager
-def locked_run(value):
+def locked_run(value, *, timeout=10):
     path = run_path(value)
     lock = path.with_suffix(".lock")
     lock.parent.mkdir(parents=True, exist_ok=True)
@@ -127,7 +131,7 @@ def locked_run(value):
                 handle.flush()
         else:
             import fcntl
-        deadline = time.monotonic() + 10
+        deadline = time.monotonic() + timeout
         while True:
             try:
                 if os.name == "nt":
@@ -138,9 +142,9 @@ def locked_run(value):
                 break
             except (BlockingIOError, OSError):
                 run_id = path.parent.name
-                require(time.monotonic() < deadline,
-                        f"Run {run_id} is busy; another uia.py command (for example go or run-batch) is holding it. "
-                        f"Use `uia.py wait --run {run_id}` or `uia.py status --run {run_id}`.")
+                if time.monotonic() >= deadline:
+                    raise RunBusy(f"Run {run_id} is busy; another uia.py command (for example go or run-batch) is holding it. "
+                                  f"Use `uia.py wait --run {run_id}` or `uia.py status --run {run_id}`.")
                 time.sleep(0.05)
         try:
             p, m = load_run(path)

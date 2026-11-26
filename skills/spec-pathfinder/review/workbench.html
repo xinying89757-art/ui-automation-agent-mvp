@@ -28,6 +28,7 @@ dialog{border:1px solid var(--line);border-radius:15px;color:var(--ink);width:mi
     <div><h1 id="pageTitle">提测审阅</h1><p>先核对入口与关键预期，再交给 Agent 执行。</p></div>
     <div class="stats" aria-label="审阅进度"><div class="stat"><strong id="openCount">—</strong><span>待回答</span></div><div class="stat"><strong id="checkCount">—</strong><span>关键断言待审</span></div><div class="stat"><strong id="skipCount">—</strong><span>本轮暂缓用例</span></div></div>
   </section>
+  <details class="source" id="previousDraft" hidden><summary>查看旧版草稿</summary><p>请按当前审核材料重新确认。下面的意见仅供对照。</p><ul class="summary-list" id="previousDraftItems"></ul><button class="btn" id="discardPreviousDraft" type="button">清除旧版草稿</button></details>
   <div class="workspace">
     <aside class="sidebar" aria-label="审核导航">
       <nav class="tabs"><button type="button" class="tab" data-view="questions">待回答</button><button type="button" class="tab" data-view="checks">关键断言</button><button type="button" class="tab" data-view="cases">全部用例</button></nav>
@@ -41,9 +42,11 @@ dialog{border:1px solid var(--line);border-radius:15px;color:var(--ink);width:mi
 <div id="toast" class="toast" role="status" hidden></div>
 <script type="application/json" id="review-data">__REVIEW_DATA__</script>
 <script>
-const { cases, runId, revision, title, questions: questionItems, checks: checkItems, deferred: initialSkip, savedDecisions = {} } =
+const { cases, runId, revision, title, questions: questionItems, checks: checkItems, deferred: initialSkip, savedDecisions = {}, submitUrl, reviewState } =
  JSON.parse(document.getElementById('review-data').textContent);
-const storageKey = runId + ':review:' + revision;
+const storageKey = runId + (submitUrl ? ':review-live:' : ':review:') + revision;
+const draftPointer = runId + ':review-live:latest-draft';
+const previousDraftKey = runId + ':review-live:previous-draft';
 document.title = title + ' · 提测审阅';
 document.getElementById('pageTitle').textContent = title;
 const caseItems = cases.map(item => ({...item,cases:[item.id]}));
@@ -51,11 +54,30 @@ const views = {questions:questionItems,checks:checkItems,cases:caseItems};
 const byCase = Object.fromEntries(cases.map(item=>[item.id,item]));
 let state = Object.fromEntries(Object.entries(initialSkip).map(([id,text])=>[id,{status:'deferred',text}]));
 Object.assign(state, savedDecisions);
+let savedState = {...state};
+let currentReviewState = reviewState;
 let browserStorage = true;
-try { Object.assign(state, JSON.parse(localStorage.getItem(storageKey) || '{}')); } catch { browserStorage = false; }
+let restoredDraft = false;
+try {
+ if (submitUrl) {
+  const lastKey = localStorage.getItem(draftPointer) || storageKey;
+  const draft = JSON.parse(localStorage.getItem(lastKey) || 'null');
+  if (draft && lastKey === storageKey && draft.reviewState === currentReviewState) {
+   state = draft.state;
+   restoredDraft = true;
+  } else if (draft?.changes?.length) {
+   localStorage.setItem(previousDraftKey, JSON.stringify(draft.changes));
+   localStorage.removeItem(lastKey);
+   localStorage.removeItem(draftPointer);
+  }
+ } else {
+  Object.assign(state, JSON.parse(localStorage.getItem(storageKey) || '{}'));
+ }
+} catch { browserStorage = false; }
 let view = 'questions', picked;
 let editing = null;
 let query = '';
+let submitting = false;
 const $ = id => document.getElementById(id);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, mark => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[mark]));
 const status = item => state[item.id]?.status ?? item.status ?? (checkItems.includes(item) ? 'pending' : 'reference');
@@ -64,11 +86,33 @@ const badge = (item,s=status(item)) => '<span class="badge '+({pending:'todo',co
 const caseLabel = id => byCase[id]?.displayId ?? id;
 const ids = item => item.cases.map(id=>'<button type="button" class="ticket" data-case="'+esc(id)+'">'+esc(caseLabel(id))+'</button>').join('');
 const textOf = item => state[item.id]?.text ?? item.answer ?? item.checks?.join('\n') ?? item.expected ?? '';
+function changed(id) {
+ return submitUrl ? state[id]?.status !== savedState[id]?.status || state[id]?.text !== savedState[id]?.text : Boolean(state[id]);
+}
 function saved() {
- try { if(browserStorage) localStorage.setItem(storageKey, JSON.stringify(state)); }
+ try {
+  if (browserStorage && submitUrl) {
+   const changes = [...questionItems, ...checkItems, ...caseItems].filter(item=>changed(item.id))
+     .map(item=>`${item.title} · ${item.cases.map(caseLabel).join('、')}\n${textOf(item) || '已重置为待审核'}`);
+   localStorage.setItem(storageKey, JSON.stringify({reviewState:currentReviewState, state, changes}));
+   localStorage.setItem(draftPointer, storageKey);
+  } else if (browserStorage) localStorage.setItem(storageKey, JSON.stringify(state));
+ }
  catch { browserStorage = false; }
  $('saveStatus').textContent = browserStorage ? '草稿已保存到此浏览器' : '当前会话草稿';
 }
+function showPreviousDraft() {
+ if (!submitUrl || !browserStorage) return;
+ try {
+  const rows = JSON.parse(localStorage.getItem(previousDraftKey) || '[]');
+  $('previousDraft').hidden = !rows.length;
+  $('previousDraftItems').innerHTML = rows.map(row=>'<li>'+esc(row)+'</li>').join('');
+ } catch { /* Leave the current review usable if browser storage is unavailable. */ }
+}
+$('discardPreviousDraft').onclick=()=>{
+ try { localStorage.removeItem(previousDraftKey); } catch { /* Optional browser storage. */ }
+ $('previousDraft').hidden=true;
+};
 function updateCounts() {
  $('openCount').textContent=questionItems.filter(i=>status(i)==='pending').length;
  $('checkCount').textContent=checkItems.filter(i=>status(i)==='pending').length;
@@ -173,29 +217,88 @@ function exportData() {
  const corrections=caseItems.filter(item=>state[item.id]?.status==='edited');
  const decisions=[...questionItems.filter(i=>status(i)!=='pending'),...checkItems.filter(i=>status(i)!=='pending'),...corrections].map(item=>({
   review_id:item.id,case_ids:item.cases,
-  status:status(item),value:textOf(item),changed_here:Boolean(state[item.id])
+  status:status(item),value:textOf(item),changed_here:changed(item.id)
  }));
  return {run_id:runId, revision, review_version:1, decisions, pending:[...questionItems,...checkItems].filter(i=>status(i)==='pending').map(i=>({review_id:i.id,case_ids:i.cases})),
  deferred_cases:[...deferredCases()].map(id=>({id,display_id:caseLabel(id),reason:initialSkip[id] ?? [...questionItems,...checkItems].filter(i=>status(i)==='deferred'&&i.cases.includes(id)).map(textOf).join('；')}))};
+}
+async function sendReview(data) {
+ if (submitting) return;
+ submitting = true;
+ const button = $('sendReview');
+ button.disabled = true;
+ $('closePreview').disabled = true;
+ $('submitStatus').textContent = '正在保存审核意见…';
+ let needsRefresh = false;
+ try {
+  const response = await fetch(submitUrl, {
+   method:'POST', headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({...data,review_state:currentReviewState}),
+  });
+  const receipt = await response.json();
+  if (!response.ok || !receipt.ok) {
+   if (receipt.code === 'review_conflict') {
+    needsRefresh = true;
+    $('refreshReview').hidden = false;
+   }
+   $('submitStatus').textContent = receipt.message || '暂时无法提交，请重试。';
+   return;
+  }
+  const draft = localStorageDraft();
+  try {
+   if (draft?.reviewState === currentReviewState && JSON.stringify(draft.state) === JSON.stringify(state)) {
+    localStorage.removeItem(storageKey);
+    if (localStorage.getItem(draftPointer) === storageKey) localStorage.removeItem(draftPointer);
+   }
+  } catch { /* Server persistence has already succeeded. */ }
+  currentReviewState = receipt.review_state;
+  savedState = {...state};
+  $('saveStatus').textContent = '已保存 '+receipt.decisions.length+' 项';
+  const listItems = rows => rows.length ? '<ul class="summary-list">'+rows.map(row=>
+    '<li>'+esc(row.title+' · '+row.cases.map(caseLabel).join('、'))+'</li>').join('')+'</ul>' : '<p class="muted">无</p>';
+  $('previewBody').innerHTML = '<p role="status"><strong>审核意见已保存</strong> · '+receipt.decisions.length+
+   ' 项已保存，'+receipt.pending.length+' 项待处理。</p><h3>已保存</h3>'+listItems(receipt.decisions)+
+   '<h3>仍待处理</h3>'+listItems(receipt.pending);
+  render();
+ } catch {
+  $('submitStatus').textContent = '审核服务暂时无法连接或未返回回执。草稿仍在此页面，请重试。';
+ } finally {
+  submitting = false;
+  button.disabled = needsRefresh;
+  $('closePreview').disabled = false;
+ }
+}
+function localStorageDraft() {
+ try { return JSON.parse(localStorage.getItem(storageKey) || 'null'); } catch { return null; }
 }
 $('submit').addEventListener('click',()=>{
  const data=exportData(), changes=data.decisions.filter(i=>i.changed_here);
  const skipped=data.deferred_cases.map(i=>'<li>'+esc(i.display_id+' · '+i.reason)+'</li>').join('');
  const list=changes.map(i=>'<li>'+esc(i.review_id+' · '+i.case_ids.join('、')+'\n'+i.value)+'</li>').join('');
- $('previewBody').innerHTML='<p class="muted">仍待审核 '+data.pending.length+' 项。可下载本轮反馈，待审核项也会保留。</p>'+
+ $('previewBody').innerHTML='<p class="muted">仍待审核 '+data.pending.length+' 项。'+(submitUrl?'可以先提交已确认的意见。':'可下载本轮反馈，待审核项也会保留。')+'</p>'+
  '<h3>本次修改或确认</h3>'+(list?'<ul class="summary-list">'+list+'</ul>':'<p class="small muted">当前沿用已有记录。</p>')+
  '<h3>本轮暂缓</h3><ul class="summary-list">'+skipped+'</ul>'+
- '<details class="source"><summary>查看结构化结果</summary><textarea class="export-text" id="exportText" readonly aria-label="审核结果 JSON"></textarea></details>'+
- '<div class="actions"><button type="button" class="btn primary" id="download">下载审核结果</button></div>';
+ (submitUrl ? '<p id="submitStatus" role="status"></p><div class="actions"><button class="btn primary" id="sendReview" type="button">提交审核</button><button class="btn" id="refreshReview" type="button" hidden>刷新审核材料</button></div>' :
+  '<details class="source"><summary>查看结构化结果</summary><textarea class="export-text" id="exportText" readonly aria-label="审核结果 JSON"></textarea></details>'+
+  '<div class="actions"><button type="button" class="btn primary" id="download">下载审核结果</button></div>');
+ if (submitUrl) {
+  $('sendReview').onclick=()=>sendReview(data);
+  $('refreshReview').onclick=()=>location.reload();
+ } else {
  const json=JSON.stringify(data,null,2);
  $('exportText').value=json;
  $('download').onclick=()=>{
   const url=URL.createObjectURL(new Blob([json+'\n'],{type:'application/json'}));
   const link=document.createElement('a');link.href=url;link.download=runId+'-review.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
  };
+ }
  $('preview').showModal();
 });
 $('closePreview').addEventListener('click',()=>$('preview').close());
+$('preview').addEventListener('cancel',event=>{if (submitting) event.preventDefault();});
+if (restoredDraft) $('saveStatus').textContent = '草稿已保存到此浏览器';
+else if (submitUrl && Object.keys(savedDecisions).length) $('saveStatus').textContent = '已保存 '+Object.keys(savedDecisions).length+' 项';
+showPreviousDraft();
 if (!questionItems.some(item => status(item) === 'pending')) view = checkItems.length ? 'checks' : questionItems.length ? 'questions' : 'cases';
 render();
 </script>

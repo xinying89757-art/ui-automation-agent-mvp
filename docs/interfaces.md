@@ -7,7 +7,7 @@ coverage、hooks、dependencies 的代码路径相对该运行下的 runner。
 
 命令实际执行需由 Codex 按技能推进。`next` 只返回下一动作，**不调用模型、不启动浏览器**。
 
-`review-page ingest` 接收与当前运行和审核版本一致的导出文件，生成 `review-decisions.json` 和按用例
+本地网页提交与 `review-page ingest` 共用校验和保存逻辑，生成 `review-decisions.json` 和按用例
 汇总答复及待答问题的 `review-handoff.json`。后者的 `processing: not_applied` 表示仅已接收，Agent
 仍须逐项落实到执行规格、断言或本轮范围，再做校验；不会自动修改规格、写入知识库或运行测试。
 没有版本信息的历史原型导出不能直接作为当前审核版本导入，需保留原件并人工对照审核项和来源。
@@ -242,10 +242,18 @@ HTML 支持筛选；脚本 ZIP 排除依赖、凭证与运行日志。只有源�
 
 ## 新需求提测与 HTML 审核
 
-新需求的人审阶段可以使用固定的单文件 HTML。以下命令分别准备审核材料、重新生成界面和接收答复。
+新需求的人审阶段默认使用本机审核网页。先准备审核材料，再启动该运行的网页。
 
 ```bash
 python3 scripts/uia.py go /path/to/cases.xlsx --profile my-prod
+python3 scripts/uia.py review-page serve --run GO-xxx
+```
+
+服务只在 `127.0.0.1` 开放临时链接。终端先输出 `review_ready` 和链接，保存后输出 `review_saved`，其中包含运行编号与已保存、待处理数量。Agent 收到回执后继续落实意见，服务保持开启以接收补充提交。按 `Ctrl+C` 可关闭服务，已提交的意见仍保存在运行记录里。重新启动会生成新链接。
+
+静态 HTML 备选方式仍支持下载和导入。
+
+```bash
 python3 scripts/uia.py review-page render --run GO-xxx
 python3 scripts/uia.py review-page ingest --run GO-xxx --file /path/to/GO-xxx-review.json
 ```
@@ -254,7 +262,7 @@ python3 scripts/uia.py review-page ingest --run GO-xxx --file /path/to/GO-xxx-re
 提供 `title`、`questions` 与 `checks`。每项使用稳定的 `id`、`title` 和包含实际用例 ID 的 `cases` 数组，
 可附 `description`、`source`、HTTPS `link`。问题可附现有 `answer`，同 ID 可补充系统问题。
 关键断言用 `checks` 字符串数组说明操作、观察对象和通过条件。新关键项同时提供 `expectations`，键为关联用例 ID，值为该用例的一整条原始预期。审核页并列显示原文与验法。`review-page bind-case` 把已审核验法关联到引用该原文的断言编号，只有未落实的关联用例等待。定位或等待调整后可用原审核答复重新绑定。
-导出带运行 ID 和审阅版本的 JSON 文件，导入后把结构化决定保存到运行记录及 `review-decisions.json`。
+网页直接提交意见，部分提交时只挂起待答项关联的用例。审核材料或已提交意见变化时，刷新页面重新确认，旧版草稿可在同一链接下对照。
 Agent 按返回的决定更新相关规格并核验后继续执行。工具保存审核意见，业务步骤与断言由 Agent 按用例原文和审核结果落实。
 
 新批次按冻结的 `snapshot/cases.json` 核对逐断言回执。关键本地断言用 `businessAssertion('A1', async observe => { … })` 的 `observe(value, slot?)` 保存与断言同一次采集的观察值。传短文本、数字或布尔值，使用不同的 `slot` 记录多个值；旧写法仍可用。缺少必要回执或关键观察值时显示「验证不完整」。公开前台断言需生成匹配的请求并通过远程回执验证。HTML 和 JSON 报告中的逐断言证据按批次保留，历史批次缺失的字段显示「未记录」。

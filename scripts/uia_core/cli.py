@@ -86,7 +86,7 @@ def parser():
     p = JsonParser(description="Local UI automation workflow; commands emit JSON")
     commands = p.add_subparsers(dest="command", required=True)
     review = commands.add_parser("review-page", help="Render and receive the human review workbench")
-    review.add_argument("action", choices=["render", "ingest", "ingest-prototype", "validate-plan", "apply-entry", "bind-case"])
+    review.add_argument("action", choices=["render", "serve", "ingest", "ingest-prototype", "validate-plan", "apply-entry", "bind-case"])
     review.add_argument("--run", required=True)
     review.add_argument("--file", help="The JSON file downloaded from the review page (ingest only)")
     review.add_argument("--mapping", help="Explicit prototype review ID mapping JSON (ingest-prototype only)")
@@ -611,6 +611,11 @@ def _preflight_command(args):
 
 
 def execute(args):
+    if args.command == 'review-page' and args.action == 'serve':
+        from .review_server import serve
+        require(not (args.file or args.mapping or args.case or args.review_id or args.review_ids or args.review_source != 'current'),
+                'review-page serve only needs --run')
+        return serve(args.run, lambda row: print(json.dumps({'ok': True, **row}, ensure_ascii=False), flush=True))
     if args.command == 'kb':
         from . import knowledge
         if args.action == 'merge':

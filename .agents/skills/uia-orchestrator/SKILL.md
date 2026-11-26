@@ -60,9 +60,11 @@ Record each attempt with `exploration-log`, including duration, evidence and `--
 For a new requirement, start with `python3 scripts/uia.py go <xlsx> --profile <p>`.
 The output includes the run's shared HTML review page. Add key checks and genuinely unresolved questions to
 `review-input.json` in the run directory, citing the relevant workbook, design, prototype, or verified knowledge.
-Regenerate with `review-page render --run R`. Review questions once per shared gap, with the related case IDs.
-Show the HTML when questions and key assertions are ready. Routine steps with clear evidence remain available
-under 全部用例 for optional correction. Receive the exported JSON with `review-page ingest --run R --file FILE`.
+Review questions once per shared gap, with the related case IDs. When the material is ready, start
+`review-page serve --run R` in a controllable terminal and give the user the local URL from `review_ready`.
+Continue when `review_saved` arrives. On resume, read the persisted review before starting another service.
+Routine cases remain available under 全部用例 for optional correction. Offline fallback uses
+`review-page render --run R` and `review-page ingest --run R --file FILE`.
 Use `review-handoff.json` to find the received decisions and unanswered questions for each case. Receipt is not
 application: translate decisions to affected case-spec steps, assertions and run scope, preserving the source text.
 For complex shared decisions where a plan helps prevent omissions, use the case-level plan in `docs/interfaces.md` and `review-page validate-plan`; the plan is optional and does not make a spec executable.

@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from .common import atomic_write, digest, event, file_hash, inside, now, read_json, require
+from .common import UiaError, atomic_write, digest, event, file_hash, inside, now, read_json, require
 from .preconditions import QUESTION_KEY
 from .secrets import scrub_text
 
@@ -12,6 +12,14 @@ TEMPLATE = Path(__file__).resolve().parents[2] / 'skills/spec-pathfinder/review/
 INPUT = 'review-input.json'
 RESULT = 'review-decisions.json'
 HANDOFF = 'review-handoff.json'
+
+
+class ReviewConflict(UiaError):
+    pass
+
+
+def review_state(run):
+    return digest(run.get('human_review'))
 
 
 def _text(value):
@@ -138,7 +146,7 @@ def _payload(base, run):
     return payload
 
 
-def render(base, run):
+def render_html(base, run, submit_url=None):
     payload = _payload(base, run)
     review = run.get('human_review') or {}
     if review.get('revision') == payload['revision']:
@@ -151,11 +159,18 @@ def render(base, run):
             for decision in review.get('decisions', []) if decision['id'] in items and
             decision.get('item_digest') == digest(items[decision['id']])
         }
+    if submit_url:
+        payload.update(submitUrl=submit_url, reviewState=review_state(run))
     html = TEMPLATE.read_text(encoding='utf-8')
     # Treat all workbook and reviewer content as inert data, including script end tags.
     data = json.dumps(payload, ensure_ascii=False).replace('<', r'\u003c')
+    return html.replace('__REVIEW_DATA__', data, 1), payload
+
+
+def render(base, run):
+    html, payload = render_html(base, run)
     path = base / 'review.html'
-    path.write_text(html.replace('__REVIEW_DATA__', data, 1), encoding='utf-8')
+    path.write_text(html, encoding='utf-8')
     return {'review_page': str(path), 'review_revision': payload['revision'],
             'review_questions': len(payload['questions']), 'review_checks': len(payload['checks'])}
 
@@ -175,11 +190,15 @@ def _handoff(payload, decisions, pending, source):
 
 
 def ingest(base, run, path):
+    return ingest_payload(base, run, read_json(path))
+
+
+def ingest_payload(base, run, report, *, expected_state=None):
     payload = _payload(base, run)
-    report = read_json(path)
     require(isinstance(report, dict) and report.get('review_version') == 1 and
-            report.get('run_id') == run['run_id'] and report.get('revision') == payload['revision'],
-            '审核结果与当前运行或审核版本不一致，请使用当前页面导出')
+            report.get('run_id') == run['run_id'], '审核结果与当前运行不一致')
+    if report.get('revision') != payload['revision']:
+        raise ReviewConflict('审核材料已更新，请打开当前审核页重新核对。')
     questions = payload['questions']
     checks = payload['checks']
     cases = [{'id': case['id'], 'title': case['title'], 'cases': [case['id']]} for case in payload['cases']]
@@ -212,7 +231,10 @@ def ingest(base, run, path):
               'source_files': {cid: file_hash(inside(base, case['source'])) for cid, case in run['cases'].items() if case.get('source')},
               'decisions': list(received.values()), 'pending': pending}
     handoff = _handoff(payload, received.values(), pending, RESULT)
-    if run.get('human_review') != result:
+    already_saved = run.get('human_review') == result
+    if not already_saved and expected_state is not None and expected_state != review_state(run):
+        raise ReviewConflict('审核意见已从另一个页面提交，请重新核对后再提交。')
+    if not already_saved:
         run['human_review'] = result
         event(run, 'human_review_received', decisions=len(received), pending=len(pending))
         submission = digest(list(received.values()))
@@ -223,7 +245,7 @@ def ingest(base, run, path):
     atomic_write(base / HANDOFF, handoff)
     return {'review_decisions': str(base / RESULT), 'decisions': list(received.values()), 'pending': pending,
             'review_handoff': str(base / HANDOFF),
-            'next': 'apply_review_decisions'}
+            'next': 'apply_review_decisions', 'already_saved': already_saved}
 
 
 def ingest_prototype(base, run, path, mapping_path):

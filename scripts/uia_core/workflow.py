@@ -817,7 +817,7 @@ def next_task(base, m):
                 'instruction': '历史 Intent 运行仅供查看；需要复跑时检出原始项目版本。'}
     if m.get('initial_review_required') and not m.get('human_review'):
         return {'action': 'review', 'file': str(base / 'review.html'),
-                'instruction': '导入 HTML 审核答复后继续。'}
+                'instruction': '用 review-page serve 启动本机审核页，收到审核回执后继续。'}
     urgent = [q for q in m['questions'].values() if q.get('status') == 'open' and q.get('kind') == 'exploration' and q.get('urgency') == 'critical']
     if urgent:
         return {'action': 'ask_human', 'questions': urgent, 'message': '关键路径需要人工答复。'}

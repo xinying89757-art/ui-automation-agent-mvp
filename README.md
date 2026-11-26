@@ -19,12 +19,13 @@
 
 ```bash
 .venv/bin/python scripts/uia.py go /path/to/cases.xlsx --profile my-prod --cases TC-0004,TC-0016
-.venv/bin/python scripts/uia.py review-page ingest --run GO-xxx --file /path/to/review.json
+.venv/bin/python scripts/uia.py review-page serve --run GO-xxx
+# 打开终端里显示的本地链接，在网页中提交审核。
 # Agent 将答复落实到规格并绑定，再使用同一命令恢复。
 .venv/bin/python scripts/uia.py go /path/to/cases.xlsx --profile my-prod --cases TC-0004,TC-0016
 ```
 
-`go` 不调用模型。新运行首先生成 HTML 审核页，Codex 结合用例、设计资料和知识库整理需要确认的预期。导入答复后，Agent 将其落实到相关用例规格。缺少条件只挂起关联用例，运行中问题按编号记录。
+`go` 不调用模型。Codex 结合用例、设计资料和知识库整理需要确认的预期。在本地审核页提交后，Agent 将答复落实到相关用例规格。缺少条件只挂起关联用例，运行中问题按编号记录。离线时仍可使用静态 HTML 和 `review-page ingest`。
 
 在本目录打开 Codex，用自然语言描述：
 

@@ -169,6 +169,24 @@ def make_report(base, m, writeback=False):
         if evidence and evidence.get('ok'):
             records[-1]["reason"] = (records[-1]["reason"] + "；" if records[-1]["reason"] else "") + "后台读回：" + str(evidence.get("actual", "")) + " ✓"
         records[-1]["media"] = ['../' + a['redacted_screenshot'] for a in c.get('attempts', []) if a.get('redacted_screenshot')]
+        remote = {(entry.get('batch_id'), entry['request']['assertion_id']): entry
+                  for entry in m.get('remote_checks', {}).values()
+                  if entry.get('request', {}).get('case_id') == c['case_id'] and entry['request'].get('assertion_id')}
+        assertion_attempts = []
+        for attempt in c.get('attempts', []):
+            detail = attempt.get('assertion_evidence')
+            if detail is not None:
+                detail = [dict(item) for item in detail]
+                for item in detail:
+                    entry = remote.get((attempt.get('batch_id'), item['id']))
+                    if entry and item['status'] == 'remote_pending':
+                        item.update(remote_status=entry['status'], remote_request_id=entry['request'].get('id'))
+                        if entry.get('history'):
+                            observed = entry['history'][-1]
+                            item['remote_observation'] = {key: observed.get(key) for key in ('checked_at', 'http_status', 'conditions')}
+            assertion_attempts.append({'batch_id': attempt.get('batch_id'), 'evidence': attempt.get('evidence'),
+                                       'assertions': detail, 'errors': attempt.get('assertion_evidence_errors', [])})
+        records[-1]['assertion_attempts'] = assertion_attempts
     m["final_report_at"] = now()
     m["leak_hits"] = run_metrics.leak_scan(base, m["config"])
     flow_metrics = run_metrics.calculate(base, m, m["final_report_at"])
@@ -280,6 +298,35 @@ th{background:#23415a;color:white}a{color:#0069a3}pre{white-space:pre-wrap}secti
                 body += ' · 重分类 ' + escape(zh(decision['result']) if decision.get('result') else '结果未记录') + ' ' + escape(decision.get('reason'))
             body += '</li>'
     body += '</ul>'
+    body += '<h2>逐断言证据</h2>'
+    assertion_labels = {'passed': '通过', 'failed': '失败', 'not_run': '未执行',
+                        'invalid': '验证不完整', 'remote_pending': '待远程验证'}
+    from .remote_checks import LABELS as remote_labels
+    for record in records:
+        if not record['assertion_attempts']:
+            continue
+        body += '<details><summary>' + escape(record['case_id']) + ' · ' + escape(record['title']) + '</summary>'
+        for attempt in reversed(record['assertion_attempts']):
+            body += '<p>' + escape(attempt['batch_id']) + ' · ' + link(attempt['evidence']) + '</p>'
+            for problem in attempt['errors']:
+                body += '<p>验证不完整 · ' + escape(problem) + '</p>'
+            if attempt['assertions'] is None:
+                body += '<p>逐断言证据未记录</p>'
+                continue
+            body += '<ol>'
+            for item in attempt['assertions']:
+                label = remote_labels.get(item.get('remote_status'), assertion_labels[item['status']])
+                methods = '\n'.join(method['method'] for method in item['reviewed_methods']) or '未记录'
+                observed = item.get('remote_observation') or item['observations']
+                checks = [' '.join(part for part in (check['target'], check['operation'], check.get('expected', '')) if part)
+                          for check in item.get('spec_checks', [])]
+                body += ('<li><strong>' + escape(item['id']) + ' · ' + escape(label) + '</strong>' +
+                         '<p>原始预期　' + escape(item['original_expectation']) + '</p>' +
+                         '<p>审核验法　' + escape(methods) + '</p>' +
+                         ('<p>规格检查　' + escape('；'.join(checks)) + '</p>' if checks else '') +
+                         '<p>本次观察　' + (escape(json.dumps(observed, ensure_ascii=False)) if observed else '未记录') + '</p></li>')
+            body += '</ol>'
+        body += '</details>'
     passes = m["config"]["execution"].get("stability_passes", 2)
     standard = "每日交付：同版本一次成功即可。" if passes == 1 else "夜间回归：同一版本独立运行两次成功。"
     body += "<p>运行：" + escape(m["run_id"]) + "；源用例总数：" + str(s["total"]) + "。稳定标准：" + standard + "</p>"

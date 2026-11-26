@@ -15,4 +15,7 @@ def case_bindings(base, manifest):
                         'mutates': reg['fixture']['mutates'], 'isolated': case['isolated'],
                         'fixture_ids': case['fixture_ids'], 'flow_ids': case['flow_ids'],
                         'start_page': spec.get('start_page') if spec else None, 'spec': spec, 'network_catalog': networks}
+        methods = (case.get('review_binding') or {}).get('assertion_methods')
+        if methods:
+            entries[cid]['assertion_methods'] = methods
     return entries

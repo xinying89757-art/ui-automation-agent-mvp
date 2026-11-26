@@ -1,4 +1,5 @@
 /** Text scrub for tokens that show up in page snapshots. Files are removed separately. */
+import { credentials } from './auth.mjs';
 
 const JWT = /eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g;
 const QUERY_SECRET = /(authorization|token|access_token|password)=[^&\s"']+/gi;
@@ -13,6 +14,27 @@ export function scrubText(value) {
     .replace(EMAIL, '[email]')
     .replace(PIN, '$1[REDACTED]')
     .replace(PHONE, '[phone]');
+}
+
+export function evidenceRedactor(cfg) {
+  const names = new Set(cfg.auth?.secret_env ?? []);
+  function visit(value, sensitive = false) {
+    if (Array.isArray(value)) value.forEach(child => visit(child, sensitive));
+    else if (value && typeof value === 'object') {
+      if (sensitive && typeof value.env === 'string') names.add(value.env);
+      for (const [key, child] of Object.entries(value)) {
+        visit(child, sensitive || /password|passwd|secret|token|credential|api_key/iu.test(key));
+      }
+    }
+  }
+  visit(cfg.data_rules);
+  const secrets = [...names].map(name => process.env[name]).filter(Boolean);
+  if (cfg.auth?.credentials_file) {
+    try { const { account, password } = credentials(cfg); secrets.push(account, password); }
+    catch { /* Login reports unavailable credentials separately. */ }
+  }
+  secrets.sort((a, b) => b.length - a.length);
+  return value => scrubText(secrets.reduce((text, secret) => text.split(secret).join('[REDACTED]'), String(value)));
 }
 
 export function unsafeArtifact(name) {

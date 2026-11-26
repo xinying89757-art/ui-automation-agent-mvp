@@ -281,7 +281,14 @@ def begin_batch(base, m, case_ids, headed=False, rerun=False):
         require(not errors, "Execution gate failed", {"case_id": c["case_id"], "errors": errors})
     # Runtime bindings are a projection of the manifest, not a second mutable truth.
     from .bindings import case_bindings
+    from .assertion_evidence import is_remote, remote_requirements
     bindings = case_bindings(base, m)
+    remote_cases = [cid for cid in case_ids if any(is_remote(a) for a in (bindings[cid].get('spec') or {}).get('assertions', []))]
+    if remote_cases:
+        from .specs import catalogs
+        pages = catalogs(base)[2]
+        for cid in remote_cases:
+            bindings[cid]['remote_resources'] = remote_requirements(bindings[cid]['spec'], pages)
     cases_file = base / "state/cases.json"
     atomic_write(cases_file, bindings)
     knowledge_source = base / "runner/knowledge/llms-txt.json"
@@ -365,6 +372,7 @@ def begin_batch(base, m, case_ids, headed=False, rerun=False):
              "owner_pid": os.getpid(),
              "started_at": now(), "directory": str(directory.relative_to(base)),
              "report": str((directory / "case-results.json").relative_to(base)), "command": command,
+             "assertion_evidence_version": 1,
              "headed": bool(headed), "rerun": bool(rerun)}
     batch['cases_snapshot_sha256'] = file_hash(directory / 'snapshot/cases.json')
     if knowledge_snapshot.is_file():
@@ -453,6 +461,17 @@ def consume_batch(base, m, exit_code=None):
     require(len(ids) == len(set(ids)) and set(ids) <= set(batch["case_ids"]),
             "Unexpected or duplicate case results; inspect test titles and recover the batch")
     by_id = {r["case_id"]: r for r in rows}
+    frozen = None
+    if batch.get('assertion_evidence_version') == 1:
+        snapshot = report_path.parent / 'snapshot/cases.json'
+        if file_hash(snapshot) == batch.get('cases_snapshot_sha256') and snapshot.is_file():
+            try:
+                read = read_json(snapshot)
+                if isinstance(read, dict):
+                    frozen = read
+            except (OSError, ValueError):
+                pass
+    from .assertion_evidence import read_remote, reconcile
     for cid in batch["case_ids"]:
         c = m["cases"][cid]
         row = by_id.get(cid, {"result": "interrupted", "errors": ["No test result emitted"], "lifecycle": {}})
@@ -469,6 +488,19 @@ def consume_batch(base, m, exit_code=None):
             row.setdefault("errors", []).append("Source/dependency changed during execution")
         if result == "passed" and (not prepared or not (clean or cleanup_pending) or lifecycle.get("batch_id") != batch["id"] or row.get("retry") != 0):
             result = "automation_failure"
+        details, gaps = None, []
+        if batch.get('assertion_evidence_version') == 1 and (c.get('registration') or {}).get('case_spec'):
+            binding = (frozen or {}).get(cid, {})
+            if binding.get('spec'):
+                remote_file = report_path.parent / ('remote-' + cid + '.json')
+                details, gaps = reconcile(binding, row.get('assertions', []), read_remote(remote_file),
+                                          m['config'].get('targets', {}).get('public', ''), m['config'])
+            else:
+                gaps = ['批次用例规格快照缺失或已变化']
+            if result == 'passed' and gaps:
+                result = 'automation_failure'
+                row.setdefault('errors', []).append('验证不完整：' + '；'.join(gaps))
+                row['failure_stage'] = 'assertion_evidence'
         from .failures import judge_result
         result, failure_class = judge_result(result, row.get("errors") or [])
         attempt = {"batch_id": batch["id"], "at": now(), "version": version, "result": result,
@@ -483,6 +515,10 @@ def consume_batch(base, m, exit_code=None):
                    "duration_ms": row.get("duration_ms", 0), "errors": row.get("errors", []),
                    "attachments": row.get("attachments", []),
                    "assertions": row.get("assertions", []), "failure_stage": row.get("failure_stage")}
+        if details is not None:
+            attempt['assertion_evidence'] = details
+        if row.get('failure_stage') == 'assertion_evidence':
+            attempt['assertion_evidence_errors'] = gaps
         attempt["successful_steps"] = [str(step) for step in row.get("successful_steps", [])
                                        if isinstance(step, str) and re.fullmatch(r"[A-Za-z0-9_.-]+", step)]
         if result == 'passed' and attempt['executed']:
@@ -511,7 +547,7 @@ def consume_batch(base, m, exit_code=None):
             c.pop("failure_class", None)
         if result == "save_not_persisted":
             c["classification"] = {"reason": "保存未生效（后台读回不一致）", "suspected_product_defect": True, "at": now()}
-        if result == "passed" and cleanup_pending:
+        if result == "passed" and (cleanup_pending or details and any(a['status'] == 'remote_pending' for a in details)):
             c.update(result="remote_pending", pass_streak=0, stability="not_run", stage="remote", work_status="remote_pending")
         elif result == "passed":
             need = int(m["config"]["execution"]["stability_passes"])
@@ -539,7 +575,9 @@ def consume_batch(base, m, exit_code=None):
                 c["stage"] = "execution"
             elif result == "automation_failure" and clean and c["repair_rounds"] < m["config"]["execution"]["repair_rounds"]:
                 c.update(work_status="pending", stage="repair")
-        if not clean and not cleanup_pending and c["registration"]["fixture"]["mutates"] and (row.get("setup_started") or cid not in by_id):
+        # A failed attempt can still hold a baseline for restoration. Block its
+        # fixture, while retaining the lease for the existing restore command.
+        if not clean and (not cleanup_pending or result != 'passed') and c["registration"]["fixture"]["mutates"] and (row.get("setup_started") or cid not in by_id):
             contaminated = c["fixture_ids"] or ["case:" + cid]
             for fid in contaminated:
                 m["contaminated_fixtures"][fid] = {"batch_id": batch["id"], "evidence": batch["report"]}

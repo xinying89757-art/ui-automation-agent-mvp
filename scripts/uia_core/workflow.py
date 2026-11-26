@@ -417,12 +417,14 @@ def _case_version(base, m, c, *, catalog_override=None, overlay_override=None, i
         shared_entries = base / 'runner/knowledge/entries.yaml'
         if shared_entries.is_file():
             files['knowledge/entries.yaml'] = file_hash(shared_entries)
+    methods = (c.get('review_binding') or {}).get('assertion_methods')
     return digest({"files": files, "source": c["source_hash"],
                    "intent": file_hash(inside(base, c["intent"])),
                    "plan": file_hash(inside(base, c["reuse_plan"])),
                    "case_spec": file_hash(inside(base, c.get("case_spec", "__missing__"))),
                    "config": digest(relevant_config), "fixture": registration["fixture"],
-                   "flow_ids": c["flow_ids"], "fixture_ids": c["fixture_ids"]})
+                   "flow_ids": c["flow_ids"], "fixture_ids": c["fixture_ids"],
+                   **({'assertion_methods': methods} if methods else {})})
 
 
 def case_version(base, m, c):

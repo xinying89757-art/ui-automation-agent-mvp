@@ -9,6 +9,7 @@ import { loadConfig, runtimeRoot } from './environment.mjs';
 import { authenticatedSession, openSiteArea } from './auth.mjs';
 import { cancelDialog } from '../flows/llms-txt.mjs';
 import { redactedDialogScreenshot } from './review-screenshot.mjs';
+import { evidenceRedactor } from './redact.mjs';
 
 export { expect };
 
@@ -153,9 +154,21 @@ export const test = base.extend<{ caseContext: CaseContext; lifecycle: void; adm
 });
 
 /** Keep business expectations separate from setup and automation failures. */
-export async function businessAssertion(id: string, assertion: () => Promise<void>): Promise<void> {
+type Observation = string | number | boolean;
+export async function businessAssertion(id: string, assertion: (observe: (value: unknown, slot?: number) => void) => Promise<void>): Promise<void> {
   await test.step(`assert:${id}`, async () => {
-    try { await assertion(); }
+    const observations = new Map<number, Observation>();
+    let clean: ((value: unknown) => string) | undefined;
+    const observe = (value: unknown, slot = 0) => {
+      if (!Number.isInteger(slot) || slot < 0 || slot >= 8) return;
+      if (typeof value === 'string' && value.trim()) {
+        clean ??= evidenceRedactor(loadConfig());
+        observations.set(slot, clean(value).slice(0, 200));
+      } else if (typeof value === 'boolean' || typeof value === 'number' && Number.isFinite(value)) {
+        observations.set(slot, value);
+      }
+    };
+    try { await assertion(observe); }
     catch (error) {
       const message = String(error);
       // Locator resolution failures remain automation failures even when the
@@ -167,6 +180,10 @@ export async function businessAssertion(id: string, assertion: () => Promise<voi
         throw new Error(`UIA_LOCATOR_MISS [${id}]: ${message}`);
       }
       throw new Error(`UIA_BUSINESS_FAILURE [${id}]: ${message}`);
+    } finally {
+      if (observations.size) await test.info().attach(`uia-assertion:${id}`, {
+        body: JSON.stringify([...observations.values()]), contentType: 'application/json',
+      }).catch(() => {});
     }
   });
 }

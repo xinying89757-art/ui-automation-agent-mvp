@@ -46,6 +46,12 @@ def _review_items(rows, case_ids, kind):
             require(isinstance(checks, list) and checks and all(isinstance(check, str) and check.strip() for check in checks),
                     f'Missing expected checks: {key}')
             item['checks'] = checks
+            if 'expectations' in row:
+                expectations = row['expectations']
+                require(isinstance(expectations, dict) and set(expectations) == set(owners) and
+                        all(isinstance(quote, str) and quote.strip() for quote in expectations.values()),
+                        f'Each related case needs an original expectation: {key}')
+                item['expectations'] = expectations
         else:
             item['answer'] = _text(row.get('answer'))
             item['status'] = 'confirmed' if item['answer'] else 'pending'
@@ -59,9 +65,10 @@ def _payload(base, run):
     require(isinstance(supplied, dict), 'Review input must be a JSON object')
     cases = []
     versions = {}
-    deferred = {}
+    deferred, originals = {}, {}
     for cid, case in run['cases'].items():
         source = read_json(inside(base, case['source'])) if case.get('source') else {}
+        originals[cid] = source
         rows = '、'.join(map(str, case.get('rows', [])))
         location = f"{case.get('sheet', '')} · 第 {rows} 行" if rows else case.get('sheet', '')
         display_id = case.get('original_id') or f'用例 {len(cases) + 1:02d}'
@@ -101,6 +108,10 @@ def _payload(base, run):
     automatic = _review_items(auto, case_ids, 'questions')
     questions = _review_items(supplied.get('questions', []), case_ids, 'questions')
     checks = _review_items(supplied.get('checks', []), case_ids, 'checks')
+    from .specs import expectation_quotes
+    for item in checks.values():
+        for cid, quote in item.get('expectations', {}).items():
+            require(quote in expectation_quotes(originals[cid]), f'Expectation must quote the source: {item["id"]}/{cid}')
     questions = {**automatic, **questions}
     require(not set(questions) & set(checks), 'Questions and checks share a review ID')
     for item in (*questions.values(), *checks.values()):
@@ -117,6 +128,10 @@ def _payload(base, run):
                 item[field] = scrub_text(item[field], cfg)
         if 'checks' in item:
             item['checks'] = [scrub_text(check, cfg) for check in item['checks']]
+        if 'expectations' in item:
+            # Bind by digest so the exact raw source does not have to leave the run.
+            item['expectation_hashes'] = {cid: digest(quote) for cid, quote in item['expectations'].items()}
+            item['expectations'] = {cid: scrub_text(quote, cfg) for cid, quote in item['expectations'].items()}
     payload['title'] = scrub_text(payload['title'], cfg)
     payload['deferred'] = {cid: scrub_text(reason, cfg) for cid, reason in deferred.items()}
     payload['revision'] = digest([payload, versions])
@@ -129,6 +144,13 @@ def render(base, run):
     if review.get('revision') == payload['revision']:
         payload['savedDecisions'] = {item['id']: {'status': item['status'], 'text': item['value']}
                                      for item in review['decisions']}
+    else:
+        items = {row['id']: row for row in payload['checks'] if 'expectation_hashes' in row}
+        payload['savedDecisions'] = {
+            decision['id']: {'status': decision['status'], 'text': decision['value']}
+            for decision in review.get('decisions', []) if decision['id'] in items and
+            decision.get('item_digest') == digest(items[decision['id']])
+        }
     html = TEMPLATE.read_text(encoding='utf-8')
     # Treat all workbook and reviewer content as inert data, including script end tags.
     data = json.dumps(payload, ensure_ascii=False).replace('<', r'\u003c')
@@ -179,6 +201,11 @@ def ingest(base, run, path):
         require(scrub_text(value, run.get('config')) == value, '审核决定中包含敏感内容')
         received[key] = {'id': key, 'kind': kind, 'title': item['title'], 'cases': item['cases'],
                          'status': row['status'], 'value': value}
+        if 'expectation_hashes' in item:
+            if row['status'] == 'confirmed':
+                require(value == '\n'.join(item['checks']), f'Confirmation must keep the reviewed method: {key}')
+            received[key]['expectation_hashes'] = item['expectation_hashes']
+            received[key]['item_digest'] = digest(item)
     pending = [item for item in [*questions, *checks]
                if item['id'] not in received or received[item['id']]['status'] == 'deferred']
     result = {'run_id': run['run_id'], 'revision': payload['revision'],
@@ -351,10 +378,20 @@ def bind_case(base, run, cid, review_ids, source='current'):
         # Compatibility for previously reconciled prototypes that predate per-case hashes.
         require(anchors and all(row.get('source_files', {}).get(cid) == current_source for row in anchors),
                 '缺少来源未变化的审核记录')
+    from .common import read_yaml
+    spec = read_yaml(spec_path(base, run['cases'][cid])) if spec_path(base, run['cases'][cid]).is_file() else {}
+    assertion_methods = {}
     for key in review_ids:
         rows = [row for row in review.get('decisions', []) if row.get('id') == key and
                 cid in row.get('cases', []) and row.get('status') in {'confirmed', 'edited'}]
         require(len(rows) == 1, '审核项未确认或不属于该用例：' + key)
+        if cid in rows[0].get('expectation_hashes', {}):
+            expected = rows[0]['expectation_hashes'][cid]
+            matched = [a['id'] for a in spec.get('assertions', [])
+                       if isinstance(a, dict) and a.get('id') and digest(a.get('excel')) == expected]
+            require(matched, f'已审核验法缺少对应的原文断言：{key}/{cid}')
+            for aid in matched:
+                assertion_methods.setdefault(aid, []).append({'review_id': key, 'method': rows[0]['value']})
     result = lint(base, run, [cid])
     require(not result['errors'] and not result['cases'][cid]['errors'], '用例规格校验失败', result)
     run['cases'][cid]['review_binding'] = {'source': source, 'review_ids': review_ids,
@@ -362,5 +399,7 @@ def bind_case(base, run, cid, review_ids, source='current'):
         'decisions_digest': digest([row for row in review.get('decisions', []) if row.get('id') in review_ids]),
         'source_sha256': review.get('source_sha256'), 'source_file_sha256': file_hash(inside(base, run['cases'][cid]['source'])),
         'spec_sha256': file_hash(spec_path(base, run['cases'][cid]))}
+    if assertion_methods:
+        run['cases'][cid]['review_binding']['assertion_methods'] = assertion_methods
     event(run, 'review_case_bound', case_id=cid, review_ids=review_ids, source=source)
     return {'case_id': cid, 'review_binding': run['cases'][cid]['review_binding'], 'next': 'generate_or_register_spec'}

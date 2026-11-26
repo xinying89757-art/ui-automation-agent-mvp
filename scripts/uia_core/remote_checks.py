@@ -146,8 +146,11 @@ def collect(base, m, batch, cid, attempt):
     for old in registry.values():
         if old['request']['case_id'] == cid:
             old['active'] = False
-    from .common import read_yaml
-    spec = read_yaml(base / m['cases'][cid]['case_spec'])
+    if batch.get('assertion_evidence_version') == 1:
+        spec = read_json(base / batch['directory'] / 'snapshot/cases.json')[cid]['spec']
+    else:
+        from .common import read_yaml
+        spec = read_yaml(base / m['cases'][cid]['case_spec'])
     assertions = {a['id']: a for a in spec['assertions']}
     for item in rows:
         require(item.get('assertion_id') in assertions and item.get('expected') == assertions[item['assertion_id']]['excel'], 'Deferred expectation differs from Excel contract')
@@ -499,6 +502,12 @@ def fold(m, cid):
     entries = [r for r in m.get('remote_checks', {}).values() if r.get('active', True) and r['request']['case_id'] == cid]
     if not entries:
         return
+    attempt = c['attempts'][-1]
+    if 'assertion_evidence' in attempt:
+        entries = [r for r in entries if r.get('batch_id') == attempt['batch_id'] and r.get('version') == attempt['version']]
+        expected = {row['id'] for row in attempt['assertion_evidence'] if row['status'] == 'remote_pending'}
+        if not expected or {r['request']['assertion_id'] for r in entries} != expected or len(entries) != len(expected):
+            return
     if c.get('result') == 'save_not_persisted':
         c['remote_status'] = 'unreachable'
         c['classification'] = {'reason': '前置保存未生效，公开检查不判定', 'at': now()}
@@ -685,7 +694,8 @@ def restore(base, m):
         if cid in restored:
             attempt.update(cleanup_verified=True, cleanup_pending=False, remote_cleanup_evidence=str(target.relative_to(base)))
             for row in m.get('remote_checks', {}).values():
-                if row.get('active', True) and row['request']['case_id'] == cid:
+                if (row.get('active', True) and row['request']['case_id'] == cid and
+                        ('assertion_evidence' not in attempt or row.get('batch_id') == attempt['batch_id'])):
                     row['request']['restored_at'] = restored[cid]['restored_at']
                     if row['status'] in {'pending', 'still-cached'}:
                         row['status'] = 'unreachable'

@@ -92,14 +92,14 @@ function showSource(item) {
 function editor(item) {
  if(!editing || editing.id!==item.id) return '';
  const defer=editing.mode==='defer';
- const label=defer?'暂缓原因':view==='cases'?'请注明要修正的前置、步骤或预期':view==='questions'?'修改后的答复':'修改后的预期';
+ const label=defer?'暂缓原因':view==='cases'?'请注明要修正的前置、步骤或预期':view==='questions'?'修改后的答复':item.expectations?'修改后的验法':'修改后的预期';
  const value=defer?'':view==='cases'?state[item.id]?.text ?? '':textOf(item);
  return '<form class="editor" id="editor"><label for="draft">'+label+'</label>'+
   '<textarea id="draft" required>'+esc(value)+'</textarea><div class="actions"><button class="btn primary" type="submit">保存'+(defer?'暂缓':'修改')+'</button><button class="btn" data-action="cancel" type="button">取消</button></div></form>';
 }
 function actions(item) {
- const modify=view==='questions'&&!textOf(item)?'补充答复':view==='questions'?'修改答复':'修改预期';
- return '<div class="actions">'+(view==='checks'&&status(item)==='pending'?'<button class="btn primary" data-action="confirm" type="button">确认预期</button>':'')+
+ const modify=view==='questions'&&!textOf(item)?'补充答复':view==='questions'?'修改答复':item.expectations?'修改验法':'修改预期';
+ return '<div class="actions">'+(view==='checks'&&status(item)==='pending'?'<button class="btn primary" data-action="confirm" type="button">'+(item.expectations?'确认验法':'确认预期')+'</button>':'')+
   '<button class="btn '+(view==='questions'&&!textOf(item)?'primary':'')+'" data-action="edit" type="button">'+modify+'</button>'+
   '<button class="btn" data-action="defer" type="button">本轮暂缓</button>'+
   (state[item.id]?'<button class="btn flat" data-action="reset" type="button">恢复初始记录</button>':'')+'</div>';
@@ -133,7 +133,8 @@ function render() {
   : view==='questions'
     ? '<h3>'+(textOf(current)?'当前答复':'等待补充')+'</h3><div class="box '+(textOf(current)?'answer':'muted')+'">'+esc(textOf(current)||'请填写能让 Agent 继续执行的信息。')+'</div>'
     : '<h3>Agent 将检查</h3><ul class="checks">'+textOf(current).split('\n').filter(Boolean).map(line=>'<li>'+esc(line)+'</li>').join('')+'</ul>';
- $('review').innerHTML=header+'<div class="body">'+content+'<div class="impact small muted">关联用例 '+ids(current)+'</div>'+actions(current)+editor(current)+showSource(current)+'</div>'+nav;
+ const original=current.expectations?'<h3>原始预期</h3><ul class="checks">'+Object.entries(current.expectations).map(([id, line])=>'<li><strong>'+esc(caseLabel(id))+'</strong> '+esc(line)+'</li>').join('')+'</ul>':'';
+ $('review').innerHTML=header+'<div class="body">'+original+content+'<div class="impact small muted">关联用例 '+ids(current)+'</div>'+actions(current)+editor(current)+showSource(current)+'</div>'+nav;
  if(editing?.id===current.id) $('draft')?.focus();
 }
 function deferredCases() {

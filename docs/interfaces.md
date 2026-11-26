@@ -253,9 +253,11 @@ python3 scripts/uia.py review-page ingest --run GO-xxx --file /path/to/GO-xxx-re
 页面生成到 `runs/<id>/review.html`，自动显示运行清单中的问题。可选的 `runs/<id>/review-input.json`
 提供 `title`、`questions` 与 `checks`。每项使用稳定的 `id`、`title` 和包含实际用例 ID 的 `cases` 数组，
 可附 `description`、`source`、HTTPS `link`。问题可附现有 `answer`，同 ID 可补充系统问题。
-关键断言用 `checks` 字符串数组列出应验证的结果。Agent 只添加需人工判断的问题和关键断言，原始用例随时可查。
+关键断言用 `checks` 字符串数组说明操作、观察对象和通过条件。新关键项同时提供 `expectations`，键为关联用例 ID，值为该用例的一整条原始预期。审核页并列显示原文与验法。`review-page bind-case` 把已审核验法关联到引用该原文的断言编号，只有未落实的关联用例等待。定位或等待调整后可用原审核答复重新绑定。
 导出带运行 ID 和审阅版本的 JSON 文件，导入后把结构化决定保存到运行记录及 `review-decisions.json`。
 Agent 按返回的决定更新相关规格并核验后继续执行。工具保存审核意见，业务步骤与断言由 Agent 按用例原文和审核结果落实。
+
+新批次按冻结的 `snapshot/cases.json` 核对逐断言回执。关键本地断言用 `businessAssertion('A1', async observe => { … })` 的 `observe(value, slot?)` 保存与断言同一次采集的观察值。传短文本、数字或布尔值，使用不同的 `slot` 记录多个值；旧写法仍可用。缺少必要回执或关键观察值时显示「验证不完整」。公开前台断言需生成匹配的请求并通过远程回执验证。HTML 和 JSON 报告中的逐断言证据按批次保留，历史批次缺失的字段显示「未记录」。
 
 ```bash
 .venv/bin/python scripts/uia.py preflight --profile my-prod

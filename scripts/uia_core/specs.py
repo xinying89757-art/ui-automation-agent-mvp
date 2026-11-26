@@ -516,6 +516,53 @@ def lint(base, m, case_ids=None, record=True, check_scripts=True):
             'first_pass': {'passed': passed, 'automatable': len(auto), 'rate': passed / len(auto) if auto else None}}
 
 
+def render_observed_check(check, loc, pages, slot):
+    """Check and record the same sample for an explicitly reviewed local assertion."""
+    op, value = check['op'], check.get('value')
+    target = json.dumps(check['target'])
+    expected = json.dumps(value, ensure_ascii=False)
+    normalize = r".replace(/\s+/gu, ' ').trim()"
+    matcher = 'toBe'
+    if op == 'occurrence_count':
+        sample = f'observations[{target}].count()'
+    elif op == 'request_count':
+        sample = f'networks[{target}].count()'
+    elif op == 'visible_text':
+        sample = f'await {loc}.innerText()'
+    elif op == 'blocked':
+        sample = f'''await {loc}.evaluate(el => el.matches(':disabled') || el.getAttribute('aria-disabled') === 'true' || /disabled/i.test(el.className) || getComputedStyle(el).pointerEvents === 'none')'''
+        expected = 'true'
+    elif op == 'left_of':
+        other = locator_expression(value, pages)
+        if not other:
+            return []
+        sample = f'(await {loc}.boundingBox())!.x - (await {other}.boundingBox())!.x'
+        matcher, expected = 'toBeLessThan', '0'
+    elif op in {'visible', 'hidden', 'enabled', 'disabled'}:
+        method = {'hidden': 'isVisible', 'visible': 'isVisible', 'enabled': 'isEnabled', 'disabled': 'isDisabled'}[op]
+        sample = f'await {loc}.{method}()'
+        expected = 'false' if op == 'hidden' else 'true'
+    elif op == 'count':
+        sample = f'await {loc}.count()'
+    elif op == 'value':
+        sample = f'await {loc}.inputValue()'
+    elif op == 'attribute':
+        sample = f'await {loc}.getAttribute({json.dumps(check["attribute"])})'
+    elif op == 'text' and isinstance(value, list):
+        sample = f'(await {loc}.allTextContents()).map(text => text{normalize})'
+        expected = f'{expected}.map(text => text{normalize})'
+        matcher = 'toEqual'
+    else:
+        sample = f'(await {loc}.textContent() ?? ""){normalize}'
+        expected += normalize
+        if op == 'contains':
+            matcher = 'toContain'
+    guards = [f'    await {loc}.waitFor({{state: "attached"}});'] if op in {'visible', 'enabled', 'disabled'} else []
+    return [*guards, '    await expect.poll(async () => {', f'      const actual = {sample};',
+            f'      observe(Array.isArray(actual) ? JSON.stringify(actual) : actual ?? "（无值）", {slot});',
+            f'      return actual;', f'    }}).{matcher}({expected});']
+
+
 def generate(base, m, cid):
     require(not m.get('active_batch'), 'Cannot generate during an active batch')
     require(not any(c.get('attempts') and c['attempts'][-1].get('cleanup_pending') for c in m['cases'].values()), 'Restore held remote data before generating another version')
@@ -652,9 +699,19 @@ def generate(base, m, cid):
                 lines.append("  // Deferred marker; not a local businessAssertion PASS.")
                 lines.append("  // @deferred " + assertion["id"])
                 continue
-            lines.append("  await businessAssertion('" + assertion['id'] + "', async () => {")
-            for check in assertion['checks']:
+            methods = (case.get('review_binding') or {}).get('assertion_methods', {})
+            observed = assertion['id'] in methods
+            lines.append("  await businessAssertion('" + assertion['id'] + "', async (" + ('observe' if observed else '') + ") => {")
+            for index, check in enumerate(assertion['checks']):
                 loc = locator_expression(check['target'], pages)
+                if observed:
+                    if check['op'] not in {'occurrence_count', 'request_count'} and not loc:
+                        todo(assertion['id'] + ' ' + check['target']); continue
+                    rendered = render_observed_check(check, loc, pages, index)
+                    if not rendered:
+                        todo(assertion['id'] + ' ' + str(check.get('value')))
+                    lines.extend(rendered)
+                    continue
                 if check['op'] == 'occurrence_count':
                     lines.append('    await expect.poll(() => observations[' + json.dumps(check['target']) + '].count()).toBe(' + str(check['value']) + ');')
                     continue

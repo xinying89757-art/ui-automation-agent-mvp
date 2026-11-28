@@ -4,9 +4,10 @@ import json
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from .common import UiaError, atomic_write, digest, event, file_hash, inside, now, read_json, require
+from .common import UiaError, atomic_write, digest, event, file_hash, inside, now, read_json, require, reset_case
 from .preconditions import QUESTION_KEY
 from .secrets import scrub_text
+from .text_requests import expectation_review_id
 
 TEMPLATE = Path(__file__).resolve().parents[2] / 'skills/spec-pathfinder/review/workbench.html'
 INPUT = 'review-input.json'
@@ -74,6 +75,7 @@ def _payload(base, run):
     cases = []
     versions = {}
     deferred, originals = {}, {}
+    request_source = next((row for row in run.get('sources', []) if row.get('kind')), {})
     for cid, case in run['cases'].items():
         source = read_json(inside(base, case['source'])) if case.get('source') else {}
         originals[cid] = source
@@ -116,6 +118,21 @@ def _payload(base, run):
     automatic = _review_items(auto, case_ids, 'questions')
     questions = _review_items(supplied.get('questions', []), case_ids, 'questions')
     checks = _review_items(supplied.get('checks', []), case_ids, 'checks')
+    for cid, source in originals.items():
+        if not source.get('source_kind'):
+            continue
+        for i, item in enumerate(source['expectations'], 1):
+            key = f'request-check:{cid}:{i}'
+            require(key not in checks, f'审核编号由文字请求生成：{key}')
+            checks[key] = {'id': key, 'title': source['title'], 'cases': [cid], 'source': item['source'],
+                           'checks': [item['method']], 'expectations': {cid: item['quote']},
+                           'request_case_version': source['content_hash']}
+        if source['expectation_question'].strip():
+            key = expectation_review_id(cid)
+            require(key not in questions, f'审核编号由文字请求生成：{key}')
+            questions[key] = {'id': key, 'title': source['expectation_question'], 'cases': [cid],
+                              'status': 'pending', 'supplies_expectation': True,
+                              'request_case_version': source['content_hash']}
     from .specs import expectation_quotes
     for item in checks.values():
         for cid, quote in item.get('expectations', {}).items():
@@ -126,10 +143,14 @@ def _payload(base, run):
         if all(cid in deferred for cid in item['cases']):
             item['status'] = 'deferred'
             item['answer'] = '关联用例已暂缓'
-    payload = {'runId': run['run_id'], 'title': _text(supplied.get('title')) or run['run_id'],
+    payload = {'runId': run['run_id'], 'title': _text(supplied.get('title')) or request_source.get('title') or run['run_id'],
                'cases': cases, 'questions': list(questions.values()), 'checks': list(checks.values()),
                'deferred': deferred}
     cfg = run.get('config')
+    if request_source:
+        original = read_json(inside(base, request_source['snapshot']))
+        payload['requestContext'] = {'original': scrub_text(original['original'], cfg),
+                                     'references': [scrub_text(ref, cfg) for ref in request_source['references']]}
     for item in (*cases, *questions.values(), *checks.values()):
         for field in ('displayId', 'title', 'source', 'pre', 'steps', 'expected', 'description', 'link', 'answer'):
             if field in item:
@@ -146,6 +167,46 @@ def _payload(base, run):
     return payload
 
 
+def reconcile_request_review(base, run):
+    """Park changed/new request items while keeping unaffected submissions and bindings."""
+    review = run.get('human_review')
+    if not review or not any(row.get('kind') for row in run.get('sources', [])):
+        return
+    payload = _payload(base, run)
+    items = {row['id']: row for row in (*payload['questions'], *payload['checks'])}
+    decisions = []
+    for row in review['decisions']:
+        if not all(cid in run['cases'] and review.get('source_files', {}).get(cid) ==
+                   file_hash(inside(base, run['cases'][cid]['source'])) for cid in row['cases']):
+            continue
+        if row['kind'] != 'case' and (row['id'] not in items or row.get('item_digest') != digest(items[row['id']])):
+            continue
+        decisions.append(row)
+    handled = {row['id'] for row in decisions if row['status'] != 'deferred'}
+    invalidate_request_bindings(run, review['decisions'], decisions)
+    review.update(decisions=decisions, pending=[item for key, item in items.items() if key not in handled])
+
+
+def invalidate_request_bindings(run, previous, current):
+    for cid, case in run['cases'].items():
+        old = {row['id']: row for row in previous if cid in row['cases']}
+        new = {row['id']: row for row in current if cid in row['cases']}
+        if old != new and (case.get('review_binding') or case.get('registration')):
+            case.pop('review_binding', None)
+            case['registration'] = None
+            reset_case(case, 'request_review_changed', 'spec')
+
+
+def approved_expectation(base, run, cid):
+    review = run.get('human_review') or {}
+    case = run['cases'][cid]
+    if not review.get('source_files', {}).get(cid) or review['source_files'][cid] != file_hash(inside(base, case['source'])):
+        return None
+    return next((row['value'] for row in review.get('decisions', [])
+                 if row['id'] == expectation_review_id(cid) and row.get('supplies_expectation') and
+                 row['status'] in ('edited', 'confirmed') and row['cases'] == [cid]), None)
+
+
 def render_html(base, run, submit_url=None):
     payload = _payload(base, run)
     review = run.get('human_review') or {}
@@ -153,7 +214,13 @@ def render_html(base, run, submit_url=None):
         payload['savedDecisions'] = {item['id']: {'status': item['status'], 'text': item['value']}
                                      for item in review['decisions']}
     else:
-        items = {row['id']: row for row in payload['checks'] if 'expectation_hashes' in row}
+        request = any(source.get('kind') for source in run.get('sources', []))
+        items = {row['id']: row for row in (*payload['checks'], *payload['questions'])
+                 if request or 'expectation_hashes' in row}
+        if request:
+            items.update({row['id']: {'id': row['id'], 'title': row['title'], 'cases': [row['id']]}
+                          for row in payload['cases'] if review.get('source_files', {}).get(row['id']) ==
+                          file_hash(inside(base, run['cases'][row['id']]['source']))})
         payload['savedDecisions'] = {
             decision['id']: {'status': decision['status'], 'text': decision['value']}
             for decision in review.get('decisions', []) if decision['id'] in items and
@@ -224,6 +291,9 @@ def ingest_payload(base, run, report, *, expected_state=None):
             if row['status'] == 'confirmed':
                 require(value == '\n'.join(item['checks']), f'Confirmation must keep the reviewed method: {key}')
             received[key]['expectation_hashes'] = item['expectation_hashes']
+        if item.get('supplies_expectation'):
+            received[key]['supplies_expectation'] = True
+        if 'expectation_hashes' in item or any(source.get('kind') for source in run.get('sources', [])):
             received[key]['item_digest'] = digest(item)
     pending = [item for item in [*questions, *checks]
                if item['id'] not in received or received[item['id']]['status'] == 'deferred']
@@ -235,6 +305,8 @@ def ingest_payload(base, run, report, *, expected_state=None):
     if not already_saved and expected_state is not None and expected_state != review_state(run):
         raise ReviewConflict('审核意见已从另一个页面提交，请重新核对后再提交。')
     if not already_saved:
+        if any(source.get('kind') for source in run.get('sources', [])):
+            invalidate_request_bindings(run, (run.get('human_review') or {}).get('decisions', []), received.values())
         run['human_review'] = result
         event(run, 'human_review_received', decisions=len(received), pending=len(pending))
         submission = digest(list(received.values()))
@@ -403,6 +475,7 @@ def bind_case(base, run, cid, review_ids, source='current'):
     from .common import read_yaml
     spec = read_yaml(spec_path(base, run['cases'][cid])) if spec_path(base, run['cases'][cid]).is_file() else {}
     assertion_methods = {}
+    approved = approved_expectation(base, run, cid) if source == 'current' else None
     for key in review_ids:
         rows = [row for row in review.get('decisions', []) if row.get('id') == key and
                 cid in row.get('cases', []) and row.get('status') in {'confirmed', 'edited'}]
@@ -414,7 +487,15 @@ def bind_case(base, run, cid, review_ids, source='current'):
             require(matched, f'已审核验法缺少对应的原文断言：{key}/{cid}')
             for aid in matched:
                 assertion_methods.setdefault(aid, []).append({'review_id': key, 'method': rows[0]['value']})
-    result = lint(base, run, [cid])
+        if rows[0].get('supplies_expectation'):
+            matched = [a['id'] for a in spec.get('assertions', [])
+                       if isinstance(a, dict) and a.get('id') and approved and a.get('excel') == approved]
+            require(matched, f'用例规格缺少引用审核答复的断言：{key}/{cid}')
+            for aid in matched:
+                assertion_methods.setdefault(aid, []).append({'review_id': key, 'method': approved,
+                                                               'expectation_origin': 'human_review'})
+    request = any(row.get('kind') for row in run.get('sources', []))
+    result = lint(base, run, [cid], check_scripts=not request)
     require(not result['errors'] and not result['cases'][cid]['errors'], '用例规格校验失败', result)
     run['cases'][cid]['review_binding'] = {'source': source, 'review_ids': review_ids,
         'reviewed_revision': review.get('reviewed_revision', review.get('revision')),
@@ -423,5 +504,7 @@ def bind_case(base, run, cid, review_ids, source='current'):
         'spec_sha256': file_hash(spec_path(base, run['cases'][cid]))}
     if assertion_methods:
         run['cases'][cid]['review_binding']['assertion_methods'] = assertion_methods
+    if approved:
+        run['cases'][cid]['review_binding']['approved_expectation'] = approved
     event(run, 'review_case_bound', case_id=cid, review_ids=review_ids, source=source)
     return {'case_id': cid, 'review_binding': run['cases'][cid]['review_binding'], 'next': 'generate_or_register_spec'}

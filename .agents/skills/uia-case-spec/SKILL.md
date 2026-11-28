@@ -38,7 +38,8 @@ Assertions have A-number, after S-number, exact imported expectation cell/line i
 and nonempty checks. Preserve numbering, punctuation, all business clauses and blank
 negative inputs. Never replace public-file expectations with editor-value assertions.
 Absent/ambiguous expectations become questions in the HTML review. Locator
-uncertainty goes to exploration, not business questions.
+and data preparation gaps use known routes/fixtures and bounded exploration first.
+Before authoring code, map the source steps and approved method to the spec. Verify key actions and the exact object, and record the agreed pass condition against the original expectation.
 For each mutating save, add an optional top-level read_back entry with an R-number, the
 save step, field target and intended value, a named reopen target sequence, and save_target
 that references its network rule. The generated test checks the save business response,

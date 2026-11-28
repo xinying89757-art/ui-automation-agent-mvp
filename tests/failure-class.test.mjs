@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { classifyFailure, isEnvironmentMessage } from '../assets/playwright-runner/support/failure-class.mjs';
 
 test('site not found and login timeouts are environment, not automation', () => {
+  assert.equal(classifyFailure('Timeout: locator.click intercepted by sitewidget-bd', 'failed').result, 'automation_failure');
+  assert.equal(classifyFailure('locator.click: Timeout 5000ms exceeded\nCall log:\n  - waiting for login site button', 'failed').result, 'automation_failure');
   assert.equal(isEnvironmentMessage('SITE_NOT_ACCESSIBLE: 未找到目标网站'), true);
   assert.equal(classifyFailure('Error: SITE_NOT_ACCESSIBLE', 'failed').failure_class, 'environment');
   assert.equal(classifyFailure('Error: SITE_NOT_ACCESSIBLE', 'failed').result, 'environment_blocked');

@@ -170,10 +170,12 @@ class GenericProcessTests(unittest.TestCase):
         (runner / 'node_modules/@playwright/test').mkdir(parents=True)
         with patch.object(profiles, 'ROOT', self.base), patch.object(profiles.subprocess, 'Popen') as run:
             run.return_value = argparse.Namespace(returncode=0, stdout=io.StringIO(json.dumps({'ok': True, 'structure': {'failed_step': {'index': 1}}})), stderr=io.StringIO(''), wait=lambda timeout=None: 0)
-            result = profiles.invoke_snapshot(self.m['config'], runner, goto='/path', steps=['click:text=Open'])
+            result = profiles.invoke_snapshot(self.m['config'], runner, goto='/path', steps=['click:text=Open'], headed=True)
             command = run.call_args.args[0]
             self.assertIn('--goto', command)
             self.assertIn('--step', command)
+            self.assertIn('--headed', command)
+            self.assertNotIn('--manual', command)
             self.assertFalse(Path(command[command.index('--config') + 1]).exists())
             self.assertEqual(result['structure']['failed_step']['index'], 1)
 

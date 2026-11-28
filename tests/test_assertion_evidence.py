@@ -122,7 +122,8 @@ class ReviewEvidenceBindingTests(unittest.TestCase):
             common.atomic_write(base / 'source.json', {'expected': ['窗口显示', '数量是两条']})
             common.atomic_write(base / 'case.yaml', {'assertions': [{'id': 'A2', 'excel': '数量是两条'}]}, as_yaml=True)
             run = {'run_id': 'R', 'history': [], 'questions': {}, 'cases': {'C': {'case_id': 'C', 'source': 'source.json', 'case_spec': 'case.yaml'}}}
-            inp = {'id': 'check-count', 'title': '核对行数', 'cases': ['C'], 'checks': ['统计结果行，正好两条'], 'expectations': {'C': '数量是两条'}}
+            method = '操作：打开结果列表\n判定信号：本次查询完成并刷新列表\n通过条件：显示两条结果行'
+            inp = {'id': 'check-count', 'title': '核对行数', 'cases': ['C'], 'checks': [method], 'expectations': {'C': '数量是两条'}}
             common.atomic_write(base / 'review-input.json', {'checks': [inp]})
             payload = review_page._payload(base, run)
             self.assertEqual(payload['checks'][0]['expectations']['C'], '数量是两条')

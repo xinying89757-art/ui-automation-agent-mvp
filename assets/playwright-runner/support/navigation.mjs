@@ -240,9 +240,11 @@ async function alreadyThere(page, actions, index, entrySteps, options, waitMs = 
   try {
     const current = parseStep(action);
     const next = parseStep(nextAction);
+    // A named page opens through the shared navigator and has no DOM control to inspect here.
+    if (current.verb === 'click' && (options.map ?? pageMap()).pages?.[current.target]) return false;
     const nextOptions = index + 1 < entrySteps ? { ...options, frame: undefined, scope: undefined } : options;
     const currentMatch = await resolveActionTarget(page, current.target, nextOptions);
-    if (!currentMatch) return false;
+    if (!currentMatch || !await currentMatch.locator.isVisible().catch(() => false)) return false;
     const currentURL = new URL(page.url());
     const destinationVerified = await currentMatch.locator.evaluate((el, location) => {
       const active = Boolean((el.getAttribute('aria-current') && el.getAttribute('aria-current') !== 'false') ||
@@ -255,7 +257,7 @@ async function alreadyThere(page, actions, index, entrySteps, options, waitMs = 
         const target = new URL(link.href);
         return target.pathname === location.pathname && target.search === location.search;
       } catch { return false; }
-    }, { pathname: currentURL.pathname, search: currentURL.search }).catch(() => false);
+    }, { pathname: currentURL.pathname, search: currentURL.search }, { timeout: waitMs }).catch(() => false);
     if (!destinationVerified) return false;
     const deadline = Date.now() + waitMs;
     do {
@@ -266,7 +268,7 @@ async function alreadyThere(page, actions, index, entrySteps, options, waitMs = 
   } catch { /* fall through to the original failure */ }
   return false;
 }
-export async function navigateSnapshot(page, cfg, { goto, openTarget: named, steps = [], clicks = [], hover, entrySteps = 0, ...options } = {}) {
+export async function navigateSnapshot(page, cfg, { goto, openTarget: named, steps = /** @type {string[]} */ ([]), clicks = /** @type {string[]} */ ([]), hover, entrySteps = 0, ...options } = {}) {
   const actions = [...(goto ? [['goto', goto]] : []), ...(named ? [['open', named]] : []),
     ...clicks.map(x => ['legacy', 'click:' + x]), ...(hover ? [['legacy', 'hover:' + hover]] : []), ...steps.map(x => ['step', x])];
   const popups = [];

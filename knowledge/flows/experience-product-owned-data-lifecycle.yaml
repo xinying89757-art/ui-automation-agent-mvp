@@ -1,0 +1,16 @@
+id: experience.product-owned-data-lifecycle
+kind: flow
+summary: 产品测试数据创建与清理
+description: 创建前按唯一名称查询确认不存在；清理仅删除精确匹配的本次产品，并再次查询确认删除。
+page: content-admin
+scope: 正式版内容管理产品描述新版编辑器
+last_verified: '2026-11-27'
+provenance:
+  source_run: GO-1bc401d74b26
+  verified_by:
+  - RQ-1bc401d74b26-04
+  verified_at: '2026-11-27'
+  evidence:
+  - batches/11be6a5005504d0c88a63bf4ab567b38/case-results.json
+  - evidence/owned-product-lifecycle-pilot.json
+created_at: '2026-11-27'

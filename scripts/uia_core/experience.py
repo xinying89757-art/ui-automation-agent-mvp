@@ -12,6 +12,7 @@ from pathlib import Path
 from .common import (ROOT, UiaError, atomic_write, config, digest, elapsed, event, file_hash,
                      locked_run, now, read_json, read_yaml, require, save)
 from .secrets import scrub_text
+from . import workflow
 
 
 def memory_path(m):
@@ -331,7 +332,7 @@ def add_review(m, kind, cases, text, **detail):
     return entry
 
 
-def review(base, m):
+def review(base, m, *, persist=True):
     for q in list(m['questions'].values()):
         if q['status'] in {'open', 'deferred'} and q.get('subject') != 'run-preconditions':
             kind = 'record_request' if q['kind'] in {'demo', 'record_request'} else 'new_ambiguity' if q['kind'] == 'product' else 'environment'
@@ -395,6 +396,8 @@ def review(base, m):
             merged[key] = item
     items = list(merged.values())
     payload = {'blocking_delivery': False, 'assertion_changes_default': '不应用', 'items': items}
+    if not persist:
+        return payload
     atomic_write(base / 'review.json', payload)
     names = {'suspected_defect': '疑似产品缺陷', 'assertion_change': '断言变更建议（默认不应用）',
              'record_request': '页面录制请求', 'page_entry': '页面入口待补充', 'new_ambiguity': '新增业务歧义', 'new_permission': '新增权限', 'environment': '环境待处理', 'automation_gap': '自动化缺口（待探索）'}
@@ -424,8 +427,8 @@ def checklist_notice(checklist):
     return '清单全部来自环境记忆（' + str(entries) + ' 项），本次 0 问' if entries == checklist.get('memory_answer_count', 0) else None
 
 
-def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_minutes=10, hints=None,
-       smoke_size=3, smoke_pass_rate=1.0, first_result_budget_minutes=26, code_root=None, review_only=False):
+def go(excel=None, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_minutes=10, hints=None,
+       smoke_size=3, smoke_pass_rate=1.0, first_result_budget_minutes=26, code_root=None, review_only=False, *, request=None):
     from . import workflow, specs, profiles, runtime, reports
     started_at = now()
     require(type(smoke_size) is int and smoke_size >= 1, "smoke size must be a positive integer")
@@ -433,8 +436,9 @@ def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_m
             "smoke pass rate must be between 0 and 1")
     require(isinstance(first_result_budget_minutes, (int, float)) and not isinstance(first_result_budget_minutes, bool)
             and first_result_budget_minutes > 0, "first-result budget must be positive")
-    source = Path(excel).resolve()
-    require(source.is_file(), '工作簿不存在')
+    require(bool(excel) != bool(request), '请选择 Excel 工作簿或 --request FILE')
+    source = Path(request or excel).resolve()
+    require(source.is_file(), '提测来源文件不存在')
     selected = sorted(set(cid.strip() for cid in cases.split(','))) if cases is not None else None
     require(selected is None or selected and all(selected), '用例范围不能为空')
     if not profile:
@@ -442,7 +446,15 @@ def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_m
         require(len(candidates) == 1, '请用 --profile 指定已配置环境')
         profile = candidates[0].name.removesuffix('.local.json')
     path = profiles.profile_path(profile)
-    key = digest([str(source), str(path)])[:12]
+    key = digest(['request', str(source), str(path)] if request else [str(source), str(path)])[:12]
+    if request:
+        from .text_requests import parse
+        parsed_request = parse(source, 'RQ-' + key, workflow.config(path))
+        if selected is not None:
+            by_id = {row['original_id']: row['suggested_id'] for row in parsed_request['cases']}
+            by_id.update({row['suggested_id']: row['suggested_id'] for row in parsed_request['cases']})
+            require(all(cid in by_id for cid in selected), '选择了未知的验证项编号')
+            selected = sorted({by_id[cid] for cid in selected})
     matches = []
     new_run = False
     for manifest in (ROOT / 'runs').glob('*/run.json'):
@@ -450,7 +462,7 @@ def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_m
         source_rows = candidate.get('sources') or []
         same_source = bool(source_rows and Path(source_rows[0].get('path', '')).resolve() == source and source_rows[0].get('sha256') == file_hash(source))
         same_profile = candidate.get('config_path') and Path(candidate['config_path']).resolve() == path.resolve()
-        if candidate.get('go_key') == key or (same_source and same_profile and candidate.get('interaction_mode') == 'once'):
+        if candidate.get('go_key') == key or (not request and same_source and same_profile and candidate.get('interaction_mode') == 'once'):
             matches.append(manifest)
     if matches:
         manifest = sorted(matches)[0]
@@ -477,7 +489,7 @@ def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_m
             from .metrics import exploration_counts
             repeat_count = exploration_counts(m)['re_explored_known_pages']
             return {'run_id': m['run_id'], 'run_reused': bool(matches),
-                    'run_selection': '复用同一工作簿与环境的 run；继续已有活动批次' if matches else '使用当前匹配 run；继续已有活动批次',
+                    'run_selection': '复用同一来源与环境的 run；继续已有活动批次' if matches else '使用当前匹配 run；继续已有活动批次',
                     'question_count': 0, 'entry_question_count': 0, 'next': {**workflow.next_task(base, m),
                         **({'process_issue': {'code': 're_explored_known_pages', 'count': repeat_count}} if repeat_count else {})}}
         urgent = [q for q in m['questions'].values() if q.get('status') == 'open' and
@@ -491,8 +503,12 @@ def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_m
         m.update(go_key=key, go_source=str(source), go_profile=str(path.resolve()), interaction_mode='once', selected_cases=selected)
         save(manifest, m)
         workflow.scaffold(base)
-        if not m['sources'] or m['sources'][0]['sha256'] != file_hash(source) or previous_selection != selected:
-            workflow.import_excel(base, m, source)
+        source_sha = parsed_request['sha256'] if request else file_hash(source)
+        if not m['sources'] or m['sources'][0]['sha256'] != source_sha or previous_selection != selected:
+            if request:
+                workflow.import_request(base, m, source, parsed_request)
+            else:
+                workflow.import_excel(base, m, source)
         from .remote_checks import expire
         if not review_only:
             expire(base, m)
@@ -530,7 +546,8 @@ def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_m
         if code_root:
             require(Path(code_root).expanduser().is_dir(), '项目代码路径不是目录')
         try:
-            compile_run(base, m, code_root=str(Path(code_root).expanduser()) if code_root else None)
+            if not request or code_root:
+                compile_run(base, m, code_root=str(Path(code_root).expanduser()) if code_root else None)
         except UiaError as error:
             if not review_only or str(error) != '人审版或存疑说明混入了代码串':
                 raise
@@ -540,7 +557,8 @@ def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_m
             save(manifest, m)
             return {'run_id': m['run_id'], **checklist, **page, 'review_only': True, 'draft': True,
                     'preparation_error': str(error), 'next': {'action': 'prepare_review'}}
-        project_specs(base, m)
+        if not request:
+            project_specs(base, m)
         # A legacy script that substitutes editor values for a public-file assertion is
         # incompatible with the source-matched deferred contract. Preserve its history,
         # then compile the contract instead of silently running the partial legacy test.
@@ -568,8 +586,10 @@ def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_m
                     event(m, 'checklist_pending_answer_applied', answered=applied.get('answered'))
                 except UiaError as exc:
                     pending['error'] = str(exc)
-                compile_run(base, m, code_root=str(Path(code_root).expanduser()) if code_root else None)
-                project_specs(base, m)
+                if not request or code_root:
+                    compile_run(base, m, code_root=str(Path(code_root).expanduser()) if code_root else None)
+                if not request:
+                    project_specs(base, m)
                 checklist = sync_checklist(base, m)
         from .review_page import render as render_review_page
         review_page = render_review_page(base, m) if review_only or not checklist['draft'] else {}
@@ -598,11 +618,11 @@ def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_m
                     'report': output, 'spec_tasks': [], **review_page,
                     'next': {'action': 'environment_blocked', 'instruction': '环境预检未通过，未执行用例。'}}
         workflow.refresh(base, m)
-        ready = [cid for cid, c in m['cases'].items() if c['work_status'] == 'runnable'
-                 and not c.get('case_spec') and not workflow.unbound_review_ids(m, c, base)]
+        ready = ready_cases(base, m)
         armed = _arm_requested_watches(base, m, arm_watch, lead_minutes, watch_minutes)
         save(manifest, m)
     # Existing runnable scripts get the first batch, before new generation.
+    existing_ready = set(ready)
     if ready:
         _execute_ready(manifest, ready, full_batch=selected is None, smoke_size=smoke_size,
                        smoke_pass_rate=float(smoke_pass_rate), budget_minutes=float(first_result_budget_minutes),
@@ -616,11 +636,19 @@ def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_m
                 # Keep compatible daily scripts; only missing scripts need template compilation.
                 if c.get('registration') and not c.get('case_spec'):
                     continue
-                if (read_yaml(specs.spec_path(base, c)) or {}).get('questions'):
+                spec = read_yaml(specs.spec_path(base, c)) or {}
+                fixture_error = specs.fixture_scope_error(spec) if isinstance(spec.get('mutation_scope'), list) else None
+                if fixture_error:
+                    specs.lint(base, m, [cid])
+                    c.update(stage='spec', work_status='pending', spec_generation_blocked=fixture_error)
+                    continue
+                if spec.get('questions'):
                     specs.lint(base, m, [cid])
                     continue
                 try:
-                    specs.generate(base, m, cid)
+                    generated = specs.generate(base, m, cid)
+                    if generated.get('runnable') and workflow.first_batch_pending(m):
+                        break
                 except UiaError as error:
                     missing = workflow.unresolved_targets(base, m, c) + workflow.missing_catalog_targets(base, c)
                     if missing:
@@ -632,12 +660,13 @@ def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_m
                         c.update(work_status='waiting_human', classification={'reason': scrub_text(str(error), m['config'])})
                         add_review(m, 'new_ambiguity', [cid], 'case-spec/生成门禁：' + str(error), details=error.details)
             sync_checklist(base, m)
-        tasks = [{'case_id': cid, 'source': c['source'], 'action': '编写 case-spec'} for cid, c in m['cases'].items() if not specs.spec_path(base, c).is_file() and not c.get('registration')]
+        tasks = [{'case_id': cid, 'source': c['source'], 'action': '编写 case-spec'} for cid, c in m['cases'].items()
+                 if not specs.spec_path(base, c).is_file() and not c.get('registration')
+                 and (not request or c['work_status'] != 'waiting_human')]
         m['spec_tasks'] = tasks
         save(manifest, m)
         workflow.refresh(base, m)
-        ready = [cid for cid, c in m['cases'].items() if c['work_status'] == 'runnable'
-                 and not workflow.unbound_review_ids(m, c, base)]
+        ready = [cid for cid in ready_cases(base, m) if cid not in existing_ready]
     if ready:
         _execute_ready(manifest, ready, full_batch=selected is None, smoke_size=smoke_size,
                        smoke_pass_rate=float(smoke_pass_rate), budget_minutes=float(first_result_budget_minutes),
@@ -658,7 +687,7 @@ def go(excel, profile=None, cases=None, arm_watch=None, lead_minutes=20, watch_m
             return {'run_id': m['run_id'], 'run_reused': bool(matches), 'spec_tasks': tasks,
                     'report': output, 'armed_watches': armed, **review_page, 'next': next_action}
         return {'run_id': m['run_id'], 'run_reused': bool(matches),
-                'run_selection': '复用同一工作簿与环境的 run；用例子集已更新' if matches else '新建 run；当前环境和工作簿没有匹配的既有 run',
+                'run_selection': '复用同一来源与环境的 run；用例子集已更新' if matches else '新建 run；当前环境和来源没有匹配的既有 run',
                 'checklist_message': memory_note, **checklist, **review_page, 'spec_tasks': tasks, 'report': output, 'armed_watches': armed,
                 'pathfinder': {'stage': (m.get('pathfinder') or {}).get('stage'),
                                'requirements': [row.get('name') for row in (m.get('pathfinder') or {}).get('requirements') or []],
@@ -751,15 +780,28 @@ def first_result_exceeded(m, budget_minutes, started_at):
     return elapsed(start, finished) > float(budget_minutes) * 60
 
 
+def ready_cases(base, m):
+    _, known_targets, entry_routes = workflow.navigation_catalog(base)
+    return [cid for cid, case in m['cases'].items() if case['work_status'] == 'runnable'
+            and not workflow.fixture_blocked(m, case)
+            and not workflow.unbound_review_ids(m, case, base)
+            and not workflow.unresolved_targets(base, m, case)
+            and not workflow.missing_catalog_targets(base, case, known_targets=known_targets, entry_routes=entry_routes)
+            and not workflow.script_todos(base, case)]
+
+
 def _execute_ready(manifest, ready, *, full_batch, smoke_size, smoke_pass_rate, budget_minutes, started_at):
     with locked_run(manifest) as (_path, m):
+        first_probe = bool(ready) and workflow.first_batch_pending(m)
         first, rest = split_smoke(ready, list(m["cases"].values()), smoke_size, full_batch, m.get("smoke"))
+        if first_probe:
+            first, rest = list(ready[:1]), list(ready[1:])
     if not first:
         return
     _run_ready(manifest, first)
     with locked_run(manifest) as (path, m):
         aborted = bool(m.get("abort"))
-        if rest:
+        if rest and not first_probe:
             rate = _smoke_rate(m, first)
             if aborted:
                 status = "aborted"
@@ -803,7 +845,8 @@ def _run_ready(manifest, ready):
                 deferred_part = [cid for cid in selected if cid in held_ids]
                 selected = [cid for cid in selected if cid not in held_ids]
                 ready = deferred_part + ready
-            selected = [cid for cid in selected if m['cases'][cid]['work_status'] == 'runnable']
+            selected = [cid for cid in selected if m['cases'][cid]['work_status'] == 'runnable'
+                        and not workflow.fixture_blocked(m, m['cases'][cid])]
             if not selected:
                 continue
             if any(cid in held_ids for cid in selected):

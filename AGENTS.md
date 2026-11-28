@@ -1,13 +1,13 @@
 # UI Automation Agent
 
-This repository is a local Codex workflow for Excel UI cases. For a request to automate
-an Excel workbook, load `.agents/skills/uia-orchestrator/SKILL.md`. Project skill names
+This repository is a local Codex workflow for Excel UI cases, small requirements and Bug verification.
+For a request to run these checks, load `.agents/skills/uia-orchestrator/SKILL.md`. Project skill names
 start with `uia-`; their complete resources live in this repository. Resolve paths from
 the project root, never from a particular user's global skill installation.
 
 ## Execution contract
 
-- Use `scripts/uia.py` to import workbooks, update run state, choose the next task,
+- Use `scripts/uia.py` to import workbooks or text requests, update run state, choose the next task,
   record questions/results and produce reports. `runs/<run-id>/run.json` is the only
   mutable source of progress. Resume existing runs rather than restarting them.
 - New cases use `case-spec.yaml` v1 via `.agents/skills/uia-case-spec/SKILL.md`.

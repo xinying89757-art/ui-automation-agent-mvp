@@ -104,7 +104,9 @@ def parser():
     remote.add_argument("--interval-ms", type=int, default=1000)
     remote.add_argument("--watch")
     go = commands.add_parser("go")
-    go.add_argument("excel")
+    source = go.add_mutually_exclusive_group(required=True)
+    source.add_argument("excel", nargs="?")
+    source.add_argument("--request", metavar="FILE", help="Structured text requirement or Bug request (UTF-8 JSON)")
     go.add_argument("--profile")
     go.add_argument("--cases", help="Comma-separated case IDs")
     go.add_argument("--review-only", action="store_true", help="Prepare the review page without starting browser execution")
@@ -190,6 +192,7 @@ def parser():
     source.add_argument("--run")
     snapshot.add_argument("--node", default="page", choices=["page", "content-admin", "editor"])
     snapshot.add_argument("--manual", action="store_true")
+    snapshot.add_argument("--headed", action="store_true", help="Use a visible browser with automatic authentication")
     snapshot.add_argument("--frame", help="iframe selector, e.g. #backstage-innerpage")
     snapshot.add_argument("--scope", help="dialog or container selector")
     snapshot.add_argument("--hover")
@@ -239,7 +242,7 @@ def parser():
             cmd.add_argument("--frame")
             cmd.add_argument("--draft", action="store_true", help="allow in-editor/component saves and empty submits (never outer save/publish)")
         if name == "exploration-log":
-            cmd.add_argument("--method", choices=["snapshot", "generator", "midscene"], required=True)
+            cmd.add_argument("--method", choices=["snapshot", "generator", "midscene", "playwright"], required=True)
             cmd.add_argument("--purpose", required=True)
             cmd.add_argument("--result", choices=["ok", "failed"], required=True)
             cmd.add_argument("--note", required=True)
@@ -300,6 +303,7 @@ def parser():
             cmd.add_argument("--headed", action="store_true", help="Run this batch with a visible browser")
             cmd.add_argument("--rerun", action="store_true", help="Rerun a passed case and retain earlier attempts")
         if name == "report":
+            cmd.add_argument("--as-run", action="store_true", help="Render recorded batch outcomes without refreshing or changing the run")
             cmd.add_argument("--no-knowledge-writeback", action="store_true", help="Compatibility flag; reports never update long-term knowledge automatically")
         if name == "recover":
             cmd.add_argument("--abandon", action="store_true")
@@ -684,7 +688,7 @@ def execute(args):
         return go(args.excel, args.profile, args.cases, arm_watch=args.arm_watch, lead_minutes=args.lead_minutes,
                   watch_minutes=args.watch_minutes, hints=args.hints, smoke_size=args.smoke_size,
                   smoke_pass_rate=args.smoke_pass_rate, first_result_budget_minutes=args.first_result_budget_minutes,
-                  code_root=args.code, review_only=args.review_only)
+                  code_root=args.code, review_only=args.review_only, request=args.request)
     if args.command == "env":
         return {"environments": profiles.presets()}
     if args.command == "setup":
@@ -772,7 +776,7 @@ def execute(args):
                 started, t0 = now(), _time.monotonic()
                 try:
                     snapshot_result = profiles.invoke_snapshot(m["config"], path.parent / "runner", area, args.manual, args.frame, args.scope, args.open_target, args.hover, args.click, args.goto, args.step,
-                                                              **({'entry_steps': entry_count} if args.entry else {}))
+                                                              headed=args.headed, **({'entry_steps': entry_count} if args.entry else {}))
                 except UiaError as error:
                     from .secrets import scrub_text
                     from .knowledge import exploration_knowledge
@@ -828,7 +832,7 @@ def execute(args):
                 return snapshot_result
         cfg = config(profiles.profile_path(args.profile) if args.profile else args.config)
         area = {"page": None, "content-admin": "内容管理", "editor": "编辑网站"}[args.node]
-        return profiles.invoke_snapshot(cfg, area=area, manual=args.manual, frame=args.frame, scope=args.scope, open_target=args.open_target, hover=args.hover, clicks=args.click, goto=args.goto, steps=args.step)
+        return profiles.invoke_snapshot(cfg, area=area, manual=args.manual, frame=args.frame, scope=args.scope, open_target=args.open_target, hover=args.hover, clicks=args.click, goto=args.goto, steps=args.step, headed=args.headed)
     if args.command == "init":
         return workflow.init(args.run_id, profiles.profile_path(args.profile) if args.profile else args.config)
     if args.command == "validate" and not args.run:
@@ -858,6 +862,9 @@ def execute(args):
                                "site": m["config"].get("site"), "network_mode": m["config"].get("network", {}).get("mode", "legacy")},
                 "questions": [{k: q.get(k) for k in ("id", "kind", "prompt", "case_ids", "status", "choices")}
                               for q in m["questions"].values() if q["status"] == "open"]}
+    if args.command == "report" and args.as_run:
+        with locked_run(args.run) as (path, m):
+            return reports.make_report(path.parent, m, as_run=True)
     if args.command == "run-batch":
         # Release the manifest lock while Playwright runs; the active receipt prevents another batch.
         with locked_run(args.run) as (path, m):

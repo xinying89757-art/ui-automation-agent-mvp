@@ -153,3 +153,48 @@ with locked_run(sys.argv[1]):
     await fs.rm(runDir, {recursive:true, force:true});
   }
 });
+
+test('review progress, filters and inline answers preserve partial decisions', {timeout:30_000}, async () => {
+  const runDir = await fs.mkdtemp(path.join(os.tmpdir(), 'uia-review-workbench-'));
+  const runPath = path.join(runDir, 'run.json');
+  let browser;
+  let server;
+  try {
+    const makeCase = title => ({title, stage:'execution', work_status:'runnable', registration:{}, result:null});
+    await fs.writeFile(runPath, JSON.stringify({schema_version:'uia-run.v1', pipeline:'case-spec.v1', run_id:'Workbench',
+      cases:{C1:makeCase('首条用例'), C2:makeCase('独立用例'), C3:makeCase('无需审核的用例')}, questions:{}, sources:[], config:{}, history:[]}));
+    await fs.writeFile(path.join(runDir, 'review-input.json'), JSON.stringify({
+      questions:[{id:'Q1', title:'确认入口', cases:['C1']}],
+      checks:[{id:'A1', title:'确认关键结果', cases:['C2'], checks:['结果可见']}],
+    }));
+    server = startPython([cli, 'review-page', 'serve', '--run', runPath]);
+    const ready = JSON.parse(await server.read());
+    browser = await chromium.launch();
+    const page = await browser.newPage();
+    await page.goto(ready.url);
+    await expect(page.locator('#progressText')).toHaveText('0 / 2 已处理');
+    await page.getByLabel('你的答复').fill('从产品描述进入');
+    await expect(page.locator('#saveStatus')).toContainText('有未提交修改');
+    await expect(page.locator('#progressText')).toHaveText('1 / 2 已处理');
+    await page.reload();
+    await page.getByRole('button', {name:'待回答', exact:true}).click();
+    await expect(page.locator('#review')).toContainText('从产品描述进入');
+    await expect(page.locator('#saveStatus')).toContainText('有未提交修改');
+    await page.getByRole('button', {name:'已修改', exact:true}).click();
+    await expect(page.locator('#list')).toContainText('确认入口');
+    await page.getByRole('button', {name:'暂缓', exact:true}).click();
+    await expect(page.locator('#review')).toContainText('当前筛选下没有审核项');
+    await page.getByRole('button', {name:'预览审核结果'}).click();
+    await page.getByRole('button', {name:'提交审核', exact:true}).click();
+    await expect(page.getByRole('dialog')).toContainText('1 项已保存，1 项待处理');
+    assert.equal(JSON.parse(await server.read()).event, 'review_saved');
+    await expect(page.locator('#saveStatus')).toHaveText('已保存 1 项');
+    await page.reload();
+    await expect(page.locator('#progressText')).toHaveText('1 / 2 已处理');
+    await expect(page.locator('#saveStatus')).toHaveText('已保存 1 项');
+  } finally {
+    if (browser) await browser.close();
+    if (server) await server.stop();
+    await fs.rm(runDir, {recursive:true, force:true});
+  }
+});

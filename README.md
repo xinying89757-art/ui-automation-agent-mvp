@@ -27,6 +27,8 @@
 
 `go` 不调用模型。Codex 结合用例、设计资料和知识库整理需要确认的预期。在本地审核页提交后，Agent 将答复落实到相关用例规格。缺少条件只挂起关联用例，运行中问题按编号记录。离线时仍可使用静态 HTML 和 `review-page ingest`。
 
+小需求和 Bug 也可以直接用文字提测。给 Codex 原始描述、预期和环境，有截图或缺陷单时可一并提供。Codex 整理为内部请求文件，通过 `go --request FILE --profile my-prod` 进入同一套审核、执行和续跑流程。见[文字提测接口](docs/interfaces.md#文字提测)。
+
 在本目录打开 Codex，用自然语言描述：
 
 > 使用 $uia-orchestrator，把 `/path/to/需求测试用例.xlsx` 转成 UI 自动化。

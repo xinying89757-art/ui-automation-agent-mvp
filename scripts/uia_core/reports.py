@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import html
 import json
 import re
@@ -126,14 +127,66 @@ def excel_safe(value):
 def append_excel(sheet, values):
     sheet.append([excel_safe(value) for value in values])
 
+def cleanup_label(attempt):
+    return {True: '已核验', False: '未通过'}.get(attempt.get('cleanup_verified'), '未记录')
 
-def make_report(base, m, writeback=False):
+
+def attempt_classification(case, attempt):
+    decisions = case.get('classification_history') or ([case['classification']] if case.get('classification') else [])
+    return next((row for row in reversed(decisions) if row.get('result') and
+                 ((row.get('batch_id') and row['batch_id'] == attempt.get('batch_id')) or
+                  (row.get('evidence') and row['evidence'] == attempt.get('evidence')))), {})
+
+
+def recorded_outcomes(m):
+    """Project the last recorded attempt and its review without promoting a current version."""
+    view = copy.deepcopy(m)
+    from .failures import judge_result
+    required = m['config']['execution']['stability_passes']
+    for case in view['cases'].values():
+        attempts = case.get('attempts') or []
+        if not attempts:
+            continue
+        attempt = attempts[-1]
+        decision = attempt_classification(case, attempt)
+        result = decision.get('result') or attempt.get('result')
+        if not decision and case.get('version') == attempt.get('version') and case.get('remote_status'):
+            result = case.get('result') or result
+        if result is None:
+            continue
+        streak = 0
+        if result == 'passed':
+            for prior in reversed(attempts):
+                if prior.get('result') != 'passed' or prior.get('version') != attempt.get('version'):
+                    break
+                streak += 1
+        stability = ('stable' if streak >= required else 'candidate') if result == 'passed' else 'unstable'
+        case.update(result=result, version=attempt.get('version'), stage='finished', work_status='finished', stability=stability,
+                    pass_streak=streak, classification=decision or None,
+                    failure_class=judge_result(result, [])[1] if decision else
+                    (judge_result(result, [])[1] or attempt.get('failure_class')))
+    return view
+
+
+def recorded_script(base, attempt):
+    script = Path(attempt.get('script') or '')
+    if script.parts[:1] != ('runner',) or not attempt.get('evidence') or '..' in script.parts:
+        return None
+    batch = inside(base, attempt['evidence']).parent
+    frozen = batch / 'snapshot/files' / script.relative_to('runner')
+    return frozen.relative_to(base).as_posix() if frozen.is_file() else None
+
+
+def make_report(base, m, writeback=False, *, as_run=False):
     if writeback:
         raise ValueError("Knowledge writeback requires an explicit reviewed selection")
+    if as_run:
+        m = recorded_outcomes(m)
     from .experience import review as build_review
-    review = build_review(base, m)
-    removed = drop_unsafe_artifacts(base / "batches")
-    out = base / "reports"
+    review = build_review(base, m, persist=not as_run)
+    removed = 0 if as_run else drop_unsafe_artifacts(base / "batches")
+    out = base / "reports" / "as-run" if as_run else base / "reports"
+    evidence_prefix = '../../' if as_run else '../'
     out.mkdir(parents=True, exist_ok=True)
     for c in m["cases"].values():
         for attempt in c.get("attempts") or []:
@@ -141,6 +194,7 @@ def make_report(base, m, writeback=False):
             attempt["attachments"] = [item for item in (attempt.get("attachments") or []) if not unsafe_attachment(item)]
     from .failures import failure_class_for_case
     records = []
+    text_request = next((row for row in m['sources'] if row.get('kind')), None)
     for c in m["cases"].values():
         records.append({k: c.get(k) for k in ("case_id", "original_id", "title", "module", "priority",
                        "sheet", "rows", "stage", "work_status", "result", "stability", "pass_streak",
@@ -152,8 +206,10 @@ def make_report(base, m, writeback=False):
         records[-1]['duplicate_script_warning'] = c.get('duplicate_script_warning')
         records[-1]['work_status_label'] = zh(c.get('work_status'))
         records[-1]['stability_label'] = zh(c.get('stability'))
-        records[-1]["script"] = (c.get("registration") or {}).get("script")
         attempt = c["attempts"][-1] if c.get("attempts") else None
+        records[-1]["script"] = (c.get("registration") or {}).get("script")
+        if as_run:
+            records[-1]["script"] = recorded_script(base, attempt) if attempt else None
         classification = c.get("classification") or {}
         records[-1]["reason"] = classification.get("reason", "") if isinstance(classification, dict) else ""
         if c.get("result") == "save_not_persisted":
@@ -168,7 +224,7 @@ def make_report(base, m, writeback=False):
         evidence = records[-1].get('read_back')
         if evidence and evidence.get('ok'):
             records[-1]["reason"] = (records[-1]["reason"] + "；" if records[-1]["reason"] else "") + "后台读回：" + str(evidence.get("actual", "")) + " ✓"
-        records[-1]["media"] = ['../' + a['redacted_screenshot'] for a in c.get('attempts', []) if a.get('redacted_screenshot')]
+        records[-1]["media"] = [evidence_prefix + a['redacted_screenshot'] for a in c.get('attempts', []) if a.get('redacted_screenshot')]
         remote = {(entry.get('batch_id'), entry['request']['assertion_id']): entry
                   for entry in m.get('remote_checks', {}).values()
                   if entry.get('request', {}).get('case_id') == c['case_id'] and entry['request'].get('assertion_id')}
@@ -187,10 +243,19 @@ def make_report(base, m, writeback=False):
             assertion_attempts.append({'batch_id': attempt.get('batch_id'), 'evidence': attempt.get('evidence'),
                                        'assertions': detail, 'errors': attempt.get('assertion_evidence_errors', [])})
         records[-1]['assertion_attempts'] = assertion_attempts
+        if text_request and c.get('source'):
+            source_case = read_json(inside(base, c['source']))
+            human_review = m.get('human_review') or {}
+            records[-1]['request_verification'] = {
+                'expectations': source_case.get('expectations', []),
+                'review_decisions': [item for item in human_review.get('decisions', []) if c['case_id'] in item['cases']],
+                'pending_review': [item['title'] for item in human_review.get('pending', []) if c['case_id'] in item['cases']],
+            }
     m["final_report_at"] = now()
     m["leak_hits"] = run_metrics.leak_scan(base, m["config"])
     flow_metrics = run_metrics.calculate(base, m, m["final_report_at"])
-    atomic_write(base / "metrics.json", flow_metrics)
+    if not as_run:
+        atomic_write(base / "metrics.json", flow_metrics)
     atomic_write(out / "metrics.json", flow_metrics)
     blocks = opening(m, flow_metrics, review)
     opening_md = "\n\n".join("## " + b['title'] + "\n\n" + b['text'] for b in blocks) + "\n"
@@ -208,9 +273,14 @@ def make_report(base, m, writeback=False):
     questions = [{k: q.get(k) for k in ("id", "kind", "subject", "prompt", "case_ids", "status", "attempted")}
                  for q in m["questions"].values()]
     payload = {"schema_version": "uia-results.v1", "run_id": m["run_id"], "generated_at": now(),
+               "report_mode": "as_run" if as_run else "current",
                "remote_checks": m.get("remote_checks", {}), "opening": blocks, "summary": s, "metrics": metrics, "flow_metrics": flow_metrics, "source": m["sources"], "cases": records,
                "questions": questions, "unresolved_sheets": [x for src in m["sources"] for x in src.get("unresolved_sheets", [])],
                "source_update_required": m.get("source_update_required", False), "delivery_complete": False}
+    if text_request:
+        payload['text_request'] = {key: text_request[key] for key in ('kind', 'title', 'references', 'historical_actual', 'sha256')}
+        if text_request['kind'] == 'bug':
+            payload['text_request']['before_fix'] = '修复前未由 Agent 复现'
     diff = {"schema_version": "uia-asset-review.v1", "writeback": "not_applied", "cases": []}
     from .knowledge_review import candidates as knowledge_candidates
     diff['candidates'] = knowledge_candidates(base, m)
@@ -236,15 +306,14 @@ def make_report(base, m, writeback=False):
                       r["title"], r["priority"], zh(r["work_status"]), zh(r["result"]), zh(r["stability"]), r["pass_streak"],
                       r["script"], len(r["attempts"]), r["attempts"][-1]["evidence"] if r["attempts"] else "", r.get("reason", "")])
     history_sheet = wb.create_sheet('历史尝试')
-    append_excel(history_sheet, ['用例ID', '批次', '原始结果', '证据', '重分类结果', '重分类依据'])
+    append_excel(history_sheet, ['用例ID', '批次', '原始结果', '证据', '重分类结果', '重分类依据', '最后成功步骤', '失败步骤', '清理核验'])
     for row in records:
-        classifications = row.get('classification_history') or ([row['classification']] if row.get('classification') else [])
         for attempt in row.get('attempts') or []:
-            matches = [item for item in classifications if item.get('batch_id') == attempt.get('batch_id') or
-                       item.get('evidence') == attempt.get('evidence')]
-            decision = matches[-1] if matches else {}
+            decision = attempt_classification(row, attempt)
+            steps = attempt.get('successful_steps') or []
             append_excel(history_sheet, [row['case_id'], attempt.get('batch_id'), zh(attempt.get('result')),
-                         attempt.get('evidence'), zh(decision['result']) if decision.get('result') else '', decision.get('reason', '')])
+                         attempt.get('evidence'), zh(decision['result']) if decision else '', decision.get('reason', ''),
+                         steps[-1] if steps else '未记录', attempt.get('failed_step') or '未记录', cleanup_label(attempt)])
     stats = wb.create_sheet("汇总")
     append_excel(stats, ["指标", "值"])
     for key, value in {**s, **metrics}.items():
@@ -272,10 +341,10 @@ def make_report(base, m, writeback=False):
     def link(ref):
         if not ref:
             return ""
-        return '<a href="../' + quote(str(ref), safe="/") + '">' + escape(ref) + '</a>'
+        return '<a href="' + evidence_prefix + quote(str(ref), safe="/") + '">' + escape(ref) + '</a>'
     rows = []
     for r in records:
-        source = escape(r["sheet"]) + ":" + escape(",".join(map(str, r["rows"])))
+        source = escape(r['sheet']) + (' · ' + escape(r['original_id']) if text_request else ':' + escape(','.join(map(str, r['rows']))))
         shots = " ".join('<a href="' + escape(ref) + '">截图</a>' for ref in r.get("media") or [])
         rows.append("<tr>" + "".join("<td>" + x + "</td>" for x in [escape(r["case_id"]), source, escape(r["title"]),
                     escape(zh(r["work_status"])), escape(zh(r["result"])), escape(zh(r["stability"])), str(r["pass_streak"]),
@@ -287,13 +356,34 @@ table{border-collapse:collapse;width:100%;background:white}th,td{padding:10px;te
 th{background:#23415a;color:white}a{color:#0069a3}pre{white-space:pre-wrap}section{overflow:auto}input{padding:10px;min-width:260px;margin:12px 0}</style>
 <h1>UI 自动化结果</h1>"""
     body += ''.join('<h2>' + escape(b['title']) + '</h2><p>' + escape(b['text']).replace('\n', '<br>') + '</p>' for b in blocks)
+    if text_request:
+        body += '<h2>文字提测来源</h2><p>' + escape(text_request['title']) + '</p>'
+        if text_request['references']:
+            body += '<ul>' + ''.join('<li>' + escape(ref) + '</li>' for ref in text_request['references']) + '</ul>'
+        if text_request['kind'] == 'bug':
+            body += '<p>修复前未由 Agent 复现</p>'
+            if text_request['historical_actual']:
+                body += '<p>提测材料中的历史表现　' + escape(text_request['historical_actual']) + '</p>'
+        for record in records:
+            info = record.get('request_verification', {})
+            body += '<details><summary>' + escape(record['original_id']) + ' · ' + escape(record['title']) + '</summary>'
+            for item in info.get('expectations', []):
+                body += '<p>来源　' + escape(item['source']) + '<br>原始预期　' + escape(item['quote']) + '</p>'
+            for item in info.get('review_decisions', []):
+                status = {'confirmed': '已确认', 'edited': '已修改', 'deferred': '暂缓'}[item['status']]
+                body += '<p>' + status + '　' + escape(item['value']) + '</p>'
+            for title in info.get('pending_review', []):
+                body += '<p>待审核　' + escape(title) + '</p>'
+            body += '</details>'
     body += '<h2>历史尝试与重分类</h2><ul>'
     for row in records:
-        classifications = row.get('classification_history') or ([row['classification']] if row.get('classification') else [])
         for attempt in row.get('attempts') or []:
-            matches = [item for item in classifications if item.get('batch_id') == attempt.get('batch_id') or item.get('evidence') == attempt.get('evidence')]
-            decision = matches[-1] if matches else {}
+            decision = attempt_classification(row, attempt)
             body += '<li>' + escape(row['case_id']) + ' · ' + escape(attempt.get('batch_id')) + ' · ' + escape(zh(attempt.get('result'))) + ' ' + link(attempt.get('evidence'))
+            steps = attempt.get('successful_steps') or []
+            body += ' · 最后成功步骤 ' + escape(steps[-1] if steps else '未记录')
+            body += ' · 失败步骤 ' + escape(attempt.get('failed_step') or '未记录')
+            body += ' · 清理核验 ' + cleanup_label(attempt)
             if decision:
                 body += ' · 重分类 ' + escape(zh(decision['result']) if decision.get('result') else '结果未记录') + ' ' + escape(decision.get('reason'))
             body += '</li>'
@@ -321,7 +411,8 @@ th{background:#23415a;color:white}a{color:#0069a3}pre{white-space:pre-wrap}secti
                 checks = [' '.join(part for part in (check['target'], check['operation'], check.get('expected', '')) if part)
                           for check in item.get('spec_checks', [])]
                 body += ('<li><strong>' + escape(item['id']) + ' · ' + escape(label) + '</strong>' +
-                         '<p>原始预期　' + escape(item['original_expectation']) + '</p>' +
+                         '<p>' + ('审核答复补充的预期' if item.get('expectation_origin') == 'human_review' else '原始预期') +
+                         '　' + escape(item['original_expectation']) + '</p>' +
                          '<p>审核验法　' + escape(methods) + '</p>' +
                          ('<p>规格检查　' + escape('；'.join(checks)) + '</p>' if checks else '') +
                          '<p>本次观察　' + (escape(json.dumps(observed, ensure_ascii=False)) if observed else '未记录') + '</p></li>')
@@ -332,7 +423,12 @@ th{background:#23415a;color:white}a{color:#0069a3}pre{white-space:pre-wrap}secti
     body += "<p>运行：" + escape(m["run_id"]) + "；源用例总数：" + str(s["total"]) + "。稳定标准：" + standard + "</p>"
     body += "<p>仅保留白名单控件文字的脱敏弹窗截图可进入报告；原始截图、trace 和页面快照不进入报告或脚本包。本轮已清除快照文件 " + str(removed) + " 个。</p>"
     body += "<p>执行覆盖率：{:.1%}；已执行用例通过率：{:.1%}；全部用例稳定率：{:.1%}。</p>".format(s["execution_coverage"], s["pass_rate"], s["stability_rate"])
-    body += '<p><a href="results.json">JSON</a> · <a href="results.xlsx">Excel</a> · <a href="scripts.zip">脚本工程</a> · <a href="asset-review.json">资产回写候选</a></p>'
+    if as_run:
+        body += '<p>历史报告依据已记录的批次与更正生成。脚本版本变更可在当前运行状态中查看。</p>'
+    body += '<p><a href="results.json">JSON</a> · <a href="results.xlsx">Excel</a>'
+    if not as_run:
+        body += ' · <a href="scripts.zip">脚本工程</a>'
+    body += ' · <a href="asset-review.json">资产回写候选</a></p>'
     if diff['candidates']:
         body += '<section><h2>知识候选</h2><p>逐项选择后导出审核文件。只有批准的内容会在运行写回命令时更新共享库。</p>'
         for item in diff['candidates']:
@@ -363,7 +459,7 @@ th{background:#23415a;color:white}a{color:#0069a3}pre{white-space:pre-wrap}secti
     (out / "index.html").write_text(scrub_text(body, m["config"]), encoding="utf-8")
     runner = base / "runner"
     script_package = None
-    if runner.exists():
+    if runner.exists() and not as_run:
         with zipfile.ZipFile(out / "scripts.zip", "w", compression=zipfile.ZIP_DEFLATED) as archive:
             from .bindings import case_bindings
             archive.writestr("runner/cases.json", scrub_text(json.dumps(case_bindings(base, m), ensure_ascii=False), m["config"]))
@@ -434,11 +530,11 @@ th{background:#23415a;color:white}a{color:#0069a3}pre{white-space:pre-wrap}secti
                      "scripts": script_package, "generated_at": now()}
     from .workflow import pending_feedback_cases
     payload["delivery_complete"] = (bool(records) and all(c["work_status"] == "finished" for c in m["cases"].values())
-                                    and not payload["unresolved_sheets"] and bool(script_package)
-                                    and not payload["source_update_required"]
+                                    and not payload["unresolved_sheets"] and (as_run or bool(script_package))
+                                    and (as_run or not payload["source_update_required"])
                                     and not any(q["status"] == "open" for q in m["questions"].values())
                                     and not (m.get('human_review') or {}).get('pending')
-                                    and not pending_feedback_cases(m))
+                                    and (as_run or not pending_feedback_cases(m)))
     payload = json.loads(scrub_text(json.dumps(payload, ensure_ascii=False), m["config"]))
     atomic_write(out / "results.json", payload)
     return {"artifacts": m["delivery"], "summary": s, "delivery_complete": payload["delivery_complete"]}

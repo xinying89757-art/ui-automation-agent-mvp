@@ -64,6 +64,16 @@ def canonical_entry_route(name, entry_routes):
     return max(same, key=lambda item: (len(re.split(r'[.-]', item[0])), item[0]))[0]
 
 
+def fixture_scope_error(spec):
+    scopes = [scope for scope in spec.get('mutation_scope', []) if isinstance(scope, str)]
+    hook = spec.get('fixture_hook') or 'fixtures/case-spec.mjs'
+    if hook == 'fixtures/case-spec.mjs' and any(scope not in {'llms.txt', 'faq'} for scope in scopes):
+        return 'fixture_hook is required for mutations outside llms.txt and faq'
+    if hook == 'fixtures/owned-product.mjs' and (any(scope != 'product' for scope in scopes) or spec.get('data_prep')):
+        return 'fixture_hook owned-product only supports isolated product data'
+    return None
+
+
 def entry_route_step_ids(spec, entry_routes, pages):
     """Find the leading spec clicks already covered by the selected entry route replay."""
     route_id = canonical_entry_route(spec.get('entry_route'), entry_routes)
@@ -104,7 +114,7 @@ def expectation_quotes(source):
     return {quote for cell in cells for quote in [cell, *cell.splitlines()] if quote.strip()}
 
 
-def schema_errors(spec, source, env, data, pages, base=None):
+def schema_errors(spec, source, env, data, pages, base=None, *, approved_expectation=None):
     errors, unknown = [], set()
     if not isinstance(spec, dict):
         return ['case-spec must be a mapping'], []
@@ -127,6 +137,19 @@ def schema_errors(spec, source, env, data, pages, base=None):
     fail(all(isinstance(x, str) and x.strip() for x in spec['questions']), 'questions must contain nonempty business questions')
     fail(isinstance(spec['data_prep'], dict), 'data_prep must be a mapping')
     dependencies = spec.get('file_dependencies', [])
+    hook = spec.get('fixture_hook')
+    scope_error = fixture_scope_error(spec)
+    if scope_error:
+        errors.append(scope_error)
+    if hook is not None:
+        runner = (base / 'runner').resolve() if base and (base / 'runner').exists() else (ROOT / 'assets/playwright-runner').resolve()
+        fixture_root = (runner / 'fixtures').resolve()
+        candidate = Path(hook) if isinstance(hook, str) else Path('.')
+        resolved = (runner / candidate).resolve()
+        fail(isinstance(hook, str) and candidate.suffix == '.mjs' and not candidate.is_absolute()
+             and '..' not in candidate.parts and runner in fixture_root.parents
+             and fixture_root in resolved.parents and resolved.is_file(),
+             'fixture_hook must be an existing .mjs file inside runner/fixtures')
     fail(isinstance(dependencies, list) and all(isinstance(x, str) and x.strip() for x in dependencies),
          'file_dependencies must be a list of relative paths')
     if isinstance(dependencies, list) and all(isinstance(x, str) for x in dependencies):
@@ -195,7 +218,12 @@ def schema_errors(spec, source, env, data, pages, base=None):
         fail(isinstance(aid, str) and bool(re.fullmatch(r'A[1-9]\d*', aid)) and aid not in assertion_ids, 'unique A-number required')
         assertion_ids.add(str(aid))
         fail(assertion.get('after') in step_ids, 'assertion.after must name its step')
-        fail(isinstance(assertion.get('excel'), str) and assertion['excel'] in expectation_quotes(source), 'assertion must quote an exact Excel expectation cell or line verbatim')
+        expected = assertion.get('excel')
+        quotes = expectation_quotes(source)
+        if source.get('source_kind') and approved_expectation:
+            quotes.add(approved_expectation)
+        fail(isinstance(expected, str) and expected in quotes,
+             'assertion must quote the source expectation or a current approved expectation verbatim')
         checks = assertion.get('checks')
         fail(isinstance(checks, list) and bool(checks), 'assertion needs nonempty checks')
         # A blocked action is an observation, never an actionable click. Keep the
@@ -260,7 +288,7 @@ def schema_errors(spec, source, env, data, pages, base=None):
         for name in rb.get('reopen', []): target(name)
         fail(bool(pages['targets'].get(rb.get('save_target'), {}).get('network')), 'read_back.save_target must reference a network-rule target')
     fail(bool(spec['steps']) or auto['status'] == 'manual', 'automatable case needs steps')
-    fail(bool(spec['assertions']) or bool(spec['questions']) or auto['status'] == 'manual', 'missing Excel expectations must become a question')
+    fail(bool(spec['assertions']) or bool(spec['questions']) or auto['status'] == 'manual', 'missing source expectations must become a question')
     for step in spec['steps']:
         if isinstance(step, dict) and step.get('verb') == 'close':
             fail(any(a.get('after') == step.get('id') and any(c.get('op') == 'hidden' for c in a.get('checks', [])) for a in spec['assertions'] if isinstance(a, dict)), 'close step requires its own hidden assertion')
@@ -413,7 +441,12 @@ def lint(base, m, case_ids=None, record=True, check_scripts=True):
         case = m['cases'][cid]; path = spec_path(base, case)
         try:
             spec = read_yaml(path)
-            errors, unknown = schema_errors(spec, read_json(inside(base, case['source'])), env, data, pages, base)
+            source = read_json(inside(base, case['source']))
+            approved = None
+            if source.get('source_kind'):
+                from .review_page import approved_expectation
+                approved = approved_expectation(base, m, cid)
+            errors, unknown = schema_errors(spec, source, env, data, pages, base, approved_expectation=approved)
         except (OSError, ValueError, TypeError, yaml.YAMLError):
             spec, errors, unknown = {}, ['missing or malformed case-spec'], []
         auto = spec.get('automatable') if isinstance(spec, dict) else None
@@ -798,12 +831,14 @@ def register_script(base, m, cid, script_path):
     for field in ('steps', 'assertions'):
         require(set(refs[field]) == {x['id'] for x in spec[field]}, 'Coverage markers differ from case-spec ' + field)
     reg = {'case_id':cid, 'case_spec':True, 'script':'runner/' + relative,
-           'fixture':{'hooks':'fixtures/case-spec.mjs', 'mutates':bool(spec['mutation_scope']), 'mutation_scope':spec['mutation_scope']},
+           'fixture':{'hooks':spec.get('fixture_hook', 'fixtures/case-spec.mjs'), 'mutates':bool(spec['mutation_scope']), 'mutation_scope':spec['mutation_scope']},
            'dependencies':['knowledge/page-map.yaml', 'knowledge/data-prep.yaml', 'knowledge/network.yaml', 'knowledge/patterns.yaml'] + spec.get('file_dependencies', []), 'needs_public':pages['pages'][spec['start_page']].get('public', False) or ('public_frontend' in spec['required_env'] and not any(s['verb'] == 'defer_public' for s in spec['steps'])),
            'coverage':refs}
     previous = case.get('version')
     case.update(registration=reg, daily_spec=False, case_spec=str(spec_path(base, case).relative_to(base)),
-                spec_hash=file_hash(spec_path(base, case)), flow_ids=['case-spec'], fixture_ids=['case-spec:' + cid])
+                spec_hash=file_hash(spec_path(base, case)), flow_ids=['case-spec'],
+                fixture_ids=case.get('fixture_ids') or ['case-spec:' + cid])
+    case.pop('spec_generation_blocked', None)
     from .workflow import case_version
     version = case_version(base, m, case)
     if previous != version:

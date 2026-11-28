@@ -107,6 +107,8 @@ def reconcile(binding, local_rows, remote_rows, public_url, cfg):
         checks = [{'target': scrub_text(check.get('target', ''), cfg), 'operation': check['op'],
                    **({'expected': scrub_text(check['value'], cfg)[:240]} if 'value' in check else {})}
                   for check in assertion.get('checks', [])]
+        origin = next((m.get('expectation_origin') for m in methods.get(aid, []) if m.get('expectation_origin')), None)
         rows.append({'id': aid, 'original_expectation': scrub_text(assertion['excel'], cfg), 'spec_checks': checks,
+                     **({'expectation_origin': origin} if origin else {}),
                      'reviewed_methods': methods.get(aid, []), 'status': status, 'observations': observations})
     return rows, problems

@@ -43,6 +43,8 @@ clicks; frame_hint applies only to later caller actions. Scope with `--frame '#b
 - Implement real flow-specific fixture hooks: prepare, verify prepared, cleanup and
   verify cleanup, including partial-setup cleanup. Read-only fixtures verify prerequisites
   and baseline. Intentionally invalid data in negative cases must remain invalid.
+- Check the fixture against the mutation scope before registration. Use the owned product fixture for isolated product creation and cleanup. Use shared fixture IDs only for cases that depend on the same data baseline.
+- Record critical operations and readiness checks with `test.step('uia-step:<id>', callback)`. Verify the target is visible, can receive the intended action, and has finished loading data for the selected object as applicable. Keep readiness waits outside `businessAssertion`, then compare the observed values with the approved conditions.
 - Prefer semantic locators and observable waits. Use fresh unauthenticated contexts
   for visitor/password cases; never inherit an already-unlocked visitor session.
 - Parameterize public/admin URLs, proxy, credentials references and test data. Copy

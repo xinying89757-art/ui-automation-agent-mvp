@@ -16,14 +16,18 @@ ENVIRONMENT_RE = re.compile(
     r"站点加载超时|网站不可达|入口不可达|登录超时|目标网站不可达|内容编辑器没有打开",
     re.I,
 )
-_SITE_TIMEOUT = re.compile(r"timeout", re.I)
-_SITE_CONTEXT = re.compile(r"site|website|login|page\.goto|环境入口|目标网站|初始入口|内容编辑器", re.I)
+_SITE_TIMEOUT = re.compile(r"timeout|timed out", re.I)
+_SITE_CONTEXT = re.compile(r"\b(?:site|website|login)\b|page\.goto|环境入口|目标网站|初始入口|内容编辑器", re.I)
+_CONTROL_ERROR = re.compile(r'UIA_(?:AUTOMATION_FAILURE|LOCATOR_MISS|BUSINESS_FAILURE)|\b(?:frameLocator|locator)\.\w+:|intercepts pointer events', re.I)
 
 
 def is_environment(text):
     if not text:
         return False
-    value = str(text)
+    # The call log can contain DOM text, filenames and selector values.
+    value = str(text).splitlines()[0] if str(text).strip() else ''
+    if _CONTROL_ERROR.search(value):
+        return False
     if ENVIRONMENT_RE.search(value):
         return True
     return bool(_SITE_TIMEOUT.search(value) and _SITE_CONTEXT.search(value))
@@ -31,10 +35,9 @@ def is_environment(text):
 
 def judge_result(result, errors):
     """Return ``(result, failure_class)``. Environment signals override an automation label."""
-    text = "\n".join(str(item) for item in (errors or []))
     if result == "passed":
         return result, None
-    if is_environment(text) and result in {"automation_failure", "interrupted", "environment_blocked", None}:
+    if any(is_environment(item) for item in errors or []) and result in {"automation_failure", "interrupted", "environment_blocked", None}:
         return "environment_blocked", "environment"
     if result == "environment_blocked":
         return result, "environment"
@@ -48,17 +51,18 @@ def judge_result(result, errors):
 
 
 def failure_class_for_case(case):
+    if (case.get('classification') or {}).get('evidence') and case.get('failure_class') in FAILURE_CLASSES:
+        return case['failure_class']
     errors = []
     for attempt in case.get("attempts") or []:
         errors.extend(attempt.get("errors") or [])
     classification = case.get("classification") or {}
     if isinstance(classification, dict) and classification.get("reason"):
         errors.append(classification["reason"])
-    text = "\n".join(str(item) for item in errors)
     result = case.get("result")
     if result in {None, "passed"}:
         return None
-    if is_environment(text) and result in {"automation_failure", "interrupted", "environment_blocked", None}:
+    if any(is_environment(item) for item in errors) and result in {"automation_failure", "interrupted", "environment_blocked", None}:
         return "environment"
     stored = case.get("failure_class")
     if stored in FAILURE_CLASSES:

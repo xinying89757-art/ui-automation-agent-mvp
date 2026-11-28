@@ -161,8 +161,7 @@ def _restore_deselected(m, cid, content_hash, pop=False):
 
 
 def import_excel(base, m, excel, mapping=None):
-    require(not m.get("active_batch"), "Finish or recover the active batch before importing")
-    require(not any(c.get("attempts") and c["attempts"][-1].get("cleanup_pending") for c in m["cases"].values()), "Restore held remote data before importing another workbook version")
+    require(not any(row.get('kind') for row in m['sources']), '文字提测请使用 go --request 更新来源')
     mappings = copy.deepcopy(mapping or {})
     for q in m["questions"].values():
         if q["kind"] == "column_mapping" and q["status"] == "answered":
@@ -170,8 +169,17 @@ def import_excel(base, m, excel, mapping=None):
             mappings[q["sheet"]] = q["answer"]
     source = Path(excel).resolve()
     require(source.is_file(), "Source workbook does not exist")
-    parsed = extract(source, mappings)
-    # Keep one active Excel per run. Importing a changed version reconciles by stable identity.
+    return _import_cases(base, m, source, extract(source, mappings), mappings)
+
+
+def import_request(base, m, source, parsed):
+    return _import_cases(base, m, source, parsed, {})
+
+
+def _import_cases(base, m, source, parsed, mappings):
+    require(not m.get("active_batch"), "Finish or recover the active batch before importing")
+    require(not any(c.get("attempts") and c["attempts"][-1].get("cleanup_pending") for c in m["cases"].values()), "Restore held remote data before importing another source version")
+    # Keep a single active source, reconciling each version by stable case identity.
     if m.get("selected_cases"):
         require(set(m["selected_cases"]) <= {r["suggested_id"] for r in parsed["cases"]}, "Unknown selected case ID")
     old = m["cases"]
@@ -190,6 +198,17 @@ def import_excel(base, m, excel, mapping=None):
         raw["case_id"] = cid
         folder = Path("cases") / cid
         source_path = folder / "source.json"
+        previous = old.get(cid)
+        if previous is None and 'metadata' in parsed:
+            previous = next((row['case'] for row in reversed(m.get('archived_cases', []))
+                             if row['case']['case_id'] == cid), None)
+        if previous and 'metadata' in parsed and previous['source_hash'] != raw['content_hash']:
+            prior_spec = inside(base, previous.get('case_spec') or str(folder / 'case-spec.yaml'))
+            if prior_spec.is_file():
+                archived = base / folder / 'source-versions' / previous['source_hash']
+                archived.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(prior_spec, archived / 'case-spec.yaml')
+                prior_spec.unlink()
         atomic_write(base / source_path, raw)
         if cid in old:
             c = old[cid]
@@ -201,6 +220,10 @@ def import_excel(base, m, excel, mapping=None):
                 c["intent_hash"] = None
                 c["plan_hash"] = None
                 c["repair_rounds"] = 0
+                if 'metadata' in parsed:
+                    c.pop('review_binding', None)
+                    c.pop('case_spec', None)
+                    c.pop('spec_lint', None)
         elif _restore_deselected(m, cid, raw["content_hash"]) is not None:
             # A case dropped only by an earlier subset selection keeps its results and scripts.
             c = _restore_deselected(m, cid, raw["content_hash"], pop=True)
@@ -242,11 +265,15 @@ def import_excel(base, m, excel, mapping=None):
                  attempted=gap["errors"], sheet=gap["sheet"], reopen=True)
     for q in m["questions"].values():
         q["case_ids"] = [cid for cid in q["case_ids"] if cid in new]
-    m["sources"] = [{"path": str(source), "sha256": file_hash(source), "sheets": parsed["sheets"],
+    m["sources"] = [{"path": str(source), "sha256": parsed.get('sha256') or file_hash(source), "sheets": parsed["sheets"],
                      "mapping": mappings, "imported_at": now(), "unresolved_sheets": sorted(incomplete_sheets)}]
+    if 'metadata' in parsed:
+        snapshot = Path('sources') / (parsed['sha256'] + '.json')
+        atomic_write(base / snapshot, parsed['original'])
+        m['sources'][0].update(parsed['metadata'], snapshot=str(snapshot))
     m["source_update_required"] = False
     m["delivery"] = {}
-    event(m, "excel_imported", **counts)
+    event(m, 'request_imported' if 'metadata' in parsed else 'excel_imported', **counts)
     from .preconditions import sync_preconditions
     preconditions = sync_preconditions(base, m)
     return {**counts, "total": len(new), "unresolved_sheets": sorted(incomplete_sheets),
@@ -541,6 +568,9 @@ def refresh(base, m):
         event(m, "configuration_changed")
     m["config"], m["config_hash"] = cfg, new_hash
     m["source_update_required"] = bool(m["sources"] and file_hash(m["sources"][0]["path"]) != m["sources"][0]["sha256"])
+    if not m.get('active_batch'):
+        from .review_page import reconcile_request_review
+        reconcile_request_review(base, m)
     auth = cfg.get("auth", {}).get("storage_state")
     if m.get("preflight") and m["preflight"].get("auth_sha256") != (file_hash(auth) if auth else None):
         m["preflight"] = None
@@ -711,7 +741,21 @@ def unresolved_targets(base, m, c, spec_cache=None):
     return list(dict.fromkeys(target for target in found if target not in bindings))
 
 
-def missing_catalog_targets(base, c, spec_cache=None, known_targets=None):
+def navigation_catalog(base):
+    from .common import ROOT
+    from .entries import load as load_entries
+    shared = ROOT / 'knowledge/page-map.yaml'
+    page_data = read_yaml(shared if shared.is_file() else ROOT / 'assets/playwright-runner/knowledge/page-map.yaml') or {}
+    overlay = base / 'state/page-map-overlay.yaml'
+    if overlay.is_file():
+        extra = read_yaml(overlay)
+        for section in ('pages', 'targets'):
+            page_data.setdefault(section, {}).update(extra.get(section, {}))
+    known_targets = set(page_data.get('pages', {})) | set(page_data.get('targets', {}))
+    return page_data, known_targets, load_entries(base).get('entries', {})
+
+
+def missing_catalog_targets(base, c, spec_cache=None, known_targets=None, entry_routes=None):
     """Return concrete spec targets absent from shared page-map knowledge."""
     from . import specs
     path = specs.spec_path(base, c)
@@ -719,14 +763,22 @@ def missing_catalog_targets(base, c, spec_cache=None, known_targets=None):
         return []
     spec = spec_cache[c['case_id']] if spec_cache is not None and c['case_id'] in spec_cache else read_yaml(path) or {}
     if known_targets is None:
-        from .common import ROOT
-        shared = ROOT / 'knowledge/page-map.yaml'
-        pages = read_yaml(shared if shared.is_file() else ROOT / 'assets/playwright-runner/knowledge/page-map.yaml') or {}
-        known_targets = set((pages.get('pages') or {})) | set((pages.get('targets') or {}))
+        _, known_targets, routes = navigation_catalog(base)
+        if entry_routes is None:
+            entry_routes = routes
     known = set(known_targets)
     known.update((c.get('target_bindings') or {}).values())
     names = [spec.get('start_page')]
-    names.extend(row.get('target') for row in spec.get('steps', []) if isinstance(row, dict))
+    if entry_routes is None:
+        from .entries import load as load_entries
+        entry_routes = load_entries(base).get('entries', {})
+    for step in spec.get('steps', []):
+        if not isinstance(step, dict):
+            continue
+        target = step.get('target')
+        route = specs.canonical_entry_route(target, entry_routes) if step.get('verb') == 'open' else None
+        if not (route and entry_routes[route].get('confirmed')):
+            names.append(target)
     names.extend(check.get('target') for assertion in spec.get('assertions', [])
                  for check in assertion.get('checks', []) if isinstance(check, dict))
     return list(dict.fromkeys(name for name in names if isinstance(name, str) and name and
@@ -804,6 +856,15 @@ def pending_feedback_cases(m):
     return cases
 
 
+def fixture_blocked(m, case):
+    fixtures = case.get('fixture_ids') or ['case:' + case['case_id']]
+    return not set(fixtures).isdisjoint(m.get('contaminated_fixtures', {}))
+
+
+def first_batch_pending(m):
+    return not any(case.get('attempts') for case in m['cases'].values())
+
+
 def next_task(base, m):
     if m.get("active_batch"):
         from .runtime import batch_running
@@ -827,7 +888,8 @@ def next_task(base, m):
         return {"action": "classify_preconditions", "items": unclassified}
     refresh(base, m)
     if m["sources"] and file_hash(m["sources"][0]["path"]) != m["sources"][0]["sha256"]:
-        return {"action": "import", "reason": "source_workbook_changed", "source": m["sources"][0]["path"]}
+        reason = 'source_request_changed' if m['sources'][0].get('kind') else 'source_workbook_changed'
+        return {"action": "import", "reason": reason, "source": m["sources"][0]["path"]}
     cases = list(m["cases"].values())
     budget = m["config"]["execution"]["batch_size"]
     rank = lambda c: ({"P0": 0, "P1": 1, "P2": 2, "P3": 3}.get(c["priority"].upper(), 4), c["case_id"])
@@ -844,23 +906,13 @@ def next_task(base, m):
     from . import specs
     spec_cache = {c['case_id']: (read_yaml(specs.spec_path(base, c)) or {})
                   for c in available if specs.spec_path(base, c).is_file()}
-    from .common import ROOT
-    page_map = ROOT / 'knowledge/page-map.yaml'
-    if not page_map.is_file():
-        page_map = ROOT / 'assets/playwright-runner/knowledge/page-map.yaml'
-    page_data = read_yaml(page_map) or {}
-    overlay = base / 'state/page-map-overlay.yaml'
-    if overlay.is_file():
-        extra = read_yaml(overlay)
-        for section in ('pages', 'targets'):
-            page_data.setdefault(section, {}).update(extra.get(section, {}))
-    known_targets = set((page_data.get('pages') or {})) | set((page_data.get('targets') or {}))
+    page_data, known_targets, entry_routes = navigation_catalog(base)
     missing_by_case = {}
     assessments = []
     for c in available:
         spec = spec_cache.get(c['case_id'], {})
         unresolved = unresolved_targets(base, m, c, spec_cache)
-        missing = missing_catalog_targets(base, c, spec_cache, known_targets)
+        missing = missing_catalog_targets(base, c, spec_cache, known_targets, entry_routes)
         targets = list(dict.fromkeys(unresolved + missing))
         missing_by_case[c['case_id']] = targets
         for target in targets:
@@ -876,11 +928,12 @@ def next_task(base, m):
                                     'attempt_evidence': evidence, 'duration_ms': sum(row.get('duration_ms', 0) for row in state['attempts'])})
     # Breadth first: runnable cases with complete specs go before any further exploration.
     ready = [c for c in available if c['case_id'] not in unbound_reviews and c["work_status"] == "runnable" and
-             not missing_by_case.get(c['case_id']) and not script_todos(base, c)]
+             not fixture_blocked(m, c) and not missing_by_case.get(c['case_id']) and not script_todos(base, c)]
     if ready:
         if not m.get("preflight") or m["preflight"]["status"] != "passed":
             return {"action": "preflight", "skill": "uia-runtime", "case_ids": [c["case_id"] for c in ready]}
-        return {"action": "run-batch", "skill": "uia-runtime", "case_ids": [c["case_id"] for c in ready[:budget]]}
+        limit = 1 if first_batch_pending(m) else budget
+        return {"action": "run-batch", "skill": "uia-runtime", "case_ids": [c["case_id"] for c in ready[:limit]]}
     if unbound_reviews:
         cid = next(iter(unbound_reviews))
         return {'action': 'spec', 'skill': 'uia-case-spec', 'case_ids': [cid],
@@ -1015,9 +1068,15 @@ def bind_specs(base, m):
     """Point imported cases at Playwright specs. This is the daily path: no intent YAML."""
     require(not m.get("active_batch"), "Recover the active batch before binding specs")
     runner = base / "runner"
+    if any(source.get('kind') for source in m.get('sources', [])):
+        # A text request acquires scripts through explicit case-spec generation/registration.
+        # Discovering a file by ID could reattach a script invalidated by a new review.
+        return {'bound': sorted(cid for cid, case in m['cases'].items() if case.get('registration')),
+                'next': 'next'}
     specs = sorted(path for path in (runner / "tests").rglob("*.spec.ts") if path.name not in {"healer-rehearsal.spec.ts", "seed.spec.ts"})
     # Empty fresh runners simply queue case-spec tasks.
     found = {}
+    registered = set()
     legacy_claims = {}
     for legacy in specs:
         if "generated" in legacy.relative_to(runner).parts:
@@ -1034,6 +1093,8 @@ def bind_specs(base, m):
         generated = runner / 'tests/generated' / (cid + '.spec.ts')
         if case.get('case_spec') and lint.get('errors') == [] and generated.is_file() and not case.get('spec_generation_blocked'):
             found[cid] = (generated, generated.read_text(encoding='utf-8')[:500], True)
+        elif (case.get('registration') or {}).get('case_spec'):
+            registered.add(cid)
     for spec in specs:
         if "generated" in spec.relative_to(runner).parts:
             continue  # Generated tests require case-spec fixtures, not legacy hooks.
@@ -1044,19 +1105,19 @@ def bind_specs(base, m):
             lint_passed = bool(case and case.get('case_spec') and (case.get('spec_lint') or {}).get('errors') == []
                                and not case.get('spec_generation_blocked'))
             generated = runner / 'tests/generated' / (cid + '.spec.ts')
-            if cid not in m["cases"] or cid in found or (lint_passed and generated.is_file()):
+            if cid not in m["cases"] or cid in found or cid in registered or (lint_passed and generated.is_file()):
                 continue
             found[cid] = (spec, body[match.end():match.end() + 500], False)
-    if not found:
+    if not found and not registered:
         return {"bound": [], "next": "spec", "instruction": "Write missing case-specs with uia-case-spec"}
-    bound = []
+    bound = sorted(registered)
     for cid, (spec, window, generated) in found.items():
         c = m["cases"][cid]
         if generated:
             old_script = (c.get('registration') or {}).get('script')
             c['registration'] = {'case_id': cid, 'case_spec': True,
                 'script': spec.relative_to(base).as_posix(),
-                'fixture': {'hooks': 'fixtures/case-spec.mjs', 'mutates': bool(read_yaml(inside(base, c['case_spec']))['mutation_scope']),
+                'fixture': {'hooks': read_yaml(inside(base, c['case_spec'])).get('fixture_hook', 'fixtures/case-spec.mjs'), 'mutates': bool(read_yaml(inside(base, c['case_spec']))['mutation_scope']),
                             'mutation_scope': read_yaml(inside(base, c['case_spec']))['mutation_scope']},
                 'dependencies': ['knowledge/page-map.yaml', 'knowledge/data-prep.yaml', 'knowledge/network.yaml', 'knowledge/patterns.yaml'] + read_yaml(inside(base, c['case_spec'])).get('file_dependencies', [])}
             duplicates = set(legacy_claims.get(cid, []))
@@ -1066,7 +1127,7 @@ def bind_specs(base, m):
                                    'reason': 'lint-passing case-spec generated script takes precedence',
                                    'duplicates': sorted(duplicates)}
             c['daily_spec'] = False
-            c['fixture_ids'] = ['case-spec:' + cid]
+            c['fixture_ids'] = c.get('fixture_ids') or ['case-spec:' + cid]
             c['flow_ids'] = ['case-spec']
             c['isolated'] = False
             version = case_version(base, m, c)

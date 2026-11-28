@@ -44,6 +44,23 @@ class ReleaseAndRefineTests(unittest.TestCase):
         self.assertEqual(q['status'], 'closed')
         self.assertEqual(self.m['cases']['C1']['work_status'], 'pending')
 
+    def test_next_runs_confirmed_entry_alias_without_exploration(self):
+        self.m['questions'].clear()
+        self.m['preflight'] = {'status': 'passed'}
+        route = {'product-entry': {'label': '产品入口', 'aliases': ['产品详情入口'],
+                                   'steps': ['click:text=产品'], 'confirmed': True}}
+        for cid in ('C1', 'C2'):
+            common.atomic_write(self.base / cid / 'case-spec.yaml', {'start_page': 'content-admin',
+                'steps': [{'id': 'S1', 'verb': 'open', 'target': '产品详情入口'}]}, as_yaml=True)
+            self.m['cases'][cid].update(work_status='runnable', stage='execution')
+        with patch.object(workflow, 'refresh'), patch('uia_core.preconditions.triage', return_value=[]), \
+                patch.object(entries, 'load', return_value={'entries': route}):
+            first = workflow.next_task(self.base, self.m)
+            self.assertEqual((first['action'], first['case_ids']), ('run-batch', ['C1']))
+            self.m['cases']['C1'].update(fixture_ids=['shared'], attempts=[{'result': 'automation_failure'}])
+            self.m['contaminated_fixtures'] = {'shared': {'batch_id': 'B'}}
+            second = workflow.next_task(self.base, self.m)
+            self.assertEqual((second['action'], second['case_ids']), ('run-batch', ['C2']))
     def test_deferred_product_environment_process_reviews_do_not_park_active_cases(self):
         for kind in ('product', 'environment', 'process'):
             m={'interaction_mode':'once','cases':{'C1':{'case_id':'C1','work_status':'runnable',

@@ -41,6 +41,62 @@ class CaseSpecTests(unittest.TestCase):
         self.spec['file_dependencies'] = ['missing-test-file.md']
         self.assertTrue(any('file dependency' in error for error in self.errors()))
 
+    def test_fixture_hook_requires_a_real_module_inside_runner_fixtures(self):
+        self.spec['fixture_hook'] = 'fixtures/case-spec.mjs'
+        self.assertEqual(self.errors(), [])
+        for hook in ('../outside.mjs', 'package.json', '/tmp/outside.mjs', 'fixtures/missing.mjs'):
+            self.spec['fixture_hook'] = hook
+            self.assertTrue(any('fixture_hook' in error for error in self.errors()), hook)
+
+    def test_product_mutation_requires_a_product_fixture(self):
+        self.spec['mutation_scope'] = ['product']
+        self.assertTrue(any('fixture_hook is required' in error for error in self.errors()))
+        self.spec['fixture_hook'] = 'fixtures/owned-product.mjs'
+        self.assertEqual(self.errors(), [])
+        self.spec['mutation_scope'].append('llms.txt')
+        self.assertTrue(any('only supports isolated product data' in error for error in self.errors()))
+
+    def test_fixture_hook_rejects_symlink_outside_fixtures(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            fixture_dir = root / 'assets/playwright-runner/fixtures'
+            fixture_dir.mkdir(parents=True)
+            external = root / 'external.mjs'
+            external.write_text('export default {}')
+            (fixture_dir / 'escape.mjs').symlink_to(external)
+            self.spec['fixture_hook'] = 'fixtures/escape.mjs'
+            with patch.object(specs, 'ROOT', root):
+                self.assertTrue(any('fixture_hook' in error for error in self.errors()))
+
+    def test_fixture_directory_cannot_link_outside_runner(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            runner = root / 'assets/playwright-runner'
+            runner.mkdir(parents=True)
+            outside = root / 'outside'
+            outside.mkdir()
+            (outside / 'custom.mjs').write_text('export default {}')
+            (runner / 'fixtures').symlink_to(outside, target_is_directory=True)
+            self.spec['fixture_hook'] = 'fixtures/custom.mjs'
+            with patch.object(specs, 'ROOT', root):
+                self.assertTrue(any('fixture_hook' in error for error in self.errors()))
+
+    def test_fixture_hook_and_its_imports_are_frozen_dependencies(self):
+        with tempfile.TemporaryDirectory() as temp:
+            base = Path(temp).resolve()
+            runner = base / 'runner'
+            for name in ('test.ts', 'fixtures/custom.mjs', 'fixtures/helper.mjs', 'playwright.config.ts',
+                         'package-lock.json', 'package.json', 'tsconfig.json', 'support/uia-reporter.ts'):
+                target = runner / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text('')
+            (runner / 'fixtures/custom.mjs').write_text("import './helper.mjs';")
+            registration = {'script': 'runner/test.ts', 'fixture': {'hooks': 'fixtures/custom.mjs'}, 'dependencies': []}
+            before = workflow.code_files(base, registration)
+            (runner / 'fixtures/helper.mjs').write_text('export const changed = true;')
+            after = workflow.code_files(base, registration)
+            self.assertNotEqual(before['fixtures/helper.mjs'], after['fixtures/helper.mjs'])
+
     def test_declared_data_changes_only_the_referencing_dependency_set(self):
         with tempfile.TemporaryDirectory() as temp:
             base = Path(temp).resolve()
@@ -366,6 +422,14 @@ class CaseSpecTests(unittest.TestCase):
             script.write_text('\n\n' + script.read_text())
             registered = workflow.register(base, m, 'T1', {'case_id': 'T1', 'script': first['script']})
             self.assertEqual(registered['coverage']['assertions']['A1']['line'], initial_line + 2)
+            self.spec['fixture_hook'] = 'fixtures/owned-product.mjs'
+            (base / 'cases/T1/case-spec.yaml').write_text(yaml.safe_dump(self.spec, allow_unicode=True))
+            workflow.bind(m, ['T1'], ['products'], ['shared-product-baseline'], False)
+            workflow.register(base, m, 'T1', {'case_id': 'T1', 'script': first['script']})
+            self.assertEqual(case['registration']['fixture']['hooks'], 'fixtures/owned-product.mjs')
+            workflow.bind_specs(base, m)
+            self.assertEqual(case['registration']['fixture']['hooks'], 'fixtures/owned-product.mjs')
+            self.assertEqual(case['fixture_ids'], ['shared-product-baseline'])
             script.write_text(script.read_text().replace('support/fixtures.js', 'support/test.js'))
             with self.assertRaises(common.UiaError):
                 workflow.register(base, m, 'T1', {'case_id': 'T1', 'script': first['script']})

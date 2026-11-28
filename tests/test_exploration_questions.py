@@ -56,6 +56,15 @@ class ExplorationQuestionsTest(unittest.TestCase):
         self.assertEqual(self.next()['action'], 'explore')
         self.assertIsNone(self.run['cases']['C1']['result'])
 
+    def test_playwright_exploration_keeps_its_actual_method_and_evidence(self):
+        (self.base / 'evidence.json').write_text('{}')
+        exploration.log(self.run, 'playwright', 'shared', 'failed', '目标被遮挡', self.base,
+                        'C1', '?shared', 'evidence.json', 1200, 'progress')
+        attempt = self.run['cases']['C1']['explore_attempts'][0]
+        self.assertEqual(attempt['method'], 'playwright')
+        self.assertEqual(attempt['evidence'], 'evidence.json')
+        self.assertEqual(attempt['duration_ms'], 1200)
+
     def test_review_decisions_are_reused_only_for_associated_cases(self):
         self.run['prototype_review'] = {'decisions': [{'id': 'entry', 'cases': ['C1', 'C2'],
             'status': 'confirmed', 'value': '内容管理 → 产品 → 添加产品'}]}

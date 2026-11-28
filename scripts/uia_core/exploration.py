@@ -12,6 +12,7 @@ def save_snapshot_evidence(base, relative, args, result, cfg=None):
     frame_hint = result.get('frame_hint') if isinstance(result, dict) else None
     payload = {
         'method': 'snapshot', 'node': args.node, 'entry': args.entry,
+        'headed': bool(getattr(args, 'headed', False) or getattr(args, 'manual', False)),
         'purpose': scrub_text(args.purpose, cfg), 'goto': args.goto, 'frame': args.frame or frame_hint,
         'entry_reached': bool(result.get('entry_reached')) if isinstance(result, dict) else False,
         'failed_step': result.get('failed_step', structure.get('failed_step')) if isinstance(result, dict) else None,
@@ -28,7 +29,7 @@ def save_snapshot_evidence(base, relative, args, result, cfg=None):
 
 def log(m, method, purpose, result, note, base=None, case_id=None, target=None, evidence=None, duration_ms=None, progress=None):
     require(purpose and purpose.strip(), 'Exploration purpose must name a specific node')
-    require(method in {'snapshot', 'generator', 'midscene'} and result in {'ok', 'failed'}, 'Invalid exploration method/result')
+    require(method in {'snapshot', 'generator', 'midscene', 'playwright'} and result in {'ok', 'failed'}, 'Invalid exploration method/result')
     require(duration_ms is None or type(duration_ms) is int and duration_ms >= 0,
             'Exploration duration must be a non-negative integer in milliseconds')
     require(progress in (None, 'progress', 'stalled'), 'Invalid exploration progress')

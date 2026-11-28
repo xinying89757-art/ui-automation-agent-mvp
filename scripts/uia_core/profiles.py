@@ -267,7 +267,7 @@ def invoke_login(cfg, runner=None, check_only=False, force=False, evidence=None,
         Path(temp).unlink(missing_ok=True)
 
 
-def invoke_snapshot(cfg, runner=None, area=None, manual=False, frame=None, scope=None, open_target=None, hover=None, clicks=None, goto=None, steps=None, entry_steps=None):
+def invoke_snapshot(cfg, runner=None, area=None, manual=False, frame=None, scope=None, open_target=None, hover=None, clicks=None, goto=None, steps=None, entry_steps=None, *, headed=False):
     runner = Path(runner or runtime_root()).resolve()
     require((runner / "node_modules/@playwright/test").is_dir(),
             "Install Node dependencies first: npm --prefix " + str(runner) + " ci")
@@ -281,6 +281,8 @@ def invoke_snapshot(cfg, runner=None, area=None, manual=False, frame=None, scope
         command = ["node", str(runner / "scripts/session.mjs"), "--config", temp, "--snapshot"]
         if area:
             command.append(area)
+        if headed:
+            command.append('--headed')
         for flag, value in (("--frame", frame), ("--scope", scope), ("--open-target", open_target), ("--hover", hover), ("--goto", goto)):
             if value:
                 command.extend([flag, value])
@@ -328,7 +330,11 @@ def invoke_snapshot(cfg, runner=None, area=None, manual=False, frame=None, scope
                 import signal
                 os.killpg(process.pid, signal.SIGKILL)
             process.wait()
-            require(False, 'Snapshot timed out', {'progress': progress[-1] if progress else None})
+            last = progress[-1] if progress else None
+            details = {'progress': last}
+            if not (headed or manual) and last and last.get('stage') in {'auth_site', 'open_area'}:
+                details['retry_hint'] = '站点或后台入口在无界面浏览器中超时，可以用同一快照命令加 --headed 复核。'
+            require(False, 'Snapshot timed out', details)
         except BaseException:
             if process.poll() is None:
                 if os.name == 'nt':

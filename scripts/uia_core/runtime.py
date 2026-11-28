@@ -11,7 +11,7 @@ from urllib.parse import urlsplit
 from .checks import case_errors
 from .common import (RESULTS, atomic_write, digest, elapsed, event, file_hash, inside,
                      now, read_json, read_yaml, redact, require, reset_case)
-from .workflow import case_version, code_files, question, refresh
+from .workflow import case_version, code_files, fixture_blocked, question, refresh
 from .profiles import network_fingerprint
 
 
@@ -235,6 +235,8 @@ def begin_batch(base, m, case_ids, headed=False, rerun=False):
     require(not m.get("active_batch"), "Recover the active batch before starting another")
     require(not m.get('initial_review_required') or m.get('human_review'), '请先提交 HTML 审核答复')
     refresh(base, m)
+    if any(source.get('kind') for source in m.get('sources', [])):
+        require(not m.get('source_update_required'), '文字请求已变更，请先使用 go --request 重新导入')
     require(case_ids and len(case_ids) == len(set(case_ids)), "Select distinct case IDs")
     require(len(case_ids) <= m["config"]["execution"]["batch_size"], "Selected batch exceeds configured batch size")
     pre = m.get("preflight")
@@ -257,9 +259,12 @@ def begin_batch(base, m, case_ids, headed=False, rerun=False):
                     'Another run holds environment data for remote verification; only read-only cases may run')
     caps = (m.get("preflight") or {}).get("capabilities") or {}
     for c in selected:
+        review = m.get('human_review') or {}
+        require(not any(c['case_id'] in row['cases'] for row in review.get('pending', [])),
+                '审核仍有待处理项', c['case_id'])
+        require(c.get('registration'), '用例尚未注册执行脚本', c['case_id'])
         require(Path(c["registration"]["script"]).name != "seed.spec.ts", "Exploration seed cannot run as a case")
         from .workflow import unbound_review_ids
-        review = m.get('human_review') or {}
         required = {row['id'] for row in review.get('decisions', [])
                     if c['case_id'] in row.get('cases', []) and row.get('status') in {'confirmed', 'edited'}}
         if required:
@@ -273,7 +278,7 @@ def begin_batch(base, m, case_ids, headed=False, rerun=False):
             require_rerunnable(m, c)
         else:
             require(c["work_status"] == "runnable", "Case is not runnable", c["case_id"])
-        require(not set(c["fixture_ids"] or ["case:" + c["case_id"]]) & set(m["contaminated_fixtures"]), "Fixture requires verified recovery", c["case_id"])
+        require(not fixture_blocked(m, c), "Fixture requires verified recovery", c["case_id"])
         if caps.get("public_frontend") is False and case_needs_public(base, c):
             require(False, "This case reads the public site, which is unreachable",
                     {"case_id": c["case_id"], "error": caps.get("public_error")})
@@ -521,6 +526,8 @@ def consume_batch(base, m, exit_code=None):
             attempt['assertion_evidence_errors'] = gaps
         attempt["successful_steps"] = [str(step) for step in row.get("successful_steps", [])
                                        if isinstance(step, str) and re.fullmatch(r"[A-Za-z0-9_.-]+", step)]
+        if isinstance(row.get('failed_step'), str) and re.fullmatch(r'[A-Za-z0-9_.-]+', row['failed_step']):
+            attempt['failed_step'] = row['failed_step']
         if result == 'passed' and attempt['executed']:
             attempt['verified_knowledge_uses'] = verified_knowledge_uses(base, batch, cid, attempt['successful_steps'])
         if row.get("read_back"):

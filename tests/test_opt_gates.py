@@ -24,6 +24,9 @@ class FailureClassTests(unittest.TestCase):
         self.assertEqual(failures.judge_result("business_failure", ["UIA_BUSINESS_FAILURE: missing copy"])[1], "product")
         self.assertEqual(failures.judge_result("suspended", [])[1], "suspended")
         self.assertEqual(failures.judge_result("automation_failure", ["locator resolved to 0 elements"])[1], "automation")
+        self.assertEqual(failures.judge_result("automation_failure", [
+            "locator.click: Timeout 5000ms exceeded\nCall log:\n  - waiting for login site button",
+        ]), ("automation_failure", "automation"))
 
     def test_shares_cover_the_four_classes(self):
         cases = [
@@ -43,6 +46,53 @@ class FailureClassTests(unittest.TestCase):
 
 
 class MetricsReportTests(unittest.TestCase):
+    def test_as_run_keeps_historical_pass_and_correction_without_changing_current_run(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            config = root / 'config.json'
+            common.atomic_write(config, {'schema_version': 'uia-config.v1'})
+            with patch.object(workflow, 'ROOT', root):
+                workflow.init('Historic', config)
+            manifest, run = common.load_run(root / 'runs/Historic')
+            report_path = 'batches/B/case-results.json'
+            evidence = manifest.parent / report_path
+            common.atomic_write(evidence, {'batch_id': 'B', 'complete': True})
+            for cid, outcome in [('C1', 'passed'), ('C2', 'environment_blocked')]:
+                run['cases'][cid] = {
+                    'case_id': cid, 'title': cid, 'rows': [], 'repair_rounds': 0,
+                    'work_status': 'runnable', 'version': 'new', 'result': None, 'pass_streak': 0,
+                    'attempts': [{'batch_id': 'B', 'version': 'old', 'executed': True, 'result': outcome,
+                                  'cleanup_verified': True, 'evidence': report_path}],
+                }
+            run['cases']['C1']['attempts'][0]['assertions'] = [{'id': 'A1', 'passed': True}]
+            run['cases']['C2']['classification_history'] = [
+                {'batch_id': 'B', 'result': 'automation_failure', 'reason': '控件被遮挡', 'evidence': report_path}]
+            common.save(manifest, run)
+            original = manifest.read_bytes()
+            original_evidence = evidence.read_bytes()
+            review = manifest.parent / 'review.json'
+            common.atomic_write(review, {'live_review': True})
+            args = cli.parser().parse_args(['report', '--run', str(manifest), '--as-run'])
+            with patch.object(workflow, 'refresh', side_effect=AssertionError('historical report cannot refresh')):
+                result = cli.execute(args)
+            self.assertEqual(manifest.read_bytes(), original)
+            self.assertEqual(evidence.read_bytes(), original_evidence)
+            self.assertEqual(common.read_json(review), {'live_review': True})
+            self.assertEqual(result['summary']['executed'], 2)
+            self.assertEqual(result['summary']['results']['passed'], 1)
+            output = common.read_json(manifest.parent / result['artifacts']['json'])
+            c1, c2 = output['cases']
+            self.assertTrue(c1['attempts'][0]['cleanup_verified'])
+            self.assertTrue(c1['attempts'][0]['assertions'][0]['passed'])
+            self.assertEqual(c2['result'], 'automation_failure')
+            self.assertEqual(c2['attempts'][0]['result'], 'environment_blocked')
+
+    def test_explicit_reclassification_is_not_overridden_by_historical_error(self):
+        case = {'result': 'automation_failure', 'failure_class': 'automation',
+                'classification': {'evidence': 'batch.json'},
+                'attempts': [{'errors': ['Timeout: sitewidget-bd intercepted pointer events']}]}
+        self.assertEqual(failures.failure_class_for_case(case), 'automation')
+        self.assertFalse(failures.is_environment('Timeout: sitewidget-bd intercepted pointer events'))
     def test_verified_knowledge_use_requires_matching_successful_step_and_snapshots(self):
         with tempfile.TemporaryDirectory() as temp:
             base = Path(temp).resolve()
@@ -117,6 +167,37 @@ class MetricsReportTests(unittest.TestCase):
 
 
 class SmokeGateTests(unittest.TestCase):
+    def test_go_batch_execution_runs_first_case_alone_and_skips_only_contaminated_fixtures(self):
+        with tempfile.TemporaryDirectory() as directory:
+            manifest = Path(directory).resolve() / 'run.json'
+            common.atomic_write(manifest, {'schema_version': 'uia-run.v1', 'run_id': 'R',
+                'cases': {cid: {'case_id': cid, 'work_status': 'runnable', 'fixture_ids': [fixture]}
+                          for cid, fixture in [('C1', 'shared'), ('C2', 'shared'), ('C3', 'independent')]},
+                'sources': [], 'questions': {}, 'preflight': {'status': 'passed'},
+                'config': {'execution': {'batch_size': 5}}, 'contaminated_fixtures': {}})
+            batches = []
+
+            def begin(base, state, selected, **options):
+                batches.append(selected)
+                state['active_batch'] = {'case_ids': selected}
+                return state['active_batch']
+
+            def consume(base, state, code):
+                for cid in state.pop('active_batch')['case_ids']:
+                    case = state['cases'][cid]
+                    case['attempts'] = [{'result': 'automation_failure' if cid == 'C1' else 'passed'}]
+                    case['work_status'] = 'finished'
+                    if cid == 'C1':
+                        state['contaminated_fixtures']['shared'] = {'batch_id': 'B'}
+
+            with patch.object(runtime, 'begin_batch', side_effect=begin), \
+                    patch.object(runtime, 'execute_process', return_value=1), \
+                    patch.object(runtime, 'consume_batch', side_effect=consume):
+                experience._execute_ready(manifest, ['C1', 'C2', 'C3'], full_batch=True,
+                                          smoke_size=2, smoke_pass_rate=1, budget_minutes=26,
+                                          started_at='2026-01-01T00:00:00+00:00')
+            self.assertEqual(batches, [['C1'], ['C3']])
+
     def test_representative_cases_spread_across_modules(self):
         cases = [
             {"case_id": "A", "priority": "P1", "module": "faq"},

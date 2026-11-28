@@ -3007,3 +3007,39 @@ entries:
   fail_count: 0
   observed_runs: []
   failure_runs: []
+- id: experience.product-owned-data-lifecycle
+  page: content-admin
+  route: ''
+  frame: ''
+  tags:
+  - product-owned-data-lifecycle
+  - 产品测试数据创建与清理
+  version: unknown
+  status: stable
+  last_verified: '2026-11-27'
+  last_hit: null
+  summary: 产品测试数据创建与清理
+  path: flows/experience-product-owned-data-lifecycle.yaml
+  hit_count: 0
+  pass_count: 0
+  fail_count: 0
+  observed_runs: []
+  failure_runs: []
+- id: experience.product-saved-link-panel-readback
+  page: content-admin
+  route: ''
+  frame: ''
+  tags:
+  - product-saved-link-panel-readback
+  - 已保存链接面板回读
+  version: unknown
+  status: stable
+  last_verified: '2026-11-27'
+  last_hit: null
+  summary: 已保存链接面板回读
+  path: flows/experience-product-saved-link-panel-readback.yaml
+  hit_count: 0
+  pass_count: 0
+  fail_count: 0
+  observed_runs: []
+  failure_runs: []

@@ -150,3 +150,27 @@ test('entry replay skips only when the current route step has an active destinat
     assert.equal(wrongPage.steps.some(step => step.skipped === 'already_satisfied'), false);
   } finally { await browser.close(); }
 });
+
+test('entry replay opens a named page without waiting for a matching DOM control', async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.route('https://backend.test/products', route => route.fulfill({
+      contentType: 'text/html', body: '<button onclick="this.textContent=\'Opened\'">Add product</button>'
+    }));
+    const locate = page.locator.bind(page);
+    const lookups = [];
+    page.locator = (selector, options) => {
+      lookups.push(selector);
+      return locate(selector, options);
+    };
+    page.setDefaultTimeout(1500);
+    const result = await navigateSnapshot(page, cfg, {
+      map: { pages: { 'content-admin': { path: '/products' } } },
+      steps: ['click:content-admin', 'click:text=Add product'], entrySteps: 2,
+    });
+    assert.equal(result.failed_step, null);
+    assert.equal(await page.getByRole('button', { name: 'Opened' }).count(), 1);
+    assert.equal(lookups.includes('content-admin'), false);
+  } finally { await browser.close(); }
+});

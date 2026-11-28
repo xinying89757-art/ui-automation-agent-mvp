@@ -36,6 +36,9 @@ start_page 来自 page-map 的 pages，或在 spec-pathfinder 尚未确认入口
 `uia go` 会把 spec-pathfinder 确认稿投影为 case-spec。`spec gen` 在 `spec_origin: pathfinder` 时只接受与确认稿一致的步骤编号和 Excel 预期原文，不会再从原始表格另推一套操作。
 
 可选的 `file_dependencies` 列出运行器内相对路径，例如 `tests/markdown/fixtures/sample.md`。注册和批次快照将文件内容纳入版本；脚本在正式批次中从 `UIA_BATCH_FILES_DIR` 指向的快照读取，独立交付时读取包内文件。
+可选 `fixture_hook` 指向 runner 的 `fixtures/` 内 `.mjs` 文件。它必须实现 `prepare`、`verifyPrepared`、`cleanup`、`verifyCleanup`，运行失败时仍需恢复，恢复失败由既有机制阻断受影响数据。该文件及静态导入纳入执行版本和批次快照；未指定时沿用现有准备器。
+`fixtures/owned-product.mjs` 是内容管理产品的试点准备器：先确认本批次专属名称不存在，测试脚本使用该名称创建产品，结束时只删除精确匹配的产品并重新查询核验。它只适用于已验证的产品列表，不能替代其他业务对象的准备器；进程被强制中断后的恢复仍需人工核对本次标记。
+默认准备器覆盖 `llms.txt` 和 `faq`。其他变更需要声明适用的准备器。默认 fixture 按用例隔离；如果用例使用同一数据基线，通过现有 `bind --fixtures` 绑定同一 fixture ID，注册和重新绑定会保留该 ID。
 可选 `entry_route` 引用 `knowledge/entries.yaml` 中已确认的路线；生成器会用 `openTarget`/导航回放执行它。
 当用例对应已知路线（如 `article-editor-markdown-import`）时，优先将其作为 `entry_route` 或 `open` 步骤，
 不要把路线里的裸文本导航项复制成新 page-map targets。

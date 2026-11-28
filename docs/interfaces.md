@@ -49,7 +49,11 @@ python3 scripts/uia.py kb writeback --run GO-id --review review.json
 
 自动匹配按 case 的页面、frame 执行硬过滤，再仅保留 case 查询 BM25 分数大于 0 的条目，以及 case-spec 直接引用的入口、路线和目标；不会设置默认 token 上限。手动 `kb query` 只有显式传 `--max-tokens` 才应用上限。`knowledge-match.json` 继续记录每例实际用量，报告保留 p50/p95。索引过滤与排序见 [知识库设计](knowledge-base.md)。
 
+历史结果用 `uia.py report --run R --as-run` 输出到 `reports/as-run/`。它按已记录的批次和对应的人工更正生成报告，不刷新当前执行版本、改写运行清单或清理旧批次。历史报告链接到原始批次，当前可执行脚本包仍由常规报告生成。
+
 ### `explore` action
+
+直接通过 Playwright 进行的有界探索使用 `exploration-log --method playwright`，并关联实际证据；不要将其记作 snapshot 或 generator。
 
 `next` 返回 `explore` 时先自主探索；若已经没有可行线索，也可提前评估并提问。它先选择占位目标最少、优先级最高的 case，每次最多 8 个目标；同入口/frame 的其他 case 仅在共享同一目标时加入 `case_ids` 和 `targets_by_case`。推荐执行 action 返回的 `generator_command`：它包含 `--cases` 和 `--targets`，generator 会把 step ID/占位目标清单写入 prompt，并输出逐目标的 `step_targets` 映射。快照可用 `snapshot --run R --node editor --entry PAGE --purpose TARGET --evidence evidence/CASE-TARGET-1.json` 保存脱敏后的入口、frame、失败步骤等结果元数据，不保存 DOM。
 
@@ -121,6 +125,7 @@ python3 scripts/uia.py bind --run REQ-001 --cases TC-01 TC-02 --flows product-cr
 导入响应会提示先运行 `bind-specs`，索引 `tests/*.spec.ts`。已有脚本在相关审核答复落实后执行。页面探索使用
 `python3 scripts/uia.py snapshot --run REQ-001 --node page|content-admin|editor`：登录、打开目标页面、
 输出脱敏 DOM 结构（含同源 `#backstage-innerpage`）后退出。禁止原始 page/body、cookie 或 storage dump。
+无界面浏览器在站点选择或打开后台入口时超时，可以在原快照命令上加 `--headed`。该选项使用有界面浏览器，仍自动登录并执行相同的环境与站点校验。
 
 `--isolated` 只用于已证明数据隔离的用例；多 worker 另需 registration 的
 `isolation_evidence`。默认单 worker。
@@ -182,6 +187,35 @@ unavailable 的用例保持等待，结果留空，不记为 not_suitable。
 `--key` 可显式提供缺口身份，默认按类型/subject/sheet 合并。人工回答用 JSON 值或对象，
 不要包含凭证值。demo 回答为 `{"script":"/path/to/recorded.spec.ts"}`，导入后仍需独立回放。
 回放证据含实际 `script_sha256`、`result: passed` 和 `cleanup_verified: true`。
+
+## 文字提测
+
+`uia.py go --request FILE --profile NAME` 接收 UTF-8 JSON，与 Excel 路径二选一。`--cases` 可以使用文件中的编号。保留同一文件路径、环境和验证项编号可以继续原运行。CLI 校验结构并执行现有流程，Agent 负责从文字和引用资料整理验证项。
+
+```json
+{
+  "schema_version": "uia-text-request.v1",
+  "kind": "requirement",
+  "title": "产品名称搜索",
+  "original": "按完整产品名搜索时，只显示名称匹配的产品。",
+  "references": ["提测消息中的需求描述"],
+  "cases": [
+    {
+      "id": "01",
+      "title": "按完整产品名搜索",
+      "module": "产品列表",
+      "steps": ["打开产品列表并按一个已存在的完整产品名搜索"],
+      "expectations": [{
+        "quote": "按完整产品名搜索时，只显示名称匹配的产品。",
+        "source": "提测消息中的需求描述",
+        "method": "搜索后确认匹配产品可见，逐行检查名称与输入一致"
+      }]
+    }
+  ]
+}
+```
+
+验证项可加 `preconditions`、`priority`。预期无法确定时写 `expectation_question`，填写希望用户明确的可观察行为。用户答复后，用原样答复作为 `case-spec.v1` 断言的 `excel` 值并绑定该审核项。Bug 使用 `kind: "bug"`，可以用 `historical_actual` 单独保留材料中记录的旧表现。脚本通过 case-spec 生成或显式注册，运行内保存每版文字请求和实际批次证据。
 
 ## 执行、修复和恢复
 
@@ -277,7 +311,7 @@ Agent 按返回的决定更新相关规格并核验后继续执行。工具保�
 
 `uia preflight` 不带 `--evidence` 时现场检查登录、目标网站是否可选、内容编辑器是否打开。凭据只来自环境变量或 `.auth/`。失败时把整个 run 标为 `environment_blocked` 并停止，不执行用例。`--run` 加 `--evidence` 仍只校验已有浏览器证据。
 
-`uia go` 在执行用例前固定做同一次预检。全量（未传 `--cases`）且用例数大于 `--smoke-size`（默认 3）时，先跑按优先级和模块分散的代表用例；通过率达到 `--smoke-pass-rate`（默认 1）才继续其余用例。首个结果耗时超过 `--first-result-budget-minutes`（默认 26）时中止后续批次。
+`uia go` 在执行前先做预检，新运行的首条就绪用例单独执行，随后继续独立用例。后续全量批次仍沿用 `--smoke-size`（默认 3）和 `--smoke-pass-rate`（默认 1）。首个结果耗时超过 `--first-result-budget-minutes`（默认 26）时中止后续批次。
 
 `--cases` 以逗号分隔；不传则保留全部用例。未知 ID 直接报错。省略 profile 时仅在恰有一份
 私有配置时自动选择。相同工作簿路径、profile、用例范围恢复同一个 run；工作簿内容变化仍做来源对齐。

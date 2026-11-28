@@ -244,8 +244,9 @@ class EntryHintsTests(unittest.TestCase):
         self.assertTrue(hint['confirmed']); self.assertEqual(hint['source'], 'explored')
         for failed, reached in [(None, True), ({'index': 1}, False), ({'index': 2}, False), ({'index': 3}, True)]:
             with self.subTest(failed=failed):
-                result, run = self.snapshot(failed, ['--step', 'click:text=插入'])
+                result, run = self.snapshot(failed, ['--headed', '--step', 'click:text=插入'])
                 self.assertEqual(result['entry_reached'], reached)
+                self.assertTrue(run.call_args.kwargs['headed'])
                 self.assertEqual(run.call_args.args[-2:], ('/manage', ['click:text=编辑', 'click:text=插入']))
                 self.assertEqual(run.call_args.args[4], '#compose-frame')
                 self.assertEqual(self.m['exploration'][-1]['entry_reached'], reached)

@@ -63,7 +63,8 @@ def case_errors(base, case, cfg, execution=False):
         if not path.is_file():
             return ["case-spec missing"], []
         spec = read_yaml(path)
-        errors, unknown = schema_errors(spec, read_json(inside(base, case["source"])), env, data, pages, base)
+        errors, unknown = schema_errors(spec, read_json(inside(base, case["source"])), env, data, pages, base,
+                                        approved_expectation=(case.get('review_binding') or {}).get('approved_expectation'))
         errors.extend(review_binding_errors(base, case, path))
         if unknown:
             errors.append("Unknown targets require exploration")

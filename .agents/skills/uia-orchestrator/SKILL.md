@@ -1,6 +1,6 @@
 ---
 name: uia-orchestrator
-description: 在本项目接收 Excel UI 用例，自动衔接 case-spec、浏览器探索和分批执行；支持查询、人工答复和断点恢复。
+description: 在本项目接收 Excel UI 用例、文字小需求和 Bug，衔接审核、case-spec、浏览器探索、分批执行和断点恢复。
 ---
 
 # Excel UI automation orchestrator
@@ -13,7 +13,7 @@ The project root is three parents above this folder. Run CLI commands there usin
 API-backed agent server. Read and follow stage skills in the current conversation;
 do not invoke Claude Code `Task()` or assume a shell script can invoke the model.
 
-`uia go` and `uia preflight` check login, target-site selection, and the content editor before any case runs. A failure marks the batch `environment_blocked` and stops. Do not classify `SITE_NOT_ACCESSIBLE`, login failures, or site-load timeouts as automation failures. A full batch smokes representative cases before the rest and aborts when the first result exceeds the configured budget.
+`uia go` and `uia preflight` check login, target-site selection, and the content editor before any case runs. A failure marks the batch `environment_blocked` and stops. Treat `SITE_NOT_ACCESSIBLE`, login failures, and site-load timeouts as environment blockers. The first ready case runs alone in a new run. Later full batches use the configured smoke gate and first-result budget.
 
 Before any question, exploration planning, or spec generation, use the automatic
 per-case knowledge match written by `uia go` in `knowledge-match.json`. Retrieval
@@ -26,6 +26,8 @@ whole knowledge directory into a prompt. The default has no token truncation. Us
 Before presenting the HTML review, classify unmatched workbook preconditions;
 ai_prepare/explore are AI tasks and human_env becomes a scoped review question.
 For any page with an entry hint, always begin with `snapshot --entry` / `generator --entry`.
+If a headless snapshot times out at site selection or opening the backend area and headed
+login succeeded, retry the same snapshot with `--headed` and automatic authentication.
 Follow the hinted backend area first; never start component exploration in another area.
 A generator failure classified `subagent_start` is infrastructure failure and never a demo rung.
 A generator `timeout` is not proof that the page is inaccessible. Assess whether its checkpoint
@@ -58,8 +60,18 @@ Record each attempt with `exploration-log`, including duration, evidence and `--
 ## One-command daily entry
 
 For a new requirement, start with `python3 scripts/uia.py go <xlsx> --profile <p>`.
+For a small text requirement or Bug, preserve the user's original text and references,
+write the structured request described in [interfaces](../../../docs/interfaces.md#文字提测), and run
+`python3 scripts/uia.py go --request <request.json> --profile <p>`. Keep the file path and item IDs on resume.
+Start a Bug with its reproduction steps and the expected fixed behavior. Historical actual behavior is context.
+If no source establishes a business expectation, add `expectation_question` instead of inferring it from the page.
+After a user supplies that expectation, quote the approved answer verbatim in the case-spec assertion `excel`
+field and bind its review item. Keep the original request unchanged. Focus on the main behavior and source-backed
+boundaries or directly affected checks. Text request specs are written by the Agent from their approved scope.
 The output includes the run's shared HTML review page. Add key checks and genuinely unresolved questions to
 `review-input.json` in the run directory, citing the relevant workbook, design, prototype, or verified knowledge.
+For a key check, write the operation and object, the observable signal that permits judgment, and the pass condition in the existing method text. A routine check can use one sentence. Keep selectors, timeout values and retries in the script.
+After review, take the first ready case through a one-case formal batch before preparing the rest. Continue unrelated cases when a problem affects only one flow or fixture.
 Review questions once per shared gap, with the related case IDs. When the material is ready, start
 `review-page serve --run R` in a controllable terminal and give the user the local URL from `review_ready`.
 Continue when `review_saved` arrives. On resume, read the persisted review before starting another service.
@@ -91,7 +103,7 @@ Report begins with 结论 / 需要你处理 / 流程指标; all visible statuses
 
 ## Start, resume, and route
 
-1. For a new request, use the supplied Excel and target configuration. Reuse a matching
+1. For a new request, use the supplied source and target configuration. Reuse a matching
    existing run rather than creating duplicates. Ask once for missing environment or
    business scope; never request secrets in the conversation. Explain counts and the
    next business flow in a concise progress update.
